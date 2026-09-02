@@ -1,0 +1,2 @@
+"""Video extractor backend."""
+

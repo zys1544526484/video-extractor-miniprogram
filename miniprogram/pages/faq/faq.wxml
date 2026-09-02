@@ -1,0 +1,13 @@
+<view class="page-shell faq-page">
+  <view class="faq-list">
+    <view class="faq-item" wx:for="{{items}}" wx:key="q">
+      <view class="question-row" data-index="{{index}}" bindtap="toggle" role="button" aria-expanded="{{opened === index}}">
+        <text>{{item.q}}</text>
+        <text class="toggle-symbol">{{opened === index ? '−' : '+'}}</text>
+      </view>
+      <view class="answer" wx:if="{{opened === index}}">{{item.a}}</view>
+    </view>
+  </view>
+  <view class="compliance-note">仅处理公开可访问且你有权保存的内容，不绕过登录、付费、私密或技术保护。</view>
+</view>
+

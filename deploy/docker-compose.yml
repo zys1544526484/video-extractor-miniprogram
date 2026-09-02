@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/app.db
+      TEMP_DIR: /app/tmp/media
+    volumes:
+      - app_data:/app/data
+      - media_tmp:/app/tmp/media
+    networks:
+      - private
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+
+networks:
+  private:
+
+volumes:
+  app_data:
+  media_tmp:
+  caddy_data:
+  caddy_config:

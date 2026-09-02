@@ -1,0 +1,70 @@
+<view class="page-shell home-page">
+  <view class="ad-region" wx:if="{{showBannerAd}}">
+    <ad
+      wx:if="{{bannerAdUnitId}}"
+      unit-id="{{bannerAdUnitId}}"
+      ad-type="banner"
+      ad-intervals="30"
+      binderror="onBannerAdError"
+    />
+    <view class="dev-ad" wx:else>
+      <text class="dev-ad-label">广告位</text>
+      <text>配置真实 Banner adUnitId 后展示</text>
+    </view>
+  </view>
+
+  <view class="notice-line">
+    <text class="notice-icon">i</text>
+    <text>解析和预览免费，保存时解锁下载权益</text>
+  </view>
+
+  <view class="entitlement-strip">
+    <text class="info-icon">i</text>
+    <text>{{entitlementLabel}}</text>
+  </view>
+
+  <view class="input-panel">
+    <textarea
+      class="share-input"
+      value="{{inputText}}"
+      maxlength="5000"
+      placeholder="粘贴视频分享文案或链接"
+      placeholder-class="input-placeholder"
+      bindinput="onInput"
+      bindblur="onBlur"
+      auto-height="false"
+      show-confirm-bar="false"
+      aria-label="视频分享文案或链接"
+    />
+    <text class="char-count">{{charCount}}/5000</text>
+  </view>
+
+  <view class="action-row">
+    <button class="primary-button parse-button" disabled="{{busy}}" bindtap="startParse">{{buttonText}}</button>
+    <button class="secondary-button paste-button" disabled="{{busy}}" bindtap="pasteClipboard">粘贴</button>
+  </view>
+
+  <view class="legal-copy">
+    <text>仅处理公开可访问且你有权保存的内容</text>
+    <text>部分内容可能短时缓存，并在任务结束或过期后自动清理</text>
+  </view>
+
+  <view class="utility-list">
+    <view class="utility-row" bindtap="openTutorial" role="button" aria-label="使用教程">
+      <image class="utility-icon" src="/assets/icons/book.svg" />
+      <text class="utility-title">使用教程</text>
+      <image class="chevron" src="/assets/icons/chevron.svg" />
+    </view>
+    <view class="utility-row" bindtap="openFaq" role="button" aria-label="常见问题">
+      <image class="utility-icon" src="/assets/icons/help.svg" />
+      <text class="utility-title">常见问题</text>
+      <image class="chevron" src="/assets/icons/chevron.svg" />
+    </view>
+    <view class="utility-row utility-row-last" bindtap="openMine" role="button" aria-label="我的权限">
+      <image class="utility-icon" src="/assets/icons/shield.svg" />
+      <text class="utility-title">我的权限</text>
+      <image class="chevron" src="/assets/icons/chevron.svg" />
+    </view>
+  </view>
+</view>
+

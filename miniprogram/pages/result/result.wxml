@@ -1,0 +1,55 @@
+<view class="page-shell result-page" wx:if="{{result}}" >
+  <view class="ad-region" wx:if="{{showBannerAd}}">
+    <ad
+      wx:if="{{bannerAdUnitId}}"
+      unit-id="{{bannerAdUnitId}}"
+      ad-type="banner"
+      ad-intervals="30"
+      binderror="onBannerAdError"
+    />
+    <view class="dev-ad" wx:else><text>开发预览广告位 · 配置真实 adUnitId 后展示</text></view>
+  </view>
+
+  <view class="success-line">
+    <view class="success-icon">✓</view>
+    <text>提取完成</text>
+  </view>
+
+  <video
+    class="video-preview"
+    src="{{result.preview_url}}"
+    controls="true"
+    object-fit="cover"
+    enable-progress-gesture="true"
+    show-center-play-btn="true"
+    aria-label="视频预览"
+  />
+
+  <view class="media-heading">
+    <text class="platform-label">{{result.platform}}</text>
+    <view class="media-copy">
+      <text class="media-title">{{result.title}}</text>
+      <text class="media-info">{{infoText}}</text>
+    </view>
+  </view>
+
+  <view class="notice-card">
+    <view class="notice-row"><text class="notice-symbol">✓</text><text>请确认你有权保存该内容</text></view>
+    <view class="notice-row notice-row-last"><text class="notice-symbol">i</text><text>{{watermarkText}}</text></view>
+  </view>
+
+  <view class="progress-block" wx:if="{{state === 'downloading' || state === 'saving' || state === 'success'}}">
+    <view class="progress-label"><text>{{state === 'saving' ? '正在写入相册' : '下载进度'}}</text><text>{{progress}}%</text></view>
+    <view class="progress-track"><view class="progress-value" style="width: {{progress}}%;"></view></view>
+  </view>
+
+  <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveVideo">{{saveButtonText}}</button>
+  <button class="secondary-button retry-button" bindtap="extractAgain">重新提取</button>
+
+  <text class="expiry-hint">结果将在短时间后失效，请及时保存</text>
+  <text class="mock-hint" wx:if="{{mockMode}}">当前为开发 Mock，不会产生真实广告收益或写入相册</text>
+</view>
+
+<view class="empty-state" wx:else>
+  <text>{{state === 'loading' ? '加载结果中…' : '结果已失效'}}</text>
+</view>

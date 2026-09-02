@@ -1,0 +1,81 @@
+.content-page {
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
+.intro-copy {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 2px 18px;
+}
+
+.page-title {
+  font-size: 23px;
+  font-weight: 650;
+  line-height: 34px;
+}
+
+.page-subtitle {
+  margin-top: 5px;
+  color: #8a8a8a;
+  font-size: 14px;
+}
+
+.step-list {
+  padding: 0 16px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.step-row {
+  display: flex;
+  min-height: 76px;
+  padding: 14px 0;
+  border-bottom: 1px solid #ededee;
+  box-sizing: border-box;
+}
+
+.step-row-last {
+  border-bottom: 0;
+}
+
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 1px 13px 0 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  background: #07c160;
+  border-radius: 50%;
+}
+
+.step-title,
+.step-copy {
+  display: block;
+}
+
+.step-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.step-copy {
+  margin-top: 3px;
+  color: #8a8a8a;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.tip-card {
+  margin-top: 16px;
+  padding: 13px 15px;
+  color: #5f6267;
+  font-size: 13px;
+  line-height: 21px;
+  background: #f0faf4;
+  border-radius: 10px;
+}
+

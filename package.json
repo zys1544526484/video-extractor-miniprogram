@@ -1,0 +1,11 @@
+{
+  "name": "wechat-video-extractor",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test miniprogram/tests/*.test.js",
+    "validate:miniprogram": "node scripts/validate_miniprogram.js",
+    "check": "npm test && npm run validate:miniprogram"
+  }
+}
+

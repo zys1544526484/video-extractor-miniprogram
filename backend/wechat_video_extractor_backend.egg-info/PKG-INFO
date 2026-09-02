@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: wechat-video-extractor-backend
+Version: 0.1.0
+Summary: FastAPI backend for the WeChat video extractor mini program
+Requires-Python: >=3.12
+Requires-Dist: fastapi<1,>=0.116
+Requires-Dist: uvicorn[standard]<1,>=0.35
+Requires-Dist: pydantic-settings<3,>=2.10
+Requires-Dist: sqlalchemy<3,>=2.0
+Requires-Dist: alembic<2,>=1.16
+Requires-Dist: PyJWT<3,>=2.10
+Requires-Dist: httpx<1,>=0.28
+Requires-Dist: aiohttp<4,>=3.13
+Requires-Dist: beautifulsoup4<5,>=4.13
+Requires-Dist: yt-dlp>=2025.1.26
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: pytest-asyncio<2,>=1; extra == "dev"
+Requires-Dist: ruff<1,>=0.12; extra == "dev"

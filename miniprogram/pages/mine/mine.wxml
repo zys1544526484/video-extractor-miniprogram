@@ -1,0 +1,24 @@
+<view class="page-shell mine-page">
+  <view class="profile-row">
+    <view class="app-avatar"><image src="/assets/icons/shield.svg" mode="aspectFit" /></view>
+    <view class="profile-copy"><text class="app-name">视频提取</text><text class="app-subtitle">公开媒体链接工具</text></view>
+  </view>
+
+  <view class="entitlement-card {{entitled ? 'is-entitled' : ''}}">
+    <view><text class="entitlement-title">{{entitlementLabel}}</text><text class="entitlement-expiry">{{expiresLabel}}</text></view>
+    <text class="entitlement-state">{{entitled ? '有效' : '未解锁'}}</text>
+  </view>
+
+  <view class="mine-list">
+    <view class="mine-row" bindtap="openTutorial"><text>使用教程</text><image src="/assets/icons/chevron.svg" /></view>
+    <view class="mine-row" bindtap="openFaq"><text>常见问题</text><image src="/assets/icons/chevron.svg" /></view>
+    <view class="mine-row" bindtap="showPrivacy"><text>隐私与存储说明</text><image src="/assets/icons/chevron.svg" /></view>
+    <button class="mine-row share-row" open-type="share"><text>分享给好友</text><image src="/assets/icons/chevron.svg" /></button>
+  </view>
+
+  <view class="mine-footer">
+    <text>仅处理公开可访问且你有权保存的内容</text>
+    <text>不绕过登录、付费、私密或技术保护</text>
+  </view>
+</view>
+
