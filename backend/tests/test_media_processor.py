@@ -101,6 +101,27 @@ async def test_oversized_video_is_compressed_to_one_valid_mp4(tmp_path: Path) ->
     assert any("合成完整视频" in stage for _, stage in updates)
 
 
+@pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="ffmpeg/ffprobe are required")
+@pytest.mark.asyncio
+async def test_processor_does_not_require_asyncio_subprocess_support(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "compatible.mp4"
+    await create_sample_video(source, duration=1)
+
+    async def forbidden_asyncio_subprocess(*args, **kwargs):
+        raise AssertionError("uvicorn's Windows event loop may not implement subprocess_exec")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden_asyncio_subprocess)
+    processor = MediaProcessor(processor_settings(tmp_path, max_video_bytes=10 * 1024 * 1024))
+
+    result = await processor.process(source, "original", None)
+
+    assert result.probe.is_mp4
+    assert result.probe.video_codec == "h264"
+
+
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="ffprobe is required")
 @pytest.mark.asyncio
 async def test_invalid_media_is_rejected(tmp_path: Path) -> None:

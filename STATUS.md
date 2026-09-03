@@ -14,7 +14,7 @@
 
 - 前端 Node 单测：25/25 PASS。
 - 小程序 JSON、路由、资源引用、JS 语法：67 文件 PASS。
-- 后端 pytest：81/81 PASS。
+- 后端 pytest：82/82 PASS。
 - `ruff check app tests alembic`：PASS。
 - `compileall app alembic`：PASS。
 - Alembic 空 SQLite 数据库升级到 `0003_parse_jobs_media_sessions`：PASS。
@@ -31,6 +31,7 @@
 - 画质选择改动后再次执行官方 CLI `open` 与 `auto`：项目载入/编译 PASS；Windows 界面截图接口返回 `SetIsBorderRequired 0x80004002`，三段式控件的视觉人工确认仍为 `NOT VERIFIED`。
 - 首版免费模式改动后再次执行官方开发者工具 CLI `open` 与 `auto`：项目载入/编译 PASS；广告隐藏后的完整视觉与真机保存仍为 `NOT VERIFIED`。
 - 持久任务与大视频进度改动后再次执行官方开发者工具 CLI `open` 与 `auto`：项目载入/编译 PASS；65 分钟长任务、接近 180MiB 成品和相册保存仍需真机验证。
+- 修复 Windows Uvicorn 事件循环不支持 asyncio 子进程的问题；真实服务再次完成用户提供的 43 分钟 B站样例，输出 171,656,688 bytes 单一 MP4，预览与下载 Range 均为 HTTP 206。
 - 小程序上传包估算由约 2.6MiB 降至约 99KiB；测试目录与未使用的大图已通过 `packOptions.ignore` 排除，尚未执行真实上传。
 - 上线前 P0 代码修复：体验版/正式版生产配置强制校验、微信登录查询串日志降级、服务端广告尝试凭证、yt-dlp 独立受限子进程与 Windows UTF-8 协议均已本地回归通过。
 - 用户提供的抖音公开短链真实 smoke test到达解析器，但上游要求 fresh cookies，按合规边界返回 `CONTENT_RESTRICTED`；没有导入 Cookie，抖音能力仍为 `NOT VERIFIED`。

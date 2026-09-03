@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 
 import pytest
@@ -255,7 +256,11 @@ def test_bilibili_selector_rejects_when_compatible_pair_is_too_large() -> None:
 
 
 @pytest.mark.asyncio
-async def test_adapter_worker_blocks_loopback_without_connecting(settings) -> None:
+async def test_adapter_worker_blocks_loopback_without_connecting(settings, monkeypatch) -> None:
+    async def forbidden_asyncio_subprocess(*args, **kwargs):
+        raise AssertionError("server code must not rely on the Windows-incompatible asyncio subprocess API")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden_asyncio_subprocess)
     settings.parse_timeout_seconds = 5
     adapter = YtDlpAdapter(settings)
 

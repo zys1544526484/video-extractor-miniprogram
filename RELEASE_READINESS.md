@@ -19,7 +19,7 @@
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：前端 25 项、后端 81 项；小程序 67 个文件的结构/语法/资源校验通过；Alembic 升级到 `0003_parse_jobs_media_sessions`。
+- 自动测试：前端 25 项、后端 82 项；小程序 67 个文件的结构/语法/资源校验通过；Alembic 升级到 `0003_parse_jobs_media_sessions`。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
 ## 未验证 Gate

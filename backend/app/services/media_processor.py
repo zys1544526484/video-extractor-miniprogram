@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+import subprocess
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,31 +61,38 @@ class MediaProcessor:
             raise AppError("SERVICE_UNAVAILABLE", f"服务器缺少 {name}", retryable=True)
         return executable
 
+    @staticmethod
+    def _process_options() -> dict[str, int]:
+        return {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
     async def probe(self, file: Path) -> MediaProbe:
         try:
             resolved = await asyncio.to_thread(file.resolve, strict=True)
         except OSError as error:
             raise AppError("PARSE_FAILED", "临时媒体不存在", retryable=True) from error
-        process = await asyncio.create_subprocess_exec(
-            self._tool("ffprobe"),
-            "-v",
-            "error",
-            "-show_format",
-            "-show_streams",
-            "-of",
-            "json",
-            str(resolved),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
         try:
-            async with asyncio.timeout(30):
-                stdout, _ = await process.communicate()
-        except TimeoutError as error:
-            process.kill()
-            await process.wait()
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                [
+                    self._tool("ffprobe"),
+                    "-v",
+                    "error",
+                    "-show_format",
+                    "-show_streams",
+                    "-of",
+                    "json",
+                    str(resolved),
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                **self._process_options(),
+            )
+        except subprocess.TimeoutExpired as error:
             raise AppError("MEDIA_FORMAT_UNSUPPORTED", "视频格式检查超时") from error
-        if process.returncode != 0 or len(stdout) > 2 * 1024 * 1024:
+        stdout = completed.stdout
+        if completed.returncode != 0 or len(stdout) > 2 * 1024 * 1024:
             raise AppError("MEDIA_FORMAT_UNSUPPORTED", "视频文件损坏或格式不受支持")
         try:
             payload: dict[str, Any] = json.loads(stdout.decode("utf-8"))
@@ -174,7 +183,7 @@ class MediaProcessor:
         progress_end: int = 93,
     ) -> None:
         await asyncio.to_thread(output.unlink, missing_ok=True)
-        process = await asyncio.create_subprocess_exec(
+        command = [
             self._tool("ffmpeg"),
             "-hide_banner",
             "-loglevel",
@@ -212,14 +221,21 @@ class MediaProcessor:
             "pipe:1",
             "-nostats",
             str(output),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        ]
+        process = await asyncio.to_thread(
+            subprocess.Popen,
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **self._process_options(),
         )
-        stderr_task = asyncio.create_task(process.stderr.read())
+        assert process.stdout is not None
+        assert process.stderr is not None
+        stderr_task = asyncio.create_task(asyncio.to_thread(process.stderr.read))
         try:
             async with asyncio.timeout(self.settings.media_processing_timeout_seconds):
-                while process.stdout:
-                    line = await process.stdout.readline()
+                while True:
+                    line = await asyncio.to_thread(process.stdout.readline)
                     if not line:
                         break
                     key, _, raw_value = line.decode("utf-8", errors="replace").partition("=")
@@ -228,14 +244,14 @@ class MediaProcessor:
                         ratio = min(1.0, elapsed / probe.duration_seconds)
                         value = progress_start + int((progress_end - progress_start) * ratio)
                         await progress(value, "压缩并合成完整视频")
-                await process.wait()
+                await asyncio.to_thread(process.wait)
         except TimeoutError as error:
             process.kill()
-            await process.wait()
+            await asyncio.to_thread(process.wait)
             raise AppError("PARSE_TIMEOUT", "视频压缩超时，请改选较低画质", retryable=True) from error
         except asyncio.CancelledError:
             process.kill()
-            await process.wait()
+            await asyncio.to_thread(process.wait)
             raise
         finally:
             await stderr_task

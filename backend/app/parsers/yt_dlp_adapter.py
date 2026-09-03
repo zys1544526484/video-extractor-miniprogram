@@ -401,24 +401,26 @@ class YtDlpAdapter:
 
         process_options: dict[str, Any] = {}
         if os.name == "nt":
-            process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            process_options["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
         else:
             process_options["start_new_session"] = True
 
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "app.parsers.yt_dlp_worker",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+        process = await asyncio.to_thread(
+            subprocess.Popen,
+            [sys.executable, "-m", "app.parsers.yt_dlp_worker"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             cwd=WORKER_CWD,
             env=environment,
             **process_options,
         )
         try:
             async with asyncio.timeout(self.settings.parse_timeout_seconds):
-                stdout, _ = await process.communicate(
+                stdout, _ = await asyncio.to_thread(
+                    process.communicate,
                     json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 )
         except TimeoutError as error:
@@ -459,7 +461,7 @@ class YtDlpAdapter:
             raise AppError("PARSE_FAILED", "平台解析结果无效", retryable=True) from error
 
     @staticmethod
-    async def _terminate_process_tree(process: asyncio.subprocess.Process) -> None:
+    async def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         if process.returncode is not None:
             return
         try:
@@ -478,7 +480,7 @@ class YtDlpAdapter:
             process.kill()
         try:
             async with asyncio.timeout(5):
-                await process.wait()
+                await asyncio.to_thread(process.wait)
         except TimeoutError:
             process.kill()
-            await process.wait()
+            await asyncio.to_thread(process.wait)
