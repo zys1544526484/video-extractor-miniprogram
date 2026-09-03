@@ -14,3 +14,10 @@ test('valid entitlement reports server-relative remaining time', () => {
   assert.match(view.label, /12小时34分/)
 })
 
+test('free mode never requires an expiry or rewarded ad', () => {
+  const view = entitlementView({ access_mode: 'free', can_download: true, entitled: true, unlock_until: null })
+  assert.equal(view.entitled, true)
+  assert.equal(view.canDownload, true)
+  assert.equal(view.accessMode, 'free')
+  assert.match(view.label, /免费保存/)
+})

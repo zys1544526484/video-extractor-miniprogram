@@ -160,6 +160,7 @@ def test_production_accepts_non_placeholder_values() -> None:
         app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
     )
     assert settings.app_env == "production"
+    assert settings.download_access_mode == "free"
 
 
 def test_production_rejects_development_entitlement_bypass() -> None:

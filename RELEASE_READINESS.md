@@ -4,20 +4,20 @@
 
 ## 当前结论
 
-**不可提审（NOT READY）**。本地 Mock、静态检查和后端自动测试通过，不代表真实微信能力、广告收益或平台解析已验证。
+**不可提审（NOT READY）**。本地 Mock、静态检查和后端自动测试通过，不代表真实微信能力或五平台解析已验证。
 
 ## 已完成
 
 - 微信原生五页面、首页/我的底部导航和统一视觉变量。
-- 免费解析/预览，保存时激励广告解锁 24 小时，完整观看后自动继续保存。
-- 激励广告页面内单例生命周期、`isEnded` 判断和 Banner 条件渲染。
+- 首版生产 `free` 模式允许登录用户直接解析、预览和保存，不渲染广告。
+- 保留 `rewarded_ad` 模式代码，但不属于首版上线 Gate。
 - FastAPI 登录令牌、SQLite 权益与广告幂等审计。
 - 体验版/正式版 production 配置门禁、服务端广告尝试凭证和敏感 HTTP 日志抑制。
 - Generic 与平台适配器、短期媒体 token、Range、大小/超时/并发限制。
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：前端 17 项、后端 63 项；小程序 64 个文件的结构/语法/资源校验通过；Alembic 升级到 `0002_rewarded_ad_attempts`。
+- 自动测试：前端 22 项、后端 70 项；小程序 66 个文件的结构/语法/资源校验通过；Alembic 升级到 `0002_rewarded_ad_attempts`。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
 ## 未验证 Gate
@@ -25,10 +25,10 @@
 | Gate | 状态 | 通过条件 |
 |---|---|---|
 | A 开发者工具 UI | PARTIAL | 362×783 Mock 主流程已通过；五页面、字体放大和 360–430px 多机型仍需人工检查 |
-| B 微信与广告 | NOT VERIFIED | AppID/AppSecret、激励广告和 Banner 真机闭环通过 |
+| B 微信身份 | NOT VERIFIED | AppID/AppSecret 与真实 `wx.login` 真机闭环通过 |
 | C 真实解析 | NOT VERIFIED | Generic 加至少一个真实平台，各 3 个公开样例有记录 |
 | D 真机下载 | NOT VERIFIED | Android/iOS 的 10MB、50MB、接近 180MiB、权限拒绝恢复、4G/Wi-Fi 通过 |
-| E 合规与提审 | NOT VERIFIED | 备案 HTTPS、合法域名、隐私指引、类目、主体和广告资格齐备 |
+| E 合规与提审 | NOT VERIFIED | 备案 HTTPS、合法域名、隐私指引、类目和主体材料齐备 |
 
 ## 发布红线
 

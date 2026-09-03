@@ -5,6 +5,7 @@ module.exports = {
   MOCK_WECHAT_AUTH: true,
   MOCK_REWARDED_AD: true,
   MOCK_AD_OUTCOME: 'completed',
+  DOWNLOAD_ACCESS_MODE: 'free',
   REWARDED_AD_UNIT_ID: '',
   BANNER_AD_UNIT_ID: ''
 }

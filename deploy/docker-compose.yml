@@ -9,6 +9,7 @@ services:
       APP_ENV: production
       MOCK_WECHAT_AUTH: "false"
       DEV_BYPASS_DOWNLOAD_ENTITLEMENT: "false"
+      DOWNLOAD_ACCESS_MODE: free
       DATABASE_URL: sqlite:////app/data/app.db
       TEMP_DIR: /app/tmp/media
     volumes:

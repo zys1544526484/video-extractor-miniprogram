@@ -19,22 +19,26 @@ Page({
     bannerAdUnitId: '',
     showBannerAd: false,
     mockMode: false,
+    accessMode: 'free',
     unlocking: false,
     saveButtonText: '保存视频'
   },
 
   onLoad() {
     const config = getConfig()
-    this.adService = createRewardedAdService({ config })
     this.downloadService = createDownloadService({ config })
-    try {
-      this.adService.init()
-    } catch (error) {
-      if (config.APP_ENV === 'production') console.warn('激励广告初始化失败')
+    if (config.DOWNLOAD_ACCESS_MODE === 'rewarded_ad') {
+      this.adService = createRewardedAdService({ config })
+      try {
+        this.adService.init()
+      } catch (error) {
+        if (config.APP_ENV === 'production') console.warn('激励广告初始化失败')
+      }
     }
     this.setData({
       bannerAdUnitId: config.BANNER_AD_UNIT_ID,
-      showBannerAd: Boolean(config.BANNER_AD_UNIT_ID) || config.APP_ENV !== 'production',
+      showBannerAd: config.DOWNLOAD_ACCESS_MODE === 'rewarded_ad' && (Boolean(config.BANNER_AD_UNIT_ID) || config.APP_ENV !== 'production'),
+      accessMode: config.DOWNLOAD_ACCESS_MODE,
       mockMode: config.MOCK_API
     })
     this.loadResult(storage.getCurrentResult())
@@ -90,6 +94,7 @@ Page({
   },
 
   async ensureDownloadEntitlement() {
+    if (this.data.accessMode === 'free') return true
     const value = await entitlement.refreshEntitlement()
     const app = getApp()
     const now = Date.now() + (app.globalData.serverOffsetMs || 0)
@@ -137,7 +142,7 @@ Page({
     try {
       await auth.ensureAuth()
       const result = await this.ensureFreshResult()
-      this.setData({ unlocking: true, saveButtonText: '检查下载权益…' })
+      this.setData({ unlocking: true, saveButtonText: this.data.accessMode === 'free' ? '准备下载…' : '检查下载权益…' })
       const entitled = await this.ensureDownloadEntitlement()
       if (!entitled) {
         this.setData({ unlocking: false, saveButtonText: '保存视频' })

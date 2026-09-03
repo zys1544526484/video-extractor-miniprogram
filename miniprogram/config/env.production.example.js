@@ -5,7 +5,7 @@ module.exports = {
   MOCK_WECHAT_AUTH: false,
   MOCK_REWARDED_AD: false,
   MOCK_AD_OUTCOME: 'completed',
-  REWARDED_AD_UNIT_ID: 'adunit-replace-with-real-id',
-  BANNER_AD_UNIT_ID: 'adunit-replace-with-real-id'
+  DOWNLOAD_ACCESS_MODE: 'free',
+  REWARDED_AD_UNIT_ID: '',
+  BANNER_AD_UNIT_ID: ''
 }
-

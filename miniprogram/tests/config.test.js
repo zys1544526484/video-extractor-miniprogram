@@ -8,28 +8,42 @@ const validProduction = {
   MOCK_WECHAT_AUTH: false,
   MOCK_REWARDED_AD: false,
   API_BASE_URL: 'https://media-api.valid-domain.cn/api/v1',
-  REWARDED_AD_UNIT_ID: 'adunit-1234567890abcdef',
-  BANNER_AD_UNIT_ID: 'adunit-fedcba0987654321'
+  DOWNLOAD_ACCESS_MODE: 'free',
+  REWARDED_AD_UNIT_ID: '',
+  BANNER_AD_UNIT_ID: ''
 }
 
 test('production rejects Mock configuration', () => {
   assert.throws(() => assertProductionSafe({ APP_ENV: 'production', MOCK_API: true }), /禁止启用 Mock/)
 })
 
-test('production requires https and both ad units', () => {
+test('production free mode requires https but not ad units', () => {
   assert.throws(() => assertProductionSafe({
     APP_ENV: 'production', MOCK_API: false, MOCK_WECHAT_AUTH: false, MOCK_REWARDED_AD: false,
-    API_BASE_URL: 'http://example.com', REWARDED_AD_UNIT_ID: 'r', BANNER_AD_UNIT_ID: 'b'
+    API_BASE_URL: 'http://example.com', DOWNLOAD_ACCESS_MODE: 'free', REWARDED_AD_UNIT_ID: '', BANNER_AD_UNIT_ID: ''
   }), /HTTPS/)
   assert.equal(assertProductionSafe(validProduction), true)
+})
+
+test('production rewarded mode requires both ad units', () => {
+  assert.throws(() => assertProductionSafe({
+    ...validProduction,
+    DOWNLOAD_ACCESS_MODE: 'rewarded_ad'
+  }), /真实广告单元/)
+  assert.equal(assertProductionSafe({
+    ...validProduction,
+    DOWNLOAD_ACCESS_MODE: 'rewarded_ad',
+    REWARDED_AD_UNIT_ID: 'adunit-1234567890abcdef',
+    BANNER_AD_UNIT_ID: 'adunit-fedcba0987654321'
+  }), true)
 })
 
 test('production rejects placeholders and unsafe release packaging', () => {
   assert.throws(() => assertProductionSafe({
     ...validProduction,
-    API_BASE_URL: 'https://api.example.com/api/v1',
-    REWARDED_AD_UNIT_ID: 'adunit-replace-with-real-id'
+    API_BASE_URL: 'https://api.example.com/api/v1'
   }), /非占位/)
+  assert.throws(() => assertProductionSafe({ ...validProduction, DOWNLOAD_ACCESS_MODE: 'invalid' }), /DOWNLOAD_ACCESS_MODE/)
   assert.throws(() => assertRuntimeSafe({ APP_ENV: 'development' }, 'trial'), /禁止打包开发 Mock/)
   assert.throws(() => assertRuntimeSafe({ APP_ENV: 'development' }, 'release'), /禁止打包开发 Mock/)
   assert.equal(assertRuntimeSafe({ APP_ENV: 'development' }, 'develop'), true)

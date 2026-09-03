@@ -1,7 +1,7 @@
 <view class="page-shell content-page">
   <view class="intro-copy">
-    <text class="page-title">保存公开视频，只需 7 步</text>
-    <text class="page-subtitle">先免费查看结果，需要保存时再解锁下载权益。</text>
+    <text class="page-title">保存公开视频，只需 6 步</text>
+    <text class="page-subtitle">解析、预览和保存当前均免费。</text>
   </view>
 
   <view class="step-list">
@@ -10,10 +10,8 @@
     <view class="step-row"><text class="step-number">3</text><view><text class="step-title">返回视频提取</text><text class="step-copy">进入首页，点击“粘贴”。</text></view></view>
     <view class="step-row"><text class="step-number">4</text><view><text class="step-title">开始提取</text><text class="step-copy">等待解析完成，失败时按页面提示重试。</text></view></view>
     <view class="step-row"><text class="step-number">5</text><view><text class="step-title">预览并确认</text><text class="step-copy">核对标题、平台、画面与版权提示。</text></view></view>
-    <view class="step-row"><text class="step-number">6</text><view><text class="step-title">解锁下载</text><text class="step-copy">首次保存时完整观看激励广告，解锁 24 小时下载。</text></view></view>
-    <view class="step-row step-row-last"><text class="step-number">7</text><view><text class="step-title">保存到相册</text><text class="step-copy">允许相册权限，等待下载和保存完成。</text></view></view>
+    <view class="step-row step-row-last"><text class="step-number">6</text><view><text class="step-title">保存到相册</text><text class="step-copy">点击保存，允许相册权限并等待下载完成。</text></view></view>
   </view>
 
   <view class="tip-card">作者已经嵌入画面的水印不会被移除；私密、付费、删除或受限制内容无法处理。</view>
 </view>
-

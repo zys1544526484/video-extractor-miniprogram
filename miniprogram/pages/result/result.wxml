@@ -48,7 +48,7 @@
   <button class="secondary-button retry-button" bindtap="extractAgain">重新提取</button>
 
   <text class="expiry-hint">结果将在短时间后失效，请及时保存</text>
-  <text class="mock-hint" wx:if="{{mockMode}}">当前为开发 Mock，不会产生真实广告收益或写入相册</text>
+  <text class="mock-hint" wx:if="{{mockMode}}">当前为开发 Mock，只演示下载流程，不会写入系统相册</text>
 </view>
 
 <view class="empty-state" wx:else>

@@ -6,8 +6,8 @@ const { entitlementView } = require('../../utils/time')
 Page({
   data: {
     entitled: false,
-    entitlementLabel: '未解锁下载',
-    expiresLabel: '观看广告后可解锁 24 小时',
+    entitlementLabel: '当前可免费保存',
+    expiresLabel: '无需观看广告，无到期时间',
     loading: false
   },
 
@@ -23,8 +23,8 @@ Page({
     const view = entitlementView(value, Date.now() + (app.globalData.serverOffsetMs || 0))
     this.setData({
       entitled: view.entitled,
-      entitlementLabel: view.entitled ? '下载权益有效' : '下载权益未解锁',
-      expiresLabel: view.entitled ? `有效期至 ${view.expiresLabel}` : '在结果页保存时观看广告即可解锁'
+      entitlementLabel: view.accessMode === 'free' ? '当前可免费保存' : (view.entitled ? '下载权益有效' : '下载权益未解锁'),
+      expiresLabel: view.accessMode === 'free' ? view.expiresLabel : (view.entitled ? `有效期至 ${view.expiresLabel}` : '在结果页保存时观看广告即可解锁')
     })
   },
 
@@ -53,7 +53,7 @@ Page({
   showPrivacy() {
     wx.showModal({
       title: '隐私与存储说明',
-      content: '仅保存认证所需标识和下载权益。部分媒体可能短时缓存，并在任务结束或过期后自动清理。',
+      content: '仅保存认证所需标识。部分媒体可能短时缓存，并在任务结束或过期后自动清理。',
       showCancel: false
     })
   },
@@ -62,4 +62,3 @@ Page({
     return { title: '视频提取｜常见公开视频链接解析工具', path: '/pages/index/index' }
   }
 })
-

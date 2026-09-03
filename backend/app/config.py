@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     wechat_app_secret: SecretStr = SecretStr("")
     mock_wechat_auth: bool = True
     dev_bypass_download_entitlement: bool = False
+    download_access_mode: Literal["free", "rewarded_ad"] = "free"
 
     max_video_bytes: int = 180 * 1024 * 1024
     parse_timeout_seconds: int = 30

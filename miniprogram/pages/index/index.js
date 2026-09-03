@@ -27,6 +27,7 @@ Page({
     bannerAdUnitId: '',
     showBannerAd: false,
     mockMode: false,
+    accessMode: 'free',
     qualityOptions: QUALITY_OPTIONS,
     selectedQuality: 'original'
   },
@@ -36,7 +37,8 @@ Page({
     const config = getConfig()
     this.setData({
       bannerAdUnitId: config.BANNER_AD_UNIT_ID,
-      showBannerAd: Boolean(config.BANNER_AD_UNIT_ID) || config.APP_ENV !== 'production',
+      showBannerAd: config.DOWNLOAD_ACCESS_MODE === 'rewarded_ad' && (Boolean(config.BANNER_AD_UNIT_ID) || config.APP_ENV !== 'production'),
+      accessMode: config.DOWNLOAD_ACCESS_MODE,
       mockMode: config.MOCK_API
     })
     this.refreshSession()
@@ -61,7 +63,8 @@ Page({
   updateEntitlementLabel(value) {
     const app = getApp()
     const now = Date.now() + (app.globalData.serverOffsetMs || 0)
-    this.setData({ entitlementLabel: entitlementView(value, now).label })
+    const view = entitlementView(value, now)
+    this.setData({ entitlementLabel: view.label, accessMode: view.accessMode || this.data.accessMode })
   },
 
   setState(state) {

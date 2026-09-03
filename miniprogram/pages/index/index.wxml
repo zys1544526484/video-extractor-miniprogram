@@ -15,10 +15,10 @@
 
   <view class="notice-line">
     <text class="notice-icon">i</text>
-    <text>解析和预览免费，保存时解锁下载权益</text>
+    <text>{{accessMode === 'free' ? '解析、预览和保存当前均免费' : '解析和预览免费，保存时解锁下载权益'}}</text>
   </view>
 
-  <view class="entitlement-strip">
+  <view class="entitlement-strip" wx:if="{{accessMode === 'rewarded_ad'}}">
     <text class="info-icon">i</text>
     <text>{{entitlementLabel}}</text>
   </view>
@@ -81,9 +81,9 @@
       <text class="utility-title">常见问题</text>
       <image class="chevron" src="/assets/icons/chevron.svg" />
     </view>
-    <view class="utility-row utility-row-last" bindtap="openMine" role="button" aria-label="我的权限">
+    <view class="utility-row utility-row-last" bindtap="openMine" role="button" aria-label="我的页面">
       <image class="utility-icon" src="/assets/icons/shield.svg" />
-      <text class="utility-title">我的权限</text>
+      <text class="utility-title">我的</text>
       <image class="chevron" src="/assets/icons/chevron.svg" />
     </view>
   </view>

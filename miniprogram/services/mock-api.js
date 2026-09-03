@@ -1,5 +1,6 @@
 const { normalizeShareText, hasHttpUrl } = require('../utils/input')
 const { normalizeRequestedQuality, qualityOption } = require('../utils/quality')
+const { getConfig } = require('../config/index')
 
 const MOCK_ENTITLEMENT_KEY = 'video_extractor_mock_entitlement'
 
@@ -12,9 +13,20 @@ function serverNow() {
 }
 
 function currentEntitlement() {
+  if (getConfig().DOWNLOAD_ACCESS_MODE === 'free') {
+    return {
+      access_mode: 'free',
+      can_download: true,
+      entitled: true,
+      unlock_until: null,
+      server_time: serverNow()
+    }
+  }
   const value = wx.getStorageSync(MOCK_ENTITLEMENT_KEY) || null
   const until = value && Date.parse(value.unlock_until)
   return {
+    access_mode: 'rewarded_ad',
+    can_download: Boolean(until && until > Date.now()),
     entitled: Boolean(until && until > Date.now()),
     unlock_until: until && until > Date.now() ? value.unlock_until : null,
     server_time: serverNow()
@@ -39,6 +51,11 @@ async function handle(path, options = {}) {
   }
 
   if (path === '/entitlement/ad-attempt' && options.method === 'POST') {
+    if (getConfig().DOWNLOAD_ACCESS_MODE === 'free') {
+      const error = new Error('当前版本无需观看广告，可直接下载')
+      error.code = 'FEATURE_DISABLED'
+      throw error
+    }
     const current = currentEntitlement()
     return {
       success: true,
@@ -51,6 +68,11 @@ async function handle(path, options = {}) {
   }
 
   if (path === '/entitlement/ad-complete' && options.method === 'POST') {
+    if (getConfig().DOWNLOAD_ACCESS_MODE === 'free') {
+      const error = new Error('当前版本无需观看广告，可直接下载')
+      error.code = 'FEATURE_DISABLED'
+      throw error
+    }
     if (!options.data || !options.data.attempt_token) {
       const error = new Error('广告确认凭证无效')
       error.code = 'AD_CONFIRM_INVALID'

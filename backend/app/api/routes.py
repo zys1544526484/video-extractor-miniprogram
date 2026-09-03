@@ -36,15 +36,30 @@ def safe_filename(platform: str, title: str) -> str:
 
 def effective_entitlement(request: Request, user_id: int) -> dict[str, object]:
     settings = request.app.state.settings
-    if settings.app_env == "development" and settings.dev_bypass_download_entitlement:
-        now = datetime.now(UTC)
+    now = datetime.now(UTC)
+    if settings.download_access_mode == "free":
         return {
+            "access_mode": "free",
+            "can_download": True,
+            "entitled": True,
+            "unlock_until": None,
+            "server_time": now.isoformat().replace("+00:00", "Z"),
+        }
+    if settings.app_env == "development" and settings.dev_bypass_download_entitlement:
+        return {
+            "access_mode": "rewarded_ad",
+            "can_download": True,
             "entitled": True,
             "unlock_until": (now + timedelta(hours=24)).isoformat().replace("+00:00", "Z"),
             "server_time": now.isoformat().replace("+00:00", "Z"),
             "development_bypass": True,
         }
-    return get_entitlement(request.app.state.database, user_id)
+    value = get_entitlement(request.app.state.database, user_id)
+    return {
+        **value,
+        "access_mode": "rewarded_ad",
+        "can_download": bool(value["entitled"]),
+    }
 
 
 @router.get("/health")
@@ -74,6 +89,8 @@ async def entitlement(request: Request, user_id: int = Depends(current_user_id))
 @router.post("/entitlement/ad-attempt")
 async def ad_attempt(request: Request, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     settings = request.app.state.settings
+    if settings.download_access_mode != "rewarded_ad":
+        raise AppError("FEATURE_DISABLED", "当前版本无需观看广告，可直接下载", status_code=409)
     current = effective_entitlement(request, user_id)
     if current["entitled"]:
         return ok(
@@ -99,6 +116,8 @@ async def ad_complete(
     user_id: int = Depends(current_user_id),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
+    if request.app.state.settings.download_access_mode != "rewarded_ad":
+        raise AppError("FEATURE_DISABLED", "当前版本无需观看广告，可直接下载", status_code=409)
     if not idempotency_key or not IDEMPOTENCY_PATTERN.fullmatch(idempotency_key):
         raise AppError("URL_INVALID", "Idempotency-Key 格式无效")
     value = complete_rewarded_ad(
@@ -188,9 +207,10 @@ async def download_media(token: str, request: Request, user_id: int = Depends(cu
     media = await request.app.state.media_sessions.get(token)
     if media.user_id != user_id:
         raise AppError("AUTH_REQUIRED", "该下载链接不属于当前用户", status_code=403)
-    current = effective_entitlement(request, user_id)
-    if not current["entitled"]:
-        raise entitlement_required()
+    if request.app.state.settings.download_access_mode == "rewarded_ad":
+        current = effective_entitlement(request, user_id)
+        if not current["can_download"]:
+            raise entitlement_required()
     if media.temporary_file:
         return local_file_response(
             media.temporary_file,

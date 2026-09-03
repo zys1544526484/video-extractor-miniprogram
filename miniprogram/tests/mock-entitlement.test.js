@@ -9,21 +9,15 @@ global.wx = {
 
 const mockApi = require('../services/mock-api')
 
-test('mock flow creates an ad attempt before granting entitlement', async () => {
+test('mock free mode grants download access and disables ad endpoints', async () => {
   storage.clear()
-  const attempt = await mockApi.handle('/entitlement/ad-attempt', { method: 'POST', data: {} })
-  assert.equal(attempt.attempt_required, true)
-  assert.match(attempt.attempt_token, /^mock_attempt_/)
+  const access = await mockApi.handle('/entitlement', { method: 'GET' })
+  assert.equal(access.access_mode, 'free')
+  assert.equal(access.can_download, true)
+  assert.equal(access.unlock_until, null)
 
   await assert.rejects(
-    mockApi.handle('/entitlement/ad-complete', { method: 'POST', data: {} }),
-    { code: 'AD_CONFIRM_INVALID' }
+    mockApi.handle('/entitlement/ad-attempt', { method: 'POST', data: {} }),
+    { code: 'FEATURE_DISABLED' }
   )
-
-  const complete = await mockApi.handle('/entitlement/ad-complete', {
-    method: 'POST',
-    data: { attempt_token: attempt.attempt_token }
-  })
-  assert.equal(complete.entitled, true)
-  assert.ok(Date.parse(complete.unlock_until) > Date.now())
 })

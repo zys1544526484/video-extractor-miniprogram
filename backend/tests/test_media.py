@@ -65,3 +65,17 @@ def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, st
     missing = client.get(f"/api/v1/media/{token}x/preview")
     assert missing.status_code == 410
     assert missing.json()["error"]["code"] == "MEDIA_SESSION_EXPIRED"
+
+
+def test_free_mode_download_requires_owner_but_not_entitlement(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    client.app.state.settings.download_access_mode = "free"
+    token, _ = create_local_media(client, auth_headers)
+
+    unauthenticated = client.get(f"/api/v1/media/{token}/download")
+    downloaded = client.get(f"/api/v1/media/{token}/download", headers=auth_headers)
+
+    assert unauthenticated.status_code == 401
+    assert downloaded.status_code == 200
+    assert downloaded.content.startswith(b"0123456789")

@@ -6,7 +6,7 @@
 
   <view class="entitlement-card {{entitled ? 'is-entitled' : ''}}">
     <view><text class="entitlement-title">{{entitlementLabel}}</text><text class="entitlement-expiry">{{expiresLabel}}</text></view>
-    <text class="entitlement-state">{{entitled ? '有效' : '未解锁'}}</text>
+    <text class="entitlement-state">{{entitled ? '可用' : '未解锁'}}</text>
   </view>
 
   <view class="mine-list">
@@ -21,4 +21,3 @@
     <text>不绕过登录、付费、私密或技术保护</text>
   </view>
 </view>
-

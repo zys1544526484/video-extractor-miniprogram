@@ -25,6 +25,8 @@ def test_auth_and_download_entitlement_flow(client: TestClient, auth_headers: di
     initial = client.get("/api/v1/entitlement", headers=auth_headers)
     assert initial.status_code == 200
     assert initial.json()["entitled"] is False
+    assert initial.json()["access_mode"] == "rewarded_ad"
+    assert initial.json()["can_download"] is False
 
     attempt = client.post("/api/v1/entitlement/ad-attempt", headers=auth_headers, json={})
     assert attempt.status_code == 200
@@ -137,6 +139,7 @@ def test_development_can_bypass_download_entitlement_without_ad(tmp_path) -> Non
         app_token_secret="development-test-secret-that-is-long-enough",
         mock_wechat_auth=True,
         dev_bypass_download_entitlement=True,
+        download_access_mode="rewarded_ad",
         temp_dir=tmp_path / "media",
     )
     with TestClient(create_app(settings)) as development_client:
@@ -152,3 +155,34 @@ def test_development_can_bypass_download_entitlement_without_ad(tmp_path) -> Non
     assert attempt.status_code == 200
     assert attempt.json()["attempt_required"] is False
     assert attempt.json()["attempt_token"] is None
+
+
+def test_free_mode_allows_download_and_disables_ad_endpoints(tmp_path) -> None:
+    settings = Settings(
+        app_env="test",
+        database_url=f"sqlite:///{tmp_path / 'free.db'}",
+        public_base_url="http://testserver",
+        app_token_secret="free-mode-test-secret-that-is-long-enough",
+        mock_wechat_auth=True,
+        download_access_mode="free",
+        temp_dir=tmp_path / "media",
+    )
+    with TestClient(create_app(settings)) as free_client:
+        auth = free_client.post("/api/v1/auth/wechat", json={"code": "free-user"})
+        headers = {"Authorization": f"Bearer {auth.json()['token']}"}
+        access = free_client.get("/api/v1/entitlement", headers=headers)
+        attempt = free_client.post("/api/v1/entitlement/ad-attempt", headers=headers, json={})
+        complete = free_client.post(
+            "/api/v1/entitlement/ad-complete",
+            headers={**headers, "Idempotency-Key": "free_mode_attempt"},
+            json={"attempt_token": "x" * 43},
+        )
+
+    assert access.status_code == 200
+    assert access.json()["access_mode"] == "free"
+    assert access.json()["can_download"] is True
+    assert access.json()["unlock_until"] is None
+    assert attempt.status_code == 409
+    assert attempt.json()["error"]["code"] == "FEATURE_DISABLED"
+    assert complete.status_code == 409
+    assert complete.json()["error"]["code"] == "FEATURE_DISABLED"

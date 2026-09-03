@@ -17,6 +17,10 @@ function isValidAdUnitId(value) {
   return /^adunit-[A-Za-z0-9_-]{8,}$/.test(text) && !PLACEHOLDER_PATTERN.test(text)
 }
 
+function isValidDownloadAccessMode(value) {
+  return value === 'free' || value === 'rewarded_ad'
+}
+
 function getConfig() {
   return Object.freeze({ ...env })
 }
@@ -29,7 +33,11 @@ function assertProductionSafe(config) {
   if (!isValidApiBaseUrl(config.API_BASE_URL)) {
     throw new Error('生产 API_BASE_URL 必须是无端口、非占位的 HTTPS 域名，并以 /api/v1 结尾')
   }
-  if (!isValidAdUnitId(config.REWARDED_AD_UNIT_ID) || !isValidAdUnitId(config.BANNER_AD_UNIT_ID)) {
+  if (!isValidDownloadAccessMode(config.DOWNLOAD_ACCESS_MODE)) {
+    throw new Error('生产 DOWNLOAD_ACCESS_MODE 必须是 free 或 rewarded_ad')
+  }
+  if (config.DOWNLOAD_ACCESS_MODE === 'rewarded_ad' &&
+      (!isValidAdUnitId(config.REWARDED_AD_UNIT_ID) || !isValidAdUnitId(config.BANNER_AD_UNIT_ID))) {
     throw new Error('生产环境必须配置非占位的真实广告单元')
   }
   return true
@@ -50,5 +58,6 @@ module.exports = {
   assertProductionSafe,
   assertRuntimeSafe,
   isValidApiBaseUrl,
-  isValidAdUnitId
+  isValidAdUnitId,
+  isValidDownloadAccessMode
 }
