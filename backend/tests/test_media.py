@@ -42,10 +42,12 @@ def test_preview_is_capability_url_but_download_needs_entitlement(
     assert blocked.status_code == 403
     assert blocked.json()["error"]["code"] == "ENTITLEMENT_REQUIRED"
 
+    attempt = client.post("/api/v1/entitlement/ad-attempt", headers=auth_headers, json={})
+    attempt_token = attempt.json()["attempt_token"]
     client.post(
         "/api/v1/entitlement/ad-complete",
         headers={**auth_headers, "Idempotency-Key": "ad_event_download_1"},
-        json={},
+        json={"attempt_token": attempt_token},
     )
     downloaded = client.get(f"/api/v1/media/{token}/download", headers=auth_headers)
     assert downloaded.status_code == 200
@@ -63,4 +65,3 @@ def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, st
     missing = client.get(f"/api/v1/media/{token}x/preview")
     assert missing.status_code == 410
     assert missing.json()["error"]["code"] == "MEDIA_SESSION_EXPIRED"
-

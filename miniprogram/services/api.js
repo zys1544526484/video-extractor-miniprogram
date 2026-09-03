@@ -1,6 +1,7 @@
 const { getConfig } = require('../config/index')
 const storage = require('./storage')
 const mockApi = require('./mock-api')
+const { normalizeRequestedQuality } = require('../utils/quality')
 
 function toApiError(payload, statusCode) {
   const detail = payload && payload.error ? payload.error : {}
@@ -58,18 +59,26 @@ async function request(path, options = {}) {
 
 module.exports = {
   request,
-  parse(text) {
-    return request('/parse', { method: 'POST', data: { text } })
+  parse(text, quality = 'original') {
+    const config = getConfig()
+    const timeout = config.APP_ENV === 'development' ? 600000 : 30000
+    return request('/parse', {
+      method: 'POST',
+      data: { text, quality: normalizeRequestedQuality(quality) },
+      timeout
+    })
   },
   entitlement() {
     return request('/entitlement', { method: 'GET' })
   },
-  adComplete(idempotencyKey) {
+  adAttempt() {
+    return request('/entitlement/ad-attempt', { method: 'POST', data: {} })
+  },
+  adComplete(idempotencyKey, attemptToken) {
     return request('/entitlement/ad-complete', {
       method: 'POST',
-      data: {},
+      data: { attempt_token: attemptToken },
       header: { 'Idempotency-Key': idempotencyKey }
     })
   }
 }
-

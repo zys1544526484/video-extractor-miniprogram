@@ -17,6 +17,7 @@ def settings(tmp_path) -> Settings:
         public_base_url="http://testserver",
         app_token_secret="test-token-secret-that-is-long-enough-123",
         mock_wechat_auth=True,
+        ad_attempt_min_seconds=0,
         temp_dir=tmp_path / "media",
         media_session_ttl_seconds=900,
     )
@@ -34,4 +35,3 @@ def auth_headers(client: TestClient) -> dict[str, str]:
     assert response.status_code == 200
     token = response.json()["token"]
     return {"Authorization": f"Bearer {token}"}
-

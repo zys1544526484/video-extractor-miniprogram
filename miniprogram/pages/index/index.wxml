@@ -39,6 +39,27 @@
     <text class="char-count">{{charCount}}/5000</text>
   </view>
 
+  <view class="quality-panel">
+    <view class="quality-heading">
+      <text class="quality-title">提取画质</text>
+      <text class="quality-hint">对应档位不可用时会返回最接近的较低公开画质</text>
+    </view>
+    <view class="quality-options">
+      <view
+        wx:for="{{qualityOptions}}"
+        wx:key="value"
+        class="quality-option {{selectedQuality === item.value ? 'quality-option-active' : ''}} {{busy ? 'quality-option-disabled' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="selectQuality"
+        role="button"
+        aria-label="选择{{item.label}}画质"
+      >
+        <text class="quality-option-label">{{item.label}}</text>
+        <text class="quality-option-note">{{item.note}}</text>
+      </view>
+    </view>
+  </view>
+
   <view class="action-row">
     <button class="primary-button parse-button" disabled="{{busy}}" bindtap="startParse">{{buttonText}}</button>
     <button class="secondary-button paste-button" disabled="{{busy}}" bindtap="pasteClipboard">粘贴</button>
@@ -67,4 +88,3 @@
     </view>
   </view>
 </view>
-

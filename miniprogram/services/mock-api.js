@@ -1,4 +1,5 @@
 const { normalizeShareText, hasHttpUrl } = require('../utils/input')
+const { normalizeRequestedQuality, qualityOption } = require('../utils/quality')
 
 const MOCK_ENTITLEMENT_KEY = 'video_extractor_mock_entitlement'
 
@@ -37,7 +38,24 @@ async function handle(path, options = {}) {
     return { success: true, request_id: 'req_mock_entitlement', ...currentEntitlement() }
   }
 
+  if (path === '/entitlement/ad-attempt' && options.method === 'POST') {
+    const current = currentEntitlement()
+    return {
+      success: true,
+      request_id: 'req_mock_ad_attempt',
+      ...current,
+      attempt_required: !current.entitled,
+      attempt_token: current.entitled ? null : 'mock_attempt_' + Date.now(),
+      attempt_expires_at: current.entitled ? null : new Date(Date.now() + 10 * 60000).toISOString()
+    }
+  }
+
   if (path === '/entitlement/ad-complete' && options.method === 'POST') {
+    if (!options.data || !options.data.attempt_token) {
+      const error = new Error('广告确认凭证无效')
+      error.code = 'AD_CONFIRM_INVALID'
+      throw error
+    }
     const existing = currentEntitlement()
     if (existing.entitled) return { success: true, request_id: 'req_mock_ad', ...existing }
     const value = {
@@ -51,6 +69,7 @@ async function handle(path, options = {}) {
 
   if (path === '/parse' && options.method === 'POST') {
     const text = normalizeShareText(options.data && options.data.text)
+    const requestedQuality = normalizeRequestedQuality(options.data && options.data.quality)
     if (!hasHttpUrl(text)) {
       const error = new Error('未识别到有效链接')
       error.code = 'URL_NOT_FOUND'
@@ -68,7 +87,8 @@ async function handle(path, options = {}) {
         media_type: 'video',
         duration_seconds: 42,
         size_bytes: 5320000,
-        quality_label: '高清',
+        quality_label: qualityOption(requestedQuality).label,
+        requested_quality: requestedQuality,
         preview_url: '/assets/mock-video.mp4',
         download_url: '/assets/mock-video.mp4',
         expires_at: new Date(Date.now() + 15 * 60000).toISOString(),

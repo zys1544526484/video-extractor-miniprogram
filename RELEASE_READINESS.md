@@ -12,10 +12,12 @@
 - 免费解析/预览，保存时激励广告解锁 24 小时，完整观看后自动继续保存。
 - 激励广告页面内单例生命周期、`isEnded` 判断和 Banner 条件渲染。
 - FastAPI 登录令牌、SQLite 权益与广告幂等审计。
+- 体验版/正式版 production 配置门禁、服务端广告尝试凭证和敏感 HTTP 日志抑制。
 - Generic 与平台适配器、短期媒体 token、Range、大小/超时/并发限制。
+- yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：前端 15 项、后端 43 项；小程序结构/语法/资源校验通过。
+- 自动测试：前端 17 项、后端 63 项；小程序 64 个文件的结构/语法/资源校验通过；Alembic 升级到 `0002_rewarded_ad_attempts`。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
 ## 未验证 Gate

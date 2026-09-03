@@ -18,7 +18,12 @@ class YtDlpPlatformParser(BaseParser):
 
     async def parse(self, url: str, context: ParseContext) -> ParserResultModel:
         await context.http.validate_url(url)
-        return await self.adapter.extract(url, self.platform, download_media=self.download_media)
+        return await self.adapter.extract(
+            url,
+            self.platform,
+            download_media=self.download_media,
+            requested_quality=context.requested_quality,
+        )
 
 
 class KuaishouParser(BaseParser):
@@ -41,4 +46,3 @@ class KuaishouParser(BaseParser):
             ) from error
         result.platform = "快手"
         return result
-

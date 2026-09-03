@@ -130,3 +130,46 @@ async def test_parser_cannot_escape_temp_root(tmp_path: Path) -> None:
 def test_production_rejects_mock_and_insecure_base_url() -> None:
     with pytest.raises(ValidationError):
         Settings(app_env="production")
+
+
+def test_production_rejects_public_placeholders() -> None:
+    common = {
+        "app_env": "production",
+        "mock_wechat_auth": False,
+        "public_base_url": "https://media-api.valid-domain.cn",
+        "wechat_app_id": "wx1234567890abcdef",
+        "wechat_app_secret": "0123456789abcdef0123456789abcdef",
+    }
+    with pytest.raises(ValidationError):
+        Settings(**common, app_token_secret="replace-this-with-at-least-32-random-characters")
+    with pytest.raises(ValidationError):
+        Settings(
+            **{**common, "public_base_url": "https://api.example.com"},
+            app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
+        )
+
+
+def test_production_accepts_non_placeholder_values() -> None:
+    settings = Settings(
+        app_env="production",
+        mock_wechat_auth=False,
+        dev_bypass_download_entitlement=False,
+        public_base_url="https://media-api.valid-domain.cn",
+        wechat_app_id="wx1234567890abcdef",
+        wechat_app_secret="0123456789abcdef0123456789abcdef",
+        app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
+    )
+    assert settings.app_env == "production"
+
+
+def test_production_rejects_development_entitlement_bypass() -> None:
+    with pytest.raises(ValidationError, match="DEV_BYPASS_DOWNLOAD_ENTITLEMENT"):
+        Settings(
+            app_env="production",
+            mock_wechat_auth=False,
+            dev_bypass_download_entitlement=True,
+            public_base_url="https://media-api.valid-domain.cn",
+            wechat_app_id="wx1234567890abcdef",
+            wechat_app_secret="0123456789abcdef0123456789abcdef",
+            app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
+        )

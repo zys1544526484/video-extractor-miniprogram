@@ -39,3 +39,22 @@ class AdUnlockEvent(Base):
 
 
 Index("ix_ad_unlock_events_user_occurred", AdUnlockEvent.user_id, AdUnlockEvent.occurred_at)
+
+
+class RewardedAdAttempt(Base):
+    __tablename__ = "rewarded_ad_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
+    eligible_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+Index(
+    "ix_rewarded_ad_attempts_user_created",
+    RewardedAdAttempt.user_id,
+    RewardedAdAttempt.created_at,
+)

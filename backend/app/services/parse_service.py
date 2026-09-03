@@ -50,13 +50,17 @@ class ParseService:
         async with self.lock:
             self.active_users.discard(user_id)
 
-    async def parse(self, text: str, user_id: int) -> ParsePublicResult:
+    async def parse(self, text: str, user_id: int, quality: str = "original") -> ParsePublicResult:
         await self._enter(user_id)
         try:
             url = extract_first_http_url(text)
             platform = detect_platform(url)
             parser = self.registry.get(platform)
-            context = ParseContext(settings=self.settings, http=self.http)
+            context = ParseContext(
+                settings=self.settings,
+                http=self.http,
+                requested_quality=quality,
+            )
             async with self.semaphore:
                 try:
                     async with asyncio.timeout(self.settings.parse_timeout_seconds):
@@ -99,6 +103,7 @@ class ParseService:
                 duration_seconds=result.duration_seconds,
                 size_bytes=result.size_bytes,
                 quality_label=result.quality_label,
+                requested_quality=quality,
                 preview_url=f"{path}/preview",
                 download_url=f"{path}/download",
                 expires_at=session.expires_at,

@@ -1,4 +1,14 @@
-const { getConfig, assertProductionSafe } = require('./config/index')
+const { getConfig, assertProductionSafe, assertRuntimeSafe } = require('./config/index')
+
+function runtimeEnvVersion() {
+  if (!wx.getAccountInfoSync) return 'unknown'
+  try {
+    const account = wx.getAccountInfoSync()
+    return (account && account.miniProgram && account.miniProgram.envVersion) || 'unknown'
+  } catch (error) {
+    return 'unknown'
+  }
+}
 
 App({
   globalData: {
@@ -12,7 +22,7 @@ App({
   onLaunch() {
     const config = getConfig()
     assertProductionSafe(config)
+    assertRuntimeSafe(config, runtimeEnvVersion())
     this.globalData.config = config
   }
 })
-

@@ -12,6 +12,7 @@ from ..services.safe_http import SafeHttpClient
 class ParseContext:
     settings: Settings
     http: SafeHttpClient
+    requested_quality: str = "original"
 
 
 class BaseParser(ABC):
@@ -24,4 +25,3 @@ class BaseParser(ABC):
     @abstractmethod
     async def parse(self, url: str, context: ParseContext) -> ParserResultModel:
         raise NotImplementedError
-

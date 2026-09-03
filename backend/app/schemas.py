@@ -12,6 +12,11 @@ class WechatAuthRequest(BaseModel):
 
 class ParseRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
+    quality: Literal["original", "720p", "540p"] = "original"
+
+
+class AdCompleteRequest(BaseModel):
+    attempt_token: str = Field(min_length=32, max_length=128)
 
 
 class ErrorDetail(BaseModel):
@@ -50,9 +55,9 @@ class ParsePublicResult(BaseModel):
     duration_seconds: float | None
     size_bytes: int | None
     quality_label: str | None
+    requested_quality: Literal["original", "720p", "540p"]
     preview_url: str
     download_url: str
     expires_at: datetime
     watermark_status: str
     notice: str
-

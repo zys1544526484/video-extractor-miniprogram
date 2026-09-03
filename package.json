@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test miniprogram/tests/*.test.js",
     "validate:miniprogram": "node scripts/validate_miniprogram.js",
+    "validate:production": "node scripts/validate_miniprogram.js --production",
     "check": "npm test && npm run validate:miniprogram"
   }
 }
-

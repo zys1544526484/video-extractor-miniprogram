@@ -5,6 +5,7 @@ const { execFileSync } = require('node:child_process')
 const root = path.resolve(__dirname, '..')
 const mini = path.join(root, 'miniprogram')
 const failures = []
+const productionCheck = process.argv.includes('--production')
 
 function fail(message) {
   failures.push(message)
@@ -70,10 +71,20 @@ const combined = allFiles
   .join('\n')
 if (/WECHAT_APP_SECRET\s*[:=]\s*['"][^'"]+/.test(combined)) fail('小程序代码疑似包含 AppSecret')
 
+if (productionCheck) {
+  try {
+    const { getConfig, assertProductionSafe, assertRuntimeSafe } = require(path.join(mini, 'config'))
+    const config = getConfig()
+    assertProductionSafe(config)
+    assertRuntimeSafe(config, 'release')
+  } catch (error) {
+    fail(`生产发布配置无效：${error.message}`)
+  }
+}
+
 if (failures.length) {
   console.error(failures.map((item) => `- ${item}`).join('\n'))
   process.exit(1)
 }
 
 console.log(`Mini Program validation PASS (${allFiles.length} files checked)`)
-

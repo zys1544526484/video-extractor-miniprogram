@@ -78,8 +78,12 @@ Page({
     if (result && Date.parse(result.expires_at) > serverNow) return result
     if (!result || !result.source_text) throw new Error('结果已过期，请重新提取')
     this.setData({ state: 'loading' })
-    const response = await api.parse(result.source_text)
-    const refreshed = { ...response.result, source_text: result.source_text }
+    const response = await api.parse(result.source_text, result.requested_quality || 'original')
+    const refreshed = {
+      ...response.result,
+      source_text: result.source_text,
+      requested_quality: response.result.requested_quality || result.requested_quality || 'original'
+    }
     storage.setCurrentResult(refreshed)
     this.loadResult(refreshed)
     return refreshed
@@ -102,6 +106,15 @@ Page({
     })
     if (!confirmed) return false
 
+    const attempt = await entitlement.startAdAttempt()
+    if (!attempt.attempt_required && attempt.entitled) {
+      entitlement.saveEntitlement(attempt)
+      return true
+    }
+    if (!attempt.attempt_token) {
+      throw new Error('无法创建广告确认凭证，请稍后重试')
+    }
+
     let adResult
     try {
       adResult = await this.adService.show()
@@ -113,7 +126,7 @@ Page({
       wx.showToast({ title: '需完整观看广告才能解锁下载', icon: 'none' })
       return false
     }
-    await entitlement.completeAd(createIdempotencyKey())
+    await entitlement.completeAd(createIdempotencyKey(), attempt.attempt_token)
     if (adResult.mock) wx.showToast({ title: '开发模式：已模拟完整观看', icon: 'none' })
     return true
   },

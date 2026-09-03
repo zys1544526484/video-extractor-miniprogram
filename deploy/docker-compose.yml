@@ -6,6 +6,9 @@ services:
     env_file:
       - ../backend/.env
     environment:
+      APP_ENV: production
+      MOCK_WECHAT_AUTH: "false"
+      DEV_BYPASS_DOWNLOAD_ENTITLEMENT: "false"
       DATABASE_URL: sqlite:////app/data/app.db
       TEMP_DIR: /app/tmp/media
     volumes:

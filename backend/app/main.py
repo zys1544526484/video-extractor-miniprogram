@@ -27,6 +27,11 @@ logger = logging.getLogger("video_extractor")
 
 def configure_logging(level: str) -> None:
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), format="%(message)s")
+    # HTTPX logs the complete request URL at INFO. WeChat code2Session carries
+    # AppSecret and the one-time login code in its query string, so those
+    # libraries must never inherit the application INFO level.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def error_payload(request: Request, error: AppError) -> dict[str, object]:

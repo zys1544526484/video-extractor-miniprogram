@@ -7,6 +7,7 @@ const { normalizeShareText, hasHttpUrl } = require('../../utils/input')
 const { entitlementView } = require('../../utils/time')
 const { HOME_TRANSITIONS, createStateMachine } = require('../../utils/state-machine')
 const { presentApiError } = require('../../utils/api-error')
+const { QUALITY_OPTIONS, normalizeRequestedQuality } = require('../../utils/quality')
 
 const BUTTON_LABELS = {
   idle: '开始提取',
@@ -25,7 +26,9 @@ Page({
     entitlementLabel: '观看广告可解锁 24 小时下载',
     bannerAdUnitId: '',
     showBannerAd: false,
-    mockMode: false
+    mockMode: false,
+    qualityOptions: QUALITY_OPTIONS,
+    selectedQuality: 'original'
   },
 
   onLoad() {
@@ -94,6 +97,12 @@ Page({
     }
   },
 
+  selectQuality(event) {
+    if (this.data.busy) return
+    const selectedQuality = normalizeRequestedQuality(event.currentTarget.dataset.value)
+    this.setData({ selectedQuality })
+  },
+
   async startParse() {
     if (this.data.busy) return
     const inputText = normalizeShareText(this.data.inputText)
@@ -110,8 +119,12 @@ Page({
     try {
       await auth.ensureAuth()
       this.setState('parsing')
-      const response = await api.parse(inputText)
-      storage.setCurrentResult({ ...response.result, source_text: inputText })
+      const response = await api.parse(inputText, this.data.selectedQuality)
+      storage.setCurrentResult({
+        ...response.result,
+        source_text: inputText,
+        requested_quality: response.result.requested_quality || this.data.selectedQuality
+      })
       this.setState('idle')
       wx.navigateTo({ url: '/pages/result/result' })
     } catch (error) {

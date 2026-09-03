@@ -19,9 +19,12 @@ async function refreshEntitlement() {
   return saveEntitlement(await api.entitlement())
 }
 
-async function completeAd(idempotencyKey) {
-  return saveEntitlement(await api.adComplete(idempotencyKey))
+async function startAdAttempt() {
+  return api.adAttempt()
 }
 
-module.exports = { refreshEntitlement, completeAd, saveEntitlement }
+async function completeAd(idempotencyKey, attemptToken) {
+  return saveEntitlement(await api.adComplete(idempotencyKey, attemptToken))
+}
 
+module.exports = { refreshEntitlement, startAdAttempt, completeAd, saveEntitlement }

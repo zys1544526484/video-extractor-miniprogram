@@ -35,7 +35,8 @@
 
   <view class="notice-card">
     <view class="notice-row"><text class="notice-symbol">✓</text><text>请确认你有权保存该内容</text></view>
-    <view class="notice-row notice-row-last"><text class="notice-symbol">i</text><text>{{watermarkText}}</text></view>
+    <view class="notice-row {{result.notice ? '' : 'notice-row-last'}}"><text class="notice-symbol">i</text><text>{{watermarkText}}</text></view>
+    <view class="notice-row notice-row-last" wx:if="{{result.notice}}"><text class="notice-symbol">i</text><text>{{result.notice}}</text></view>
   </view>
 
   <view class="progress-block" wx:if="{{state === 'downloading' || state === 'saving' || state === 'success'}}">

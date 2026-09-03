@@ -18,6 +18,12 @@ function presentApiError(error = {}) {
       message: error.message || '请求较多，请稍后再试。'
     }
   }
+  if (error.code === 'MEDIA_TOO_LARGE') {
+    return {
+      title: '所选画质文件过大',
+      message: error.message || '请改选较低画质后重试。'
+    }
+  }
   return {
     title: '提取失败',
     message: error.message || '暂时无法提取'
