@@ -3,6 +3,7 @@ const { normalizeRequestedQuality, qualityOption } = require('../utils/quality')
 const { getConfig } = require('../config/index')
 
 const MOCK_ENTITLEMENT_KEY = 'video_extractor_mock_entitlement'
+const MOCK_JOBS = new Map()
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -34,7 +35,7 @@ function currentEntitlement() {
 }
 
 async function handle(path, options = {}) {
-  await wait(path === '/parse' ? 850 : 120)
+  await wait(path === '/parse' ? 120 : 80)
 
   if (path === '/auth/wechat' && options.method === 'POST') {
     return {
@@ -98,9 +99,13 @@ async function handle(path, options = {}) {
       error.retryable = false
       throw error
     }
-    return {
-      success: true,
-      request_id: 'req_mock_parse',
+    const key = options.header && options.header['Idempotency-Key']
+    const existing = key && [...MOCK_JOBS.values()].find((item) => item.key === key)
+    if (existing) return { success: true, request_id: 'req_mock_parse', job: mockJobView(existing) }
+    const job = {
+      key,
+      job_id: `pj_mock_${Date.now()}`,
+      createdAt: Date.now(),
       result: {
         session_id: 'mock_session',
         platform: '抖音',
@@ -113,16 +118,46 @@ async function handle(path, options = {}) {
         requested_quality: requestedQuality,
         preview_url: '/assets/mock-video.mp4',
         download_url: '/assets/mock-video.mp4',
-        expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
+        expires_at: new Date(Date.now() + 2 * 3600000).toISOString(),
         watermark_status: 'source_original',
         notice: '开发模式示例，不代表真实平台解析结果。'
       }
     }
+    MOCK_JOBS.set(job.job_id, job)
+    return { success: true, request_id: 'req_mock_parse', job: mockJobView(job) }
+  }
+
+  const jobMatch = /^\/parse\/jobs\/([^/]+)$/.exec(path)
+  if (jobMatch && options.method === 'GET') {
+    const job = MOCK_JOBS.get(jobMatch[1])
+    if (!job) {
+      const error = new Error('提取任务不存在')
+      error.code = 'JOB_NOT_FOUND'
+      throw error
+    }
+    return { success: true, request_id: 'req_mock_job', job: mockJobView(job) }
+  }
+  if (jobMatch && options.method === 'DELETE') {
+    const job = MOCK_JOBS.get(jobMatch[1])
+    if (job) job.cancelled = true
+    return { success: true, request_id: 'req_mock_cancel', job: mockJobView(job) }
   }
 
   const error = new Error('Mock API 未实现该接口')
   error.code = 'INTERNAL_ERROR'
   throw error
+}
+
+function mockJobView(job) {
+  if (!job) return { status: 'cancelled', progress: 0, stage: '已取消' }
+  const elapsed = Date.now() - job.createdAt
+  if (job.cancelled) return { job_id: job.job_id, status: 'cancelled', progress: 0, stage: '已取消' }
+  if (elapsed < 250) return { job_id: job.job_id, status: 'queued', progress: 0, stage: '等待处理' }
+  if (elapsed < 900) {
+    const progress = Math.min(92, Math.round((elapsed - 250) / 7))
+    return { job_id: job.job_id, status: 'processing', progress, stage: '准备完整视频' }
+  }
+  return { job_id: job.job_id, status: 'ready', progress: 100, stage: '处理完成', result: job.result }
 }
 
 module.exports = { handle, currentEntitlement }

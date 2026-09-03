@@ -18,6 +18,7 @@ from .database import Database
 from .errors import AppError
 from .parsers.registry import ParserRegistry
 from .services.media_sessions import MediaSessionStore
+from .services.parse_jobs import ParseJobService
 from .services.parse_service import ParseService
 from .services.safe_http import SafeHttpClient
 
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_video_bytes=app_settings.max_video_bytes,
         )
         media_sessions = MediaSessionStore(
+            database,
             app_settings.media_session_ttl_seconds,
             app_settings.temp_dir,
             app_settings.temp_file_ttl_seconds,
@@ -71,22 +73,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.safe_http = safe_http
         app.state.media_sessions = media_sessions
         app.state.parse_service = ParseService(app_settings, safe_http, registry, media_sessions)
+        parse_jobs = ParseJobService(
+            app_settings,
+            database,
+            app.state.parse_service,
+            media_sessions,
+        )
+        app.state.parse_jobs = parse_jobs
+        await parse_jobs.start()
 
         async def janitor() -> None:
             while True:
                 await asyncio.sleep(60)
                 await media_sessions.cleanup()
+                await parse_jobs.cleanup()
 
         task = asyncio.create_task(janitor())
         try:
             yield
         finally:
+            await parse_jobs.stop()
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
                 pass
             await media_sessions.cleanup()
+            await parse_jobs.cleanup()
             database.close()
 
     app = FastAPI(title="视频提取 API", version=app_settings.version, lifespan=lifespan)

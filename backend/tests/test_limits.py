@@ -8,7 +8,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.database import Database
 from app.errors import AppError
+from app.models import User
 from app.parsers.base import BaseParser, ParseContext
 from app.schemas import ParserResultModel
 from app.services.media_sessions import MediaSessionStore
@@ -59,13 +61,21 @@ async def test_safe_http_rejects_declared_oversized_media() -> None:
 
 @pytest.mark.asyncio
 async def test_expired_media_token_and_orphan_cleanup(tmp_path: Path) -> None:
-    store = MediaSessionStore(ttl_seconds=-1, temp_root=tmp_path, temp_file_ttl_seconds=1)
+    database = Database(f"sqlite:///{tmp_path / 'sessions.db'}")
+    database.create_schema()
+    with database.session_factory() as session:
+        session.add(User(openid="media-test-user"))
+        session.commit()
+    stored = tmp_path / "stored" / "video.mp4"
+    stored.parent.mkdir(parents=True)
+    stored.write_bytes(b"video")
+    store = MediaSessionStore(database, ttl_seconds=-1, temp_root=tmp_path, temp_file_ttl_seconds=1)
     media = await store.create(
         user_id=1,
         platform="generic",
         title="video",
-        upstream_url="https://example.com/video.mp4",
-        temporary_file=None,
+        upstream_url=None,
+        temporary_file=str(stored),
         required_headers={},
         mime_type="video/mp4",
         size_bytes=10,
@@ -78,8 +88,10 @@ async def test_expired_media_token_and_orphan_cleanup(tmp_path: Path) -> None:
     orphan.parent.mkdir(parents=True)
     orphan.write_bytes(b"old")
     os.utime(orphan.parent, (0, 0))
-    assert await store.cleanup() == 1
+    assert await store.cleanup() == 2
+    assert not stored.parent.exists()
     assert not orphan.parent.exists()
+    database.close()
 
 
 class EscapingParser(BaseParser):
@@ -116,15 +128,18 @@ async def test_parser_cannot_escape_temp_root(tmp_path: Path) -> None:
         database_url=str(outside),
         temp_dir=tmp_path / "allowed",
     )
+    _database = Database(f"sqlite:///{tmp_path / 'escape-media.db'}")
+    _database.create_schema()
     service = ParseService(
         settings,
         NoNetworkHttp(),
         SingleRegistry(),
-        MediaSessionStore(60, settings.temp_dir),
+        MediaSessionStore(_database, 60, settings.temp_dir),
     )
     with pytest.raises(AppError) as captured:
         await service.parse("https://example.com/watch", user_id=1)
     assert captured.value.code == "PARSE_FAILED"
+    _database.close()
 
 
 def test_production_rejects_mock_and_insecure_base_url() -> None:

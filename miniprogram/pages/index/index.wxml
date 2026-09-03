@@ -65,6 +65,12 @@
     <button class="secondary-button paste-button" disabled="{{busy}}" bindtap="pasteClipboard">粘贴</button>
   </view>
 
+  <view class="parse-progress" wx:if="{{state === 'parsing'}}">
+    <view class="parse-progress-copy"><text>{{parseStage || '正在准备完整视频'}}</text><text>{{parseProgress}}%</text></view>
+    <view class="parse-progress-track"><view class="parse-progress-value" style="width: {{parseProgress}}%;"></view></view>
+    <text class="parse-progress-hint">大视频可能需要较长时间，可离开页面后稍后返回查看</text>
+  </view>
+
   <view class="legal-copy">
     <text>仅处理公开可访问且你有权保存的内容</text>
     <text>部分内容可能短时缓存，并在任务结束或过期后自动清理</text>

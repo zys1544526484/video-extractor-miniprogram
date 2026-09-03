@@ -2,6 +2,19 @@ const { getConfig } = require('../config/index')
 const storage = require('./storage')
 const mockApi = require('./mock-api')
 const { normalizeRequestedQuality } = require('../utils/quality')
+const { createOperationKey } = require('../utils/idempotency')
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function parseJobError(job) {
+  const detail = (job && job.error) || {}
+  const error = new Error(detail.message || '提取失败')
+  error.code = detail.code || 'PARSE_FAILED'
+  error.retryable = Boolean(detail.retryable)
+  return error
+}
 
 function toApiError(payload, statusCode) {
   const detail = payload && payload.error ? payload.error : {}
@@ -59,14 +72,51 @@ async function request(path, options = {}) {
 
 module.exports = {
   request,
-  parse(text, quality = 'original') {
-    const config = getConfig()
-    const timeout = config.APP_ENV === 'development' ? 600000 : 30000
+  createParse(text, quality = 'original', idempotencyKey = createOperationKey('parse')) {
     return request('/parse', {
       method: 'POST',
       data: { text, quality: normalizeRequestedQuality(quality) },
-      timeout
+      header: { 'Idempotency-Key': idempotencyKey },
+      timeout: 30000
     })
+  },
+  parseJob(jobId) {
+    return request(`/parse/jobs/${jobId}`, { method: 'GET' })
+  },
+  cancelParse(jobId) {
+    return request(`/parse/jobs/${jobId}`, { method: 'DELETE' })
+  },
+  async waitForParseJob(jobId, onProgress, options = {}) {
+    const interval = options.pollInterval == null ? 1500 : options.pollInterval
+    const maxWait = options.maxWait == null ? 30 * 60 * 1000 : options.maxWait
+    const started = Date.now()
+    while (Date.now() - started <= maxWait) {
+      if (options.shouldContinue && !options.shouldContinue()) return null
+      const response = await request(`/parse/jobs/${jobId}`, { method: 'GET' })
+      const job = response.job
+      if (onProgress) onProgress(job)
+      if (job.status === 'ready') return job.result
+      if (job.status === 'failed') throw parseJobError(job)
+      if (job.status === 'cancelled') {
+        const error = new Error('提取任务已取消')
+        error.code = 'JOB_CANCELLED'
+        throw error
+      }
+      if (job.status === 'expired') {
+        const error = new Error('提取任务已过期，请重新提交')
+        error.code = 'JOB_EXPIRED'
+        throw error
+      }
+      await wait(interval)
+    }
+    const error = new Error('处理时间较长，任务仍在后台继续，可稍后返回查看')
+    error.code = 'PARSE_POLL_TIMEOUT'
+    error.retryable = true
+    throw error
+  },
+  async parse(text, quality = 'original', onProgress) {
+    const created = await this.createParse(text, quality)
+    return { result: await this.waitForParseJob(created.job.job_id, onProgress) }
   },
   entitlement() {
     return request('/entitlement', { method: 'GET' })

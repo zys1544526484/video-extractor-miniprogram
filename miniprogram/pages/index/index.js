@@ -8,6 +8,7 @@ const { entitlementView } = require('../../utils/time')
 const { HOME_TRANSITIONS, createStateMachine } = require('../../utils/state-machine')
 const { presentApiError } = require('../../utils/api-error')
 const { QUALITY_OPTIONS, normalizeRequestedQuality } = require('../../utils/quality')
+const { createOperationKey } = require('../../utils/idempotency')
 
 const BUTTON_LABELS = {
   idle: '开始提取',
@@ -29,10 +30,13 @@ Page({
     mockMode: false,
     accessMode: 'free',
     qualityOptions: QUALITY_OPTIONS,
-    selectedQuality: 'original'
+    selectedQuality: 'original',
+    parseProgress: 0,
+    parseStage: ''
   },
 
   onLoad() {
+    this.pollGeneration = 0
     this.stateMachine = createStateMachine('idle', HOME_TRANSITIONS)
     const config = getConfig()
     this.setData({
@@ -42,6 +46,10 @@ Page({
       mockMode: config.MOCK_API
     })
     this.refreshSession()
+  },
+
+  onUnload() {
+    this.pollGeneration += 1
   },
 
   onShow() {
@@ -55,6 +63,7 @@ Page({
       await auth.ensureAuth()
       const value = await entitlement.refreshEntitlement()
       this.updateEntitlementLabel(value)
+      await this.resumeParseJob()
     } catch (error) {
       this.updateEntitlementLabel(storage.getEntitlement())
     }
@@ -122,14 +131,20 @@ Page({
     try {
       await auth.ensureAuth()
       this.setState('parsing')
-      const response = await api.parse(inputText, this.data.selectedQuality)
-      storage.setCurrentResult({
-        ...response.result,
+      const created = await api.createParse(
+        inputText,
+        this.data.selectedQuality,
+        createOperationKey('parse')
+      )
+      const jobId = created.job.job_id
+      storage.setParseJob({
+        job_id: jobId,
         source_text: inputText,
-        requested_quality: response.result.requested_quality || this.data.selectedQuality
+        requested_quality: this.data.selectedQuality
       })
-      this.setState('idle')
-      wx.navigateTo({ url: '/pages/result/result' })
+      const result = await this.watchParseJob(jobId)
+      if (!result) return
+      this.completeParseResult(result, inputText, this.data.selectedQuality)
     } catch (error) {
       this.setState('error')
       const presented = presentApiError(error)
@@ -139,6 +154,42 @@ Page({
         showCancel: false
       })
     }
+  },
+
+  async watchParseJob(jobId) {
+    if (this.data.state === 'idle' || this.data.state === 'error') this.setState('checking')
+    if (this.data.state === 'checking') this.setState('parsing')
+    const generation = ++this.pollGeneration
+    return api.waitForParseJob(jobId, (job) => {
+      this.setData({ parseProgress: job.progress || 0, parseStage: job.stage || '处理中' })
+    }, {
+      shouldContinue: () => generation === this.pollGeneration
+    })
+  },
+
+  async resumeParseJob() {
+    const pending = storage.getParseJob()
+    if (!pending || !pending.job_id || this.data.busy) return
+    try {
+      const result = await this.watchParseJob(pending.job_id)
+      if (result) this.completeParseResult(result, pending.source_text || '', pending.requested_quality || 'original')
+    } catch (error) {
+      storage.clearParseJob()
+      this.setState('error')
+      const presented = presentApiError(error)
+      wx.showModal({ title: presented.title, content: presented.message, showCancel: false })
+    }
+  },
+
+  completeParseResult(result, sourceText, requestedQuality) {
+    storage.setCurrentResult({
+      ...result,
+      source_text: sourceText,
+      requested_quality: result.requested_quality || requestedQuality
+    })
+    storage.clearParseJob()
+    this.setState('idle')
+    wx.navigateTo({ url: '/pages/result/result' })
   },
 
   openTutorial() {

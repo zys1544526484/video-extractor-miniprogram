@@ -129,14 +129,42 @@ async def ad_complete(
     return ok(request, **value)
 
 
-@router.post("/parse")
-async def parse(
+@router.post("/parse", status_code=202)
+async def create_parse_job(
     body: ParseRequest,
     request: Request,
     user_id: int = Depends(current_user_id),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    result = await request.app.state.parse_service.parse(body.text, user_id, body.quality)
-    return ok(request, result=result.model_dump(mode="json"))
+    if not idempotency_key or not IDEMPOTENCY_PATTERN.fullmatch(idempotency_key):
+        raise AppError("IDEMPOTENCY_KEY_INVALID", "Idempotency-Key 格式无效")
+    job = await request.app.state.parse_jobs.create(
+        user_id=user_id,
+        text=body.text,
+        quality=body.quality,
+        idempotency_key=idempotency_key,
+    )
+    return ok(request, job=job)
+
+
+@router.get("/parse/jobs/{job_id}")
+async def get_parse_job(
+    job_id: str,
+    request: Request,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    job = await request.app.state.parse_jobs.get(job_id, user_id=user_id)
+    return ok(request, job=job)
+
+
+@router.delete("/parse/jobs/{job_id}")
+async def cancel_parse_job(
+    job_id: str,
+    request: Request,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    job = await request.app.state.parse_jobs.cancel(job_id, user_id=user_id)
+    return ok(request, job=job)
 
 
 def local_file_response(file: Path, *, download: bool, filename: str, media_type: str) -> FileResponse:

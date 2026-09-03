@@ -24,7 +24,7 @@ Copy-Item .env.example .env
 
 小程序在没有真实凭证时使用开发配置。复制 `miniprogram/project.config.json.example` 为 `project.config.json` 后，用微信开发者工具打开 `miniprogram/`。真实 AppID、AppSecret 和广告单元不要提交到 Git。
 
-要在微信开发者工具中测试真实公开链接，请保持后端 `.env` 为 `APP_ENV=development`、`MOCK_WECHAT_AUTH=true`、`DOWNLOAD_ACCESS_MODE=free`，并将 `miniprogram/config/env.js` 设为 `MOCK_API=false`。Bilibili 长视频本机测试可把 `PARSE_TIMEOUT_SECONDS` 设为 `600`。模拟器中的 `127.0.0.1` 指向本机，真机体验必须改用已备案 HTTPS 合法域名。
+要在微信开发者工具中测试真实公开链接，请保持后端 `.env` 为 `APP_ENV=development`、`MOCK_WECHAT_AUTH=true`、`DOWNLOAD_ACCESS_MODE=free`，并将 `miniprogram/config/env.js` 设为 `MOCK_API=false`。解析现采用持久任务：页面重开会继续查询，结果默认可访问 2 小时；长视频默认最多处理 30 分钟。模拟器中的 `127.0.0.1` 指向本机，真机体验必须改用已备案 HTTPS 合法域名。
 
 首页默认选择“原视频”，也可选择 720P 或 540P。结果页显示平台实际返回的分辨率和编码；Bilibili 的 720P H.264 超限时可使用同分辨率 H.265 公开源兜底。H.265 虽在微信 video 组件文档中列为 Android/iOS 支持，正式发布前仍必须分别完成真机预览、下载和相册播放验证。
 

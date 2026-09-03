@@ -183,6 +183,43 @@
   margin-top: 14px;
 }
 
+.parse-progress {
+  margin-top: 14px;
+  padding: 14px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.parse-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  color: #44464a;
+  font-size: 14px;
+}
+
+.parse-progress-track {
+  height: 7px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: #e8eaec;
+  border-radius: 4px;
+}
+
+.parse-progress-value {
+  height: 100%;
+  background: #07c160;
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+.parse-progress-hint {
+  display: block;
+  margin-top: 9px;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .parse-button {
   flex: 1;
   margin-right: 10px;

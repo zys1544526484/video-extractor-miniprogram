@@ -1,7 +1,7 @@
 const HOME_TRANSITIONS = {
   idle: ['checking'],
   checking: ['parsing', 'error', 'idle'],
-  parsing: ['idle', 'error'],
+  parsing: ['idle', 'error', 'ready'],
   error: ['checking', 'idle']
 }
 
@@ -33,4 +33,3 @@ function createStateMachine(initial, transitions) {
 }
 
 module.exports = { HOME_TRANSITIONS, RESULT_TRANSITIONS, createStateMachine }
-

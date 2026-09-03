@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+import tempfile
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -50,7 +53,55 @@ class ParseService:
         async with self.lock:
             self.active_users.discard(user_id)
 
-    async def parse(self, text: str, user_id: int, quality: str = "original") -> ParsePublicResult:
+    async def _materialize_remote(
+        self,
+        result,
+        progress: Callable[[int, str], Awaitable[None]] | None,
+    ) -> None:
+        if not result.upstream_media_url:
+            return
+        directory = Path(
+            await asyncio.to_thread(tempfile.mkdtemp, prefix="media_", dir=self.settings.temp_dir)
+        )
+        partial = directory / "video.mp4.part"
+        final = directory / "video.mp4"
+        opened = None
+        try:
+            opened = await self.http.open_stream(
+                result.upstream_media_url,
+                headers=result.required_headers,
+            )
+            declared = opened.response.headers.get("content-length")
+            total = int(declared) if declared and declared.isdigit() else result.size_bytes
+            transferred = 0
+            with partial.open("wb") as output:
+                async for chunk in opened.response.aiter_bytes():
+                    transferred += len(chunk)
+                    if transferred > self.settings.max_video_bytes:
+                        raise AppError("MEDIA_TOO_LARGE", "视频超过 180MiB 限制")
+                    output.write(chunk)
+                    if progress and total:
+                        percent = 45 + min(40, int(transferred * 40 / max(total, 1)))
+                        await progress(percent, "下载公开媒体")
+            partial.replace(final)
+            result.temporary_file = str(final)
+            result.upstream_media_url = None
+            result.required_headers = {}
+            result.size_bytes = transferred
+        except BaseException:
+            await asyncio.to_thread(shutil.rmtree, directory, True)
+            raise
+        finally:
+            if opened is not None:
+                await opened.close()
+
+    async def parse(
+        self,
+        text: str,
+        user_id: int,
+        quality: str = "original",
+        progress: Callable[[int, str], Awaitable[None]] | None = None,
+    ) -> ParsePublicResult:
         await self._enter(user_id)
         try:
             url = extract_first_http_url(text)
@@ -61,12 +112,18 @@ class ParseService:
                 http=self.http,
                 requested_quality=quality,
             )
+            if progress:
+                await progress(10, "解析公开页面")
             async with self.semaphore:
                 try:
                     async with asyncio.timeout(self.settings.parse_timeout_seconds):
                         result = await parser.parse(url, context)
                 except TimeoutError as error:
                     raise AppError("PARSE_TIMEOUT", "提取超时，请稍后重试", retryable=True) from error
+
+            if progress:
+                await progress(45, "准备媒体文件")
+            await self._materialize_remote(result, progress)
 
             if bool(result.upstream_media_url) == bool(result.temporary_file):
                 raise AppError("PARSE_FAILED", "解析结果缺少唯一媒体来源")
@@ -93,6 +150,8 @@ class ParseService:
                 mime_type=result.mime_type,
                 size_bytes=result.size_bytes,
             )
+            if progress:
+                await progress(95, "生成安全下载链接")
             base = self.settings.public_base_url.rstrip("/")
             path = f"{base}/api/v1/media/{session.token}"
             return ParsePublicResult(

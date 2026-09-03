@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'video_extractor_auth_token'
 const ENTITLEMENT_KEY = 'video_extractor_download_entitlement'
 const RESULT_KEY = 'video_extractor_current_result'
+const PARSE_JOB_KEY = 'video_extractor_parse_job'
 
 function getToken() {
   return wx.getStorageSync(TOKEN_KEY) || ''
@@ -34,6 +35,18 @@ function clearCurrentResult() {
   wx.removeStorageSync(RESULT_KEY)
 }
 
+function setParseJob(job) {
+  wx.setStorageSync(PARSE_JOB_KEY, job || null)
+}
+
+function getParseJob() {
+  return wx.getStorageSync(PARSE_JOB_KEY) || ''
+}
+
+function clearParseJob() {
+  wx.removeStorageSync(PARSE_JOB_KEY)
+}
+
 module.exports = {
   getToken,
   setToken,
@@ -42,6 +55,8 @@ module.exports = {
   setEntitlement,
   setCurrentResult,
   getCurrentResult,
-  clearCurrentResult
+  clearCurrentResult,
+  setParseJob,
+  getParseJob,
+  clearParseJob
 }
-

@@ -5,6 +5,7 @@ import asyncio
 from fastapi.testclient import TestClient
 
 from app.security.tokens import decode_auth_token
+from app.services.media_sessions import MediaSessionStore
 
 
 def create_local_media(client: TestClient, auth_headers: dict[str, str]) -> tuple[str, int]:
@@ -79,3 +80,21 @@ def test_free_mode_download_requires_owner_but_not_entitlement(
     assert unauthenticated.status_code == 401
     assert downloaded.status_code == 200
     assert downloaded.content.startswith(b"0123456789")
+
+
+def test_media_token_survives_store_restart(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    token, user_id = create_local_media(client, auth_headers)
+    settings = client.app.state.settings
+    restarted_store = MediaSessionStore(
+        client.app.state.database,
+        settings.media_session_ttl_seconds,
+        settings.temp_dir,
+        settings.temp_file_ttl_seconds,
+    )
+
+    restored = asyncio.run(restarted_store.get(token))
+
+    assert restored.user_id == user_id
+    assert restored.temporary_file.read_bytes().startswith(b"0123456789")

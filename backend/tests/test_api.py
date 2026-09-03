@@ -102,7 +102,11 @@ def test_consumed_ad_attempt_cannot_unlock_again_after_entitlement_expires(
 def test_parse_is_authenticated_but_not_entitlement_gated(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    response = client.post("/api/v1/parse", headers=auth_headers, json={"text": "没有链接"})
+    response = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "parse_no_url_0001"},
+        json={"text": "没有链接"},
+    )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "URL_NOT_FOUND"
 

@@ -34,12 +34,13 @@ class Settings(BaseSettings):
     download_access_mode: Literal["free", "rewarded_ad"] = "free"
 
     max_video_bytes: int = 180 * 1024 * 1024
-    parse_timeout_seconds: int = 30
-    media_session_ttl_seconds: int = 900
-    temp_file_ttl_seconds: int = 1800
+    parse_timeout_seconds: int = 1800
+    media_session_ttl_seconds: int = 7200
+    temp_file_ttl_seconds: int = 10800
+    parse_job_ttl_seconds: int = 86400
     max_redirects: int = 5
     http_timeout_seconds: int = 20
-    global_parse_concurrency: int = 4
+    global_parse_concurrency: int = 1
     user_parse_limit_per_10_minutes: int = 10
     ad_attempt_min_seconds: int = 5
     ad_attempt_ttl_seconds: int = 600

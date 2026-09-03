@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
@@ -17,6 +17,14 @@ class Database:
                 Path(file_name).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
         connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
         self.engine = create_engine(database_url, connect_args=connect_args, future=True)
+        if database_url.startswith("sqlite"):
+            @event.listens_for(self.engine, "connect")
+            def configure_sqlite(connection, _record) -> None:
+                cursor = connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                if database_url != "sqlite:///:memory:":
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.close()
         self.session_factory = sessionmaker(self.engine, expire_on_commit=False, class_=Session)
 
     def create_schema(self) -> None:
@@ -28,4 +36,3 @@ class Database:
 
     def close(self) -> None:
         self.engine.dispose()
-

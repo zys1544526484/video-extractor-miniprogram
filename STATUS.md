@@ -12,14 +12,15 @@
 
 ## 本地验证结果
 
-- 前端 Node 单测：22/22 PASS。
-- 小程序 JSON、路由、资源引用、JS 语法：66 文件 PASS。
-- 后端 pytest：70/70 PASS。
+- 前端 Node 单测：24/24 PASS。
+- 小程序 JSON、路由、资源引用、JS 语法：67 文件 PASS。
+- 后端 pytest：75/75 PASS。
 - `ruff check app tests alembic`：PASS。
 - `compileall app alembic`：PASS。
-- Alembic 空 SQLite 数据库升级到 `0002_rewarded_ad_attempts`：PASS。
+- Alembic 空 SQLite 数据库升级到 `0003_parse_jobs_media_sessions`：PASS。
 - Uvicorn 进程级 health/auth/entitlement/ad-complete：PASS。
 - 首版正式免费模式：`DOWNLOAD_ACCESS_MODE=free` 时登录用户可直接下载，前端隐藏广告与权益 Gate，生产配置不要求 adUnitId；广告模式代码保留但默认关闭。
+- 持久解析任务：创建/轮询/取消、幂等、用户隔离、服务重启恢复、页面重开续查和 0–100 进度自动测试 PASS；任务与媒体会话存入 SQLite，token 只存摘要，结果默认有效 2 小时。
 - Generic 公网 MP4 真实链路：解析、短期 token、Range 预览和带认证下载 PASS（HTTP 206）。
 - Bilibili 公开视频真实链路：公开元数据预检、180MiB 内 H.264 自动降档、DASH 下载与 ffmpeg 合并、短期 token、Range 预览和带认证下载 PASS（HTTP 206）；该样例为 480P H.264 + AAC、142,463,085 bytes，真机保存仍 `NOT VERIFIED`。
 - 画质选择：原视频/720P/540P 参数、首页选择器、过期结果按原选择刷新、超限提示和 720P H.265 兜底已通过自动测试；H.265 预览和保存尚未真机验证。

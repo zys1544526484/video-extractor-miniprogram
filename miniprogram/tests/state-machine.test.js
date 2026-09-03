@@ -15,6 +15,14 @@ test('home state machine rejects duplicate parse transition', () => {
   assert.throws(() => machine.transition('parsing'), /非法状态转换/)
 })
 
+test('home state machine supports persistent job completion', () => {
+  const machine = createStateMachine('idle', HOME_TRANSITIONS)
+  machine.transition('checking')
+  machine.transition('parsing')
+  machine.transition('ready')
+  assert.equal(machine.state, 'ready')
+})
+
 test('result state machine covers download and save', () => {
   const machine = createStateMachine('loading', RESULT_TRANSITIONS)
   machine.transition('ready')
@@ -23,4 +31,3 @@ test('result state machine covers download and save', () => {
   machine.transition('success')
   assert.equal(machine.state, 'success')
 })
-

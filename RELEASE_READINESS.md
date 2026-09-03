@@ -1,6 +1,6 @@
 # Release Readiness — V1
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 
 ## 当前结论
 
@@ -12,12 +12,13 @@
 - 首版生产 `free` 模式允许登录用户直接解析、预览和保存，不渲染广告。
 - 保留 `rewarded_ad` 模式代码，但不属于首版上线 Gate。
 - FastAPI 登录令牌、SQLite 权益与广告幂等审计。
+- SQLite 持久解析任务、重启恢复、页面续查、0–100 进度和持久媒体 token 摘要。
 - 体验版/正式版 production 配置门禁、服务端广告尝试凭证和敏感 HTTP 日志抑制。
 - Generic 与平台适配器、短期媒体 token、Range、大小/超时/并发限制。
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：前端 22 项、后端 70 项；小程序 66 个文件的结构/语法/资源校验通过；Alembic 升级到 `0002_rewarded_ad_attempts`。
+- 自动测试：前端 24 项、后端 75 项；小程序 67 个文件的结构/语法/资源校验通过；Alembic 升级到 `0003_parse_jobs_media_sessions`。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
 ## 未验证 Gate
