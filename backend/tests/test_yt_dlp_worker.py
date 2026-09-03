@@ -216,6 +216,14 @@ def test_bilibili_selector_does_not_silently_downgrade_original_quality() -> Non
     assert quality_720 == "720P H.265"
     assert estimated_720 == 120 * 1024 * 1024
 
+    selected_large, quality_large, _ = YtDlpAdapter._select_bilibili_download_format(
+        info,
+        2 * 1024 * 1024 * 1024,
+        "original",
+    )
+    assert selected_large == "1080+audio"
+    assert quality_large == "1080P H.264 · 原视频"
+
 
 def test_bilibili_selector_rejects_when_compatible_pair_is_too_large() -> None:
     info = {

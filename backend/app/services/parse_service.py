@@ -13,6 +13,7 @@ from ..errors import AppError
 from ..parsers.base import ParseContext
 from ..parsers.registry import ParserRegistry
 from ..schemas import ParsePublicResult
+from .media_processor import MediaProcessor
 from .media_sessions import MediaSessionStore
 from .safe_http import SafeHttpClient
 from .url_service import detect_platform, extract_first_http_url
@@ -25,11 +26,13 @@ class ParseService:
         http: SafeHttpClient,
         registry: ParserRegistry,
         media_sessions: MediaSessionStore,
+        media_processor: MediaProcessor | None = None,
     ) -> None:
         self.settings = settings
         self.http = http
         self.registry = registry
         self.media_sessions = media_sessions
+        self.media_processor = media_processor or MediaProcessor(settings)
         self.semaphore = asyncio.Semaphore(settings.global_parse_concurrency)
         self.active_users: set[int] = set()
         self.recent: dict[int, deque[datetime]] = defaultdict(deque)
@@ -65,24 +68,54 @@ class ParseService:
         )
         partial = directory / "video.mp4.part"
         final = directory / "video.mp4"
-        opened = None
         try:
-            opened = await self.http.open_stream(
-                result.upstream_media_url,
-                headers=result.required_headers,
-            )
-            declared = opened.response.headers.get("content-length")
-            total = int(declared) if declared and declared.isdigit() else result.size_bytes
             transferred = 0
-            with partial.open("wb") as output:
-                async for chunk in opened.response.aiter_bytes():
-                    transferred += len(chunk)
-                    if transferred > self.settings.max_video_bytes:
-                        raise AppError("MEDIA_TOO_LARGE", "视频超过 180MiB 限制")
-                    output.write(chunk)
-                    if progress and total:
-                        percent = 45 + min(40, int(transferred * 40 / max(total, 1)))
-                        await progress(percent, "下载公开媒体")
+            total = result.size_bytes
+            completed = False
+            last_error: Exception | None = None
+            for attempt in range(3):
+                opened = None
+                try:
+                    opened = await self.http.open_stream(
+                        result.upstream_media_url,
+                        headers=result.required_headers,
+                        range_header=f"bytes={transferred}-" if transferred else None,
+                    )
+                    declared = opened.response.headers.get("content-length")
+                    if transferred and opened.response.status_code != 206:
+                        transferred = 0
+                        partial.unlink(missing_ok=True)
+                    if total is None and declared and declared.isdigit():
+                        total = transferred + int(declared)
+                    if total and total > self.settings.max_source_video_bytes:
+                        raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
+                    mode = "ab" if transferred else "wb"
+                    with partial.open(mode) as output:
+                        async for chunk in opened.response.aiter_bytes():
+                            transferred += len(chunk)
+                            if transferred > self.settings.max_source_video_bytes:
+                                raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
+                            output.write(chunk)
+                            if progress and total:
+                                percent = 20 + min(34, int(transferred * 34 / max(total, 1)))
+                                await progress(percent, "分块下载公开媒体")
+                    completed = True
+                    break
+                except AppError:
+                    raise
+                except Exception as error:
+                    last_error = error
+                    if attempt == 2:
+                        raise AppError(
+                            "DOWNLOAD_FAILED",
+                            "源视频分块下载失败，请稍后重试",
+                            retryable=True,
+                        ) from error
+                finally:
+                    if opened is not None:
+                        await opened.close()
+            if not completed:
+                raise AppError("DOWNLOAD_FAILED", "源视频下载失败", retryable=True) from last_error
             partial.replace(final)
             result.temporary_file = str(final)
             result.upstream_media_url = None
@@ -91,9 +124,6 @@ class ParseService:
         except BaseException:
             await asyncio.to_thread(shutil.rmtree, directory, True)
             raise
-        finally:
-            if opened is not None:
-                await opened.close()
 
     async def parse(
         self,
@@ -122,7 +152,7 @@ class ParseService:
                     raise AppError("PARSE_TIMEOUT", "提取超时，请稍后重试", retryable=True) from error
 
             if progress:
-                await progress(45, "准备媒体文件")
+                await progress(20, "准备媒体文件")
             await self._materialize_remote(result, progress)
 
             if bool(result.upstream_media_url) == bool(result.temporary_file):
@@ -137,8 +167,21 @@ class ParseService:
                     raise AppError("PARSE_FAILED", "临时媒体路径无效") from error
                 if not file.is_file():
                     raise AppError("PARSE_FAILED", "临时媒体不存在")
-                if file.stat().st_size > self.settings.max_video_bytes:
-                    raise AppError("MEDIA_TOO_LARGE", "视频超过 180MiB 限制")
+                if file.stat().st_size > self.settings.max_source_video_bytes:
+                    raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
+                processed = await self.media_processor.process(
+                    file,
+                    quality,
+                    result.quality_label,
+                    progress,
+                )
+                result.temporary_file = str(processed.file)
+                result.size_bytes = processed.probe.size_bytes
+                result.duration_seconds = processed.probe.duration_seconds
+                result.quality_label = processed.quality_label
+                result.mime_type = "video/mp4"
+                if processed.notice:
+                    result.notices.append(processed.notice)
 
             session = await self.media_sessions.create(
                 user_id=user_id,

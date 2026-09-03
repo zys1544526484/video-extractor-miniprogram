@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import secrets
+import shutil
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
@@ -91,6 +92,14 @@ class ParseJobService:
         quality: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
+        disk = await asyncio.to_thread(shutil.disk_usage, self.settings.temp_dir)
+        if disk.free < self.settings.min_free_disk_bytes:
+            raise AppError(
+                "SERVICE_BUSY",
+                "服务器临时空间不足，请稍后重试",
+                status_code=503,
+                retryable=True,
+            )
         source_url = extract_first_http_url(text)
         platform = detect_platform(source_url)
         digest = self._idempotency_hash(user_id, idempotency_key)
@@ -209,6 +218,23 @@ class ParseJobService:
             job.updated_at = utc_now_naive()
             session.commit()
 
+    async def _heartbeat(self, job_id: str) -> None:
+        while True:
+            await asyncio.sleep(1.5)
+            with self.database.session_factory() as session:
+                job = session.get(ParseJob, job_id)
+                if job is None or job.status != "processing":
+                    return
+                job.progress = min(90, max(1, job.progress + 1))
+                if job.progress < 20:
+                    job.stage = "解析公开页面"
+                elif job.progress < 57:
+                    job.stage = "分块下载并准备视频"
+                else:
+                    job.stage = "压缩并合成完整视频"
+                job.updated_at = utc_now_naive()
+                session.commit()
+
     async def _run_job(self, job_id: str) -> None:
         with self.database.session_factory() as session:
             job = session.get(ParseJob, job_id)
@@ -223,12 +249,20 @@ class ParseJobService:
             source_url = job.source_url
             quality = job.requested_quality
         try:
-            result = await self.parse_service.parse(
-                source_url,
-                user_id,
-                quality,
-                progress=lambda value, stage: self._progress(job_id, value, stage),
-            )
+            heartbeat = asyncio.create_task(self._heartbeat(job_id))
+            try:
+                result = await self.parse_service.parse(
+                    source_url,
+                    user_id,
+                    quality,
+                    progress=lambda value, stage: self._progress(job_id, value, stage),
+                )
+            finally:
+                heartbeat.cancel()
+                try:
+                    await heartbeat
+                except asyncio.CancelledError:
+                    pass
             result_data = result.model_dump(mode="json")
             result_data.pop("preview_url", None)
             result_data.pop("download_url", None)

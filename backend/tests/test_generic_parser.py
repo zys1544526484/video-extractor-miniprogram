@@ -20,6 +20,11 @@ class FakeHttp:
         return {"url": url, "content_type": "video/mp4", "size": 1024}
 
 
+class WebmHttp(FakeHttp):
+    async def probe_media(self, url: str):
+        return {"url": url, "content_type": "video/webm", "size": 2048}
+
+
 async def test_generic_parser_extracts_standard_html() -> None:
     parser = GenericParser()
     result = await parser.parse(
@@ -39,3 +44,11 @@ async def test_generic_parser_accepts_direct_mp4() -> None:
     )
     assert result.upstream_media_url.endswith("video.mp4")
 
+
+async def test_generic_parser_accepts_public_webm_for_later_mp4_conversion() -> None:
+    result = await GenericParser().parse(
+        "https://public.example/media/video.webm",
+        ParseContext(settings=Settings(app_env="test"), http=WebmHttp()),
+    )
+    assert result.upstream_media_url.endswith("video.webm")
+    assert result.mime_type == "video/webm"

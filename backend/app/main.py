@@ -59,7 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         safe_http = SafeHttpClient(
             timeout_seconds=app_settings.http_timeout_seconds,
             max_redirects=app_settings.max_redirects,
-            max_video_bytes=app_settings.max_video_bytes,
+            max_video_bytes=app_settings.max_source_video_bytes,
         )
         media_sessions = MediaSessionStore(
             database,

@@ -10,7 +10,7 @@ from ..errors import AppError
 from ..schemas import ParserResultModel
 from .base import BaseParser, ParseContext
 
-DIRECT_VIDEO_EXTENSIONS = {".mp4"}
+DIRECT_VIDEO_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 
 
 class GenericParser(BaseParser):
@@ -29,8 +29,6 @@ class GenericParser(BaseParser):
         cover_url: str = "",
     ) -> ParserResultModel:
         metadata = await context.http.probe_media(media_url)
-        if metadata["content_type"] != "video/mp4":
-            raise AppError("MEDIA_FORMAT_UNSUPPORTED", "相册保存目前只支持公开 MP4 视频")
         return ParserResultModel(
             platform="generic",
             canonical_url=canonical_url,
@@ -41,7 +39,7 @@ class GenericParser(BaseParser):
             size_bytes=metadata["size"],
             quality_label="公开资源",
             watermark_status="unknown",
-            notices=["普通网页视频来源可能随页面变化而失效"],
+            notices=["普通网页视频来源可能随页面变化而失效；非 MP4 源将自动转换"],
         )
 
     async def parse(self, url: str, context: ParseContext) -> ParserResultModel:
@@ -90,5 +88,5 @@ class GenericParser(BaseParser):
             except AppError as error:
                 errors.append(error)
         if errors and any(error.code == "MEDIA_TOO_LARGE" for error in errors):
-            raise AppError("MEDIA_TOO_LARGE", "页面中的视频超过 180MiB 限制")
+            raise AppError("MEDIA_TOO_LARGE", "页面中的源视频超过服务器可处理上限")
         raise AppError("PLATFORM_UNSUPPORTED", "该公开网页中未找到标准视频资源")

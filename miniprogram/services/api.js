@@ -3,6 +3,7 @@ const storage = require('./storage')
 const mockApi = require('./mock-api')
 const { normalizeRequestedQuality } = require('../utils/quality')
 const { createOperationKey } = require('../utils/idempotency')
+const PARSE_JOB_MAX_WAIT_MS = 65 * 60 * 1000
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -71,6 +72,7 @@ async function request(path, options = {}) {
 }
 
 module.exports = {
+  PARSE_JOB_MAX_WAIT_MS,
   request,
   createParse(text, quality = 'original', idempotencyKey = createOperationKey('parse')) {
     return request('/parse', {
@@ -88,7 +90,7 @@ module.exports = {
   },
   async waitForParseJob(jobId, onProgress, options = {}) {
     const interval = options.pollInterval == null ? 1500 : options.pollInterval
-    const maxWait = options.maxWait == null ? 30 * 60 * 1000 : options.maxWait
+    const maxWait = options.maxWait == null ? PARSE_JOB_MAX_WAIT_MS : options.maxWait
     const started = Date.now()
     while (Date.now() - started <= maxWait) {
       if (options.shouldContinue && !options.shouldContinue()) return null

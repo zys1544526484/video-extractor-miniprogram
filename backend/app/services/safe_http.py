@@ -278,7 +278,7 @@ class SafeHttpClient:
         content_length = response_headers.get("content-length")
         size = int(content_length) if content_length and content_length.isdigit() else None
         if size and size > self.max_video_bytes:
-            raise AppError("MEDIA_TOO_LARGE", "视频超过 180MiB 限制")
+            raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
         if not (content_type.startswith("video/") or content_type in MEDIA_CONTENT_TYPES):
             raise AppError("MEDIA_FORMAT_UNSUPPORTED", "目标资源不是受支持的视频格式")
         return {"url": final_url, "content_type": content_type, "size": size}

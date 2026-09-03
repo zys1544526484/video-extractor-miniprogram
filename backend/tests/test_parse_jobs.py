@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import timedelta
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -146,6 +147,25 @@ def test_parse_requires_idempotency_key(client: TestClient, auth_headers: dict[s
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_INVALID"
+
+
+def test_new_job_is_rejected_when_safe_disk_reserve_is_exhausted(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.parse_jobs.shutil.disk_usage",
+        lambda _path: SimpleNamespace(total=100, used=100, free=0),
+    )
+    response = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "parse_job_disk_full_01"},
+        json={"text": "https://example.com/video", "quality": "540p"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_BUSY"
 
 
 def test_processing_job_is_requeued_after_service_restart(

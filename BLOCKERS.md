@@ -8,7 +8,7 @@
 | 网络 | 已备案 HTTPS 域名与服务器 | request/download/video 合法域名无法配置 |
 | UI Gate A | 字体放大及 360–430px 多机型人工检查 | 官方工具中的 362×783 Mock 主流程已通过，但 Gate A 尚未全部完成 |
 | 容器 | Docker / Docker Compose | 镜像构建、volume、Caddy 自动证书尚未实机验证 |
-| 真机 | Android、iOS 设备 | 相册权限、200MB 客户端上限、720P H.265 预览/相册播放和网络切换未验证 |
+| 真机 | Android、iOS 设备 | 相册权限、接近 180MiB 自动压缩成品、长视频播放、网络切换和中断恢复未验证 |
 | 合规 | 主体、类目与隐私指引 | 个人主体类目可用性和审核材料尚未确认 |
 
 真实平台 smoke test目前有 1 条 Bilibili 公开视频完整链路通过、1 条 Generic 公开 MP4 通过，以及 2 条抖音公开短链受限记录；微博、小红书和快手尚未执行成功样例，详见 `docs/PLATFORM_SMOKE_REPORT.md`。这不阻塞本地开发，但阻塞 Release Candidate。

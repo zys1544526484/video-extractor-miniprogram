@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     download_access_mode: Literal["free", "rewarded_ad"] = "free"
 
     max_video_bytes: int = 180 * 1024 * 1024
+    max_source_video_bytes: int = 2 * 1024 * 1024 * 1024
+    min_free_disk_bytes: int = 10 * 1024 * 1024 * 1024
     parse_timeout_seconds: int = 1800
+    media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 7200
     temp_file_ttl_seconds: int = 10800
     parse_job_ttl_seconds: int = 86400
@@ -51,6 +54,15 @@ class Settings(BaseSettings):
     def production_safety(self) -> Settings:
         if self.max_video_bytes <= 0 or self.max_video_bytes > 200 * 1024 * 1024:
             raise ValueError("MAX_VIDEO_BYTES 必须在 1..200MiB 范围内")
+        if (
+            self.max_source_video_bytes < self.max_video_bytes
+            or self.max_source_video_bytes > 4 * 1024 * 1024 * 1024
+        ):
+            raise ValueError("MAX_SOURCE_VIDEO_BYTES 必须不小于成品上限且不超过 4GiB")
+        if self.min_free_disk_bytes < 0:
+            raise ValueError("MIN_FREE_DISK_BYTES 不得为负数")
+        if self.media_processing_timeout_seconds < 30:
+            raise ValueError("MEDIA_PROCESSING_TIMEOUT_SECONDS 不得低于 30 秒")
         if self.max_redirects < 0 or self.max_redirects > 10:
             raise ValueError("MAX_REDIRECTS 必须在 0..10 范围内")
         if self.ad_attempt_min_seconds < 0 or self.ad_attempt_min_seconds > 120:

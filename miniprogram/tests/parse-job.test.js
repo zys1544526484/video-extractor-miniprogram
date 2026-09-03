@@ -9,6 +9,11 @@ global.wx = {
 }
 
 const mockApi = require('../services/mock-api')
+const api = require('../services/api')
+
+test('large parse jobs remain visible for the full server processing window', () => {
+  assert.equal(api.PARSE_JOB_MAX_WAIT_MS, 65 * 60 * 1000)
+})
 
 test('mock parse job is idempotent and progresses to one complete result', async () => {
   const options = {

@@ -71,10 +71,11 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     settings = SimpleNamespace(
         temp_dir=Path(str(settings_data["temp_dir"])),
         max_video_bytes=int(settings_data["max_video_bytes"]),
+        max_source_video_bytes=int(settings_data["max_source_video_bytes"]),
         http_timeout_seconds=int(settings_data["http_timeout_seconds"]),
     )
     timeout_seconds = int(settings_data["parse_timeout_seconds"])
-    apply_resource_limits(settings.max_video_bytes, timeout_seconds)
+    apply_resource_limits(settings.max_source_video_bytes, timeout_seconds)
 
     os.environ["YTDLP_NO_PLUGINS"] = "1"
     socket.getaddrinfo = guarded_getaddrinfo

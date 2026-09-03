@@ -197,7 +197,7 @@ class YtDlpAdapter:
         if not candidates:
             raise AppError(
                 "MEDIA_TOO_LARGE",
-                f"所选{QUALITY_LABELS[requested_quality]}预计超过 180MiB，请改选较低画质",
+                f"所选{QUALITY_LABELS[requested_quality]}源文件超过服务器处理上限，请改选较低画质",
             )
 
         video, audio, estimated_size = max(
@@ -243,7 +243,7 @@ class YtDlpAdapter:
             "retries": 1,
             "fragment_retries": 1,
             "ignoreconfig": True,
-            "max_filesize": self.settings.max_video_bytes,
+            "max_filesize": self.settings.max_source_video_bytes,
             "restrictfilenames": True,
             "nopart": True,
             "overwrites": True,
@@ -262,7 +262,7 @@ class YtDlpAdapter:
                     metadata = self._first_entry(downloader.extract_info(url, download=False) or {})
                 selected_format, selected_quality, _ = self._select_bilibili_download_format(
                     metadata,
-                    self.settings.max_video_bytes,
+                    self.settings.max_source_video_bytes,
                     requested_quality,
                 )
                 temp_dir = self.settings.temp_dir.resolve() / uuid.uuid4().hex
@@ -320,10 +320,10 @@ class YtDlpAdapter:
                 raise AppError("PARSE_FAILED", "公开视频合并失败", retryable=True)
             file = max(files, key=lambda item: item.stat().st_size)
             size = file.stat().st_size
-            if size > self.settings.max_video_bytes:
+            if size > self.settings.max_source_video_bytes:
                 if temp_dir is not None:
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                raise AppError("MEDIA_TOO_LARGE", "视频超过 180MiB 限制")
+                raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
             temporary_file = str(file)
             quality = selected_quality or "已合并"
         else:
@@ -332,10 +332,10 @@ class YtDlpAdapter:
                 raise AppError("MEDIA_FORMAT_UNSUPPORTED", "没有可直接保存的公开视频格式")
             upstream_url = str(selected["url"])
             size = selected.get("filesize") or selected.get("filesize_approx")
-            if size and int(size) > self.settings.max_video_bytes:
+            if size and int(size) > self.settings.max_source_video_bytes:
                 raise AppError(
                     "MEDIA_TOO_LARGE",
-                    f"所选{QUALITY_LABELS.get(requested_quality, '画质')}超过 180MiB，请改选较低画质",
+                    "源视频超过服务器可处理上限",
                 )
             height = selected.get("height")
             quality = f"{height}P" if height else str(selected.get("format_note") or "公开资源")
@@ -377,6 +377,7 @@ class YtDlpAdapter:
             "settings": {
                 "temp_dir": str(self.settings.temp_dir.resolve()),
                 "max_video_bytes": self.settings.max_video_bytes,
+                "max_source_video_bytes": self.settings.max_source_video_bytes,
                 "http_timeout_seconds": self.settings.http_timeout_seconds,
                 "parse_timeout_seconds": self.settings.parse_timeout_seconds,
             },
