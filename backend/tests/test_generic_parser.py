@@ -42,6 +42,31 @@ async def test_generic_parser_extracts_standard_html() -> None:
     assert result.mime_type == "video/mp4"
 
 
+async def test_generic_parser_keeps_explicit_gallery_images_separate_from_cover() -> None:
+    class GalleryHttp(FakeHttp):
+        async def get_text(self, url: str):
+            return (
+                "https://public.example/watch/gallery",
+                """
+                <html><head>
+                  <meta property="og:image" content="/cover.jpg">
+                </head><body>
+                  <img src="/gallery-1.jpg">
+                  <video><source src="/media/video.mp4"></video>
+                </body></html>
+                """,
+                {"content-type": "text/html"},
+            )
+
+    result = await GenericParser().parse(
+        "https://public.example/watch/gallery",
+        ParseContext(settings=Settings(app_env="test"), http=GalleryHttp()),
+    )
+    assert [image.url for image in result.images] == [
+        "https://public.example/gallery-1.jpg"
+    ]
+
+
 async def test_generic_parser_accepts_direct_mp4() -> None:
     result = await GenericParser().parse(
         "https://public.example/media/video.mp4",
