@@ -90,7 +90,7 @@ Page({
       watermarkText: SOURCE_LABELS[result.watermark_status] || SOURCE_LABELS.unknown,
       sourceOptions: result.sources || [],
       selectedSourceId: result.selected_source_id || '',
-      selectedSourceLabel: this.sourceLabel(result.selected_source_id || ''),
+      selectedSourceLabel: this.sourceLabel(result.selected_source_id || '', result.sources),
       selectedSourceSizeLabel: this.sourceSizeLabel(result),
       images: result.images || [],
       saveButtonText: '保存视频'
@@ -101,9 +101,10 @@ Page({
     return `${result.quality_label || '清晰度未知'} · ${formatDuration(result.duration_seconds)} · ${formatBytes(result.size_bytes)}`
   },
 
-  sourceLabel(sourceId) {
-    const match = /^source-(\d+)$/.exec(String(sourceId || ''))
-    return match ? `源${match[1]}` : '当前源'
+  sourceLabel(sourceId, sources) {
+    const list = sources || this.data.sourceOptions || []
+    const index = list.findIndex((item) => item.source_id === sourceId)
+    return index >= 0 ? `源${index + 1}` : '当前源'
   },
 
   sourceSizeLabel(result) {
@@ -173,7 +174,7 @@ Page({
       result: next,
       sourceOptions: next.sources,
       selectedSourceId: next.selected_source_id,
-      selectedSourceLabel: this.sourceLabel(next.selected_source_id),
+      selectedSourceLabel: this.sourceLabel(next.selected_source_id, next.sources),
       selectedSourceSizeLabel: this.sourceSizeLabel(next),
       infoText: this.infoText(next),
       sourceSheetVisible: false
