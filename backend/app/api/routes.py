@@ -252,12 +252,18 @@ async def preview_media(token: str, request: Request):
 
 
 @router.get("/media/{token}/download")
-async def download_media(token: str, request: Request, user_id: int = Depends(current_user_id)):
+async def download_media(token: str, request: Request):
+    """Serve a short-lived capability URL without requiring a mini-program header.
+
+    The token is still looked up against a server-side media session, so it cannot
+    be used as an arbitrary upstream proxy URL.  In rewarded mode the entitlement
+    is evaluated for the media session owner rather than for an Authorization
+    header, which keeps copied links independently usable while preserving the
+    download gate at the time of access.
+    """
     media = await request.app.state.media_sessions.get(token)
-    if media.user_id != user_id:
-        raise AppError("AUTH_REQUIRED", "该下载链接不属于当前用户", status_code=403)
     if request.app.state.settings.download_access_mode == "rewarded_ad":
-        current = effective_entitlement(request, user_id)
+        current = effective_entitlement(request, media.user_id)
         if not current["can_download"]:
             raise entitlement_required()
     if media.temporary_file:

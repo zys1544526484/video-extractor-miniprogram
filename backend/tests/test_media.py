@@ -61,6 +61,10 @@ def test_preview_is_capability_url_but_download_needs_entitlement(
     assert "\r" not in disposition and "\n" not in disposition
     assert "attachment" in disposition
 
+    copied_link = client.get(f"/api/v1/media/{token}/download")
+    assert copied_link.status_code == 200
+    assert copied_link.content == downloaded.content
+
 
 def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, str]) -> None:
     token, _ = create_local_media(client, auth_headers)
@@ -73,7 +77,7 @@ def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, st
     assert missing.json()["error"]["code"] == "MEDIA_SESSION_EXPIRED"
 
 
-def test_free_mode_download_requires_owner_but_not_entitlement(
+def test_free_mode_download_link_is_independent_of_authorization(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     client.app.state.settings.download_access_mode = "free"
@@ -82,7 +86,9 @@ def test_free_mode_download_requires_owner_but_not_entitlement(
     unauthenticated = client.get(f"/api/v1/media/{token}/download")
     downloaded = client.get(f"/api/v1/media/{token}/download", headers=auth_headers)
 
-    assert unauthenticated.status_code == 401
+    # A copied capability URL must work when opened outside the mini program;
+    # the short-lived random token still binds it to a server media session.
+    assert unauthenticated.status_code == 200
     assert downloaded.status_code == 200
     assert downloaded.content.startswith(b"0123456789")
     assert downloaded.headers["content-type"].startswith("video/mp4")

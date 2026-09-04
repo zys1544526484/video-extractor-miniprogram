@@ -179,6 +179,10 @@ class ParseService:
             raise
 
     def _source_candidates(self, result: ParserResultModel) -> list[ParserSourceModel]:
+        # An image-only work has no video sources.  Do not synthesize a video
+        # source from its primary image or from the cover field.
+        if result.media_type == "image":
+            return []
         if result.sources:
             return list(result.sources[:4])
         return [
@@ -284,15 +288,8 @@ class ParseService:
                 )
                 if len(sources) >= 4:
                     break
-            if not sources:
-                raise AppError("PARSE_FAILED", "解析结果没有可用视频源")
-
             images: list[dict[str, object]] = []
             image_candidates = list(result.images)
-            if not image_candidates and result.cover_url:
-                image_candidates = [
-                    ParserImageModel(image_id="cover", url=result.cover_url, alt=result.title)
-                ]
             for image in image_candidates[:8]:
                 try:
                     if bool(image.url) == bool(image.temporary_file):
@@ -325,6 +322,46 @@ class ParseService:
                 except AppError:
                     # A cover/image is optional; a failed image must not discard a valid video.
                     continue
+
+            if not sources and result.media_type != "image":
+                raise AppError("PARSE_FAILED", "解析结果没有可用视频源")
+
+            # Pure image works use the first materialized image as the primary
+            # capability.  The images list remains the source of truth for the
+            # image tab; no cover is fabricated when the parser did not provide
+            # a real image candidate.
+            if not sources and result.media_type == "image":
+                if not images:
+                    raise AppError("PLATFORM_UNSUPPORTED", "未找到可安全保存的公开图片")
+                if progress:
+                    await progress(95, "生成安全图片链接")
+                base = self.settings.public_base_url.rstrip("/")
+                primary_image = images[0]
+                primary_session = await self.media_sessions.issue_token(
+                    str(primary_image["session_id"]), user_id=user_id
+                )
+                primary_path = f"{base}/api/v1/media/{primary_session.token}"
+                return ParsePublicResult(
+                    session_id=primary_session.session_id,
+                    platform=result.platform,
+                    title=result.title,
+                    cover_url=result.cover_url,
+                    media_type="image",
+                    duration_seconds=None,
+                    size_bytes=primary_image.get("size_bytes"),
+                    quality_label=None,
+                    requested_quality=quality,
+                    preview_url=f"{primary_path}/preview",
+                    download_url=f"{primary_path}/download",
+                    expires_at=primary_session.access_token_expires_at,
+                    media_expires_at=primary_session.expires_at,
+                    watermark_status=result.watermark_status,
+                    notice="；".join(result.notices),
+                    sources=[],
+                    images=images,
+                    share_text=result.share_text or f"{result.title}\n{result.canonical_url}",
+                    selected_source_id=None,
+                )
 
             primary = sources[0]
             if progress:

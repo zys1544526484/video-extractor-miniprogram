@@ -25,6 +25,11 @@ class WebmHttp(FakeHttp):
         return {"url": url, "content_type": "video/webm", "size": 2048}
 
 
+class ImageHttp(FakeHttp):
+    async def probe_media(self, url: str):
+        return {"url": url, "content_type": "image/jpeg", "size": 512}
+
+
 async def test_generic_parser_extracts_standard_html() -> None:
     parser = GenericParser()
     result = await parser.parse(
@@ -52,3 +57,33 @@ async def test_generic_parser_accepts_public_webm_for_later_mp4_conversion() -> 
     )
     assert result.upstream_media_url.endswith("video.webm")
     assert result.mime_type == "video/webm"
+
+
+async def test_generic_parser_supports_direct_public_image() -> None:
+    result = await GenericParser().parse(
+        "https://public.example/assets/photo.jpg",
+        ParseContext(settings=Settings(app_env="test"), http=ImageHttp()),
+    )
+    assert result.media_type == "image"
+    assert result.images[0].image_id == "image-1"
+    assert result.upstream_media_url is None
+
+
+async def test_generic_parser_does_not_turn_only_open_graph_cover_into_work_image() -> None:
+    class CoverOnlyHttp(FakeHttp):
+        async def get_text(self, url: str):
+            return (
+                "https://public.example/watch/cover",
+                '<html><meta property="og:image" content="/cover.jpg"></html>',
+                {"content-type": "text/html"},
+            )
+
+    try:
+        await GenericParser().parse(
+            "https://public.example/watch/cover",
+            ParseContext(settings=Settings(app_env="test"), http=CoverOnlyHttp()),
+        )
+    except Exception as error:
+        assert getattr(error, "code", None) == "PLATFORM_UNSUPPORTED"
+    else:
+        raise AssertionError("cover-only HTML must not produce a downloadable image")

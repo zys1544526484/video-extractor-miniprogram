@@ -61,7 +61,7 @@ class ParserResultModel(BaseModel):
     canonical_url: str
     title: str
     cover_url: str = ""
-    media_type: Literal["video"] = "video"
+    media_type: Literal["video", "image"] = "video"
     upstream_media_url: str | None = None
     temporary_file: str | None = None
     mime_type: str = "video/mp4"
@@ -83,7 +83,7 @@ class ParsePublicResult(BaseModel):
     platform: str
     title: str
     cover_url: str
-    media_type: Literal["video"] = "video"
+    media_type: Literal["video", "image"] = "video"
     duration_seconds: float | None
     size_bytes: int | None
     quality_label: str | None

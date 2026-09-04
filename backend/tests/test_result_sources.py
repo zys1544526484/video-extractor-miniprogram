@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import time
+from datetime import timedelta
 
+from app.models import MediaSessionRecord, ParseJob, utc_now_naive
 from app.schemas import ParsePublicResult
 
 
@@ -110,3 +113,32 @@ def test_ready_result_exposes_safe_multi_sources_and_images(client, auth_headers
     assert result["images"][0]["preview_url"].endswith("/preview")
     assert "session_id" not in result["images"][0]
     assert result["share_text"].startswith("多源视频")
+
+
+def test_server_renews_selected_source_when_other_source_expires(client, auth_headers) -> None:
+    client.app.state.parse_jobs.parse_service = MultiSourceParseService(client)
+    response = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "multi_source_renew_01"},
+        json={"text": "https://example.com/video", "quality": "original"},
+    )
+    job_id = response.json()["job"]["job_id"]
+    wait_ready(client, job_id, auth_headers)
+
+    # Simulate a client that selected source 2 and a later cleanup that expired
+    # source 1.  The server must still issue source 2 and report it as selected.
+    with client.app.state.database.session_factory() as session:
+        job = session.get(ParseJob, job_id)
+        stored = json.loads(job.result_json)
+        stored["selected_source_id"] = "source-2"
+        job.result_json = json.dumps(stored, ensure_ascii=False)
+        source_one = session.get(MediaSessionRecord, stored["sources"][0]["session_id"])
+        source_one.expires_at = utc_now_naive() - timedelta(seconds=1)
+        session.commit()
+
+    renewed = client.get(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
+    assert renewed.status_code == 200
+    result = renewed.json()["job"]["result"]
+    assert result["selected_source_id"] == "source-2"
+    assert [item["source_id"] for item in result["sources"]] == ["source-2"]
+    assert result["download_url"] == result["sources"][0]["download_url"]

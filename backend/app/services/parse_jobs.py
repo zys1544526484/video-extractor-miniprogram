@@ -236,6 +236,8 @@ class ParseJobService:
 
     @staticmethod
     def _stored_sources(result: dict[str, Any]) -> list[dict[str, Any]]:
+        if result.get("media_type") == "image":
+            return []
         sources = [item for item in (result.get("sources") or []) if isinstance(item, dict)]
         if sources:
             return sources
@@ -266,6 +268,37 @@ class ParseJobService:
             "media_expires_at": media.expires_at.isoformat().replace("+00:00", "Z"),
         }
 
+    async def _public_images(
+        self, result: dict[str, Any], *, user_id: int
+    ) -> list[dict[str, Any]]:
+        """Issue fresh capability URLs for parser-provided work images only."""
+        public_images: list[dict[str, Any]] = []
+        for image in result.get("images") or []:
+            if not isinstance(image, dict) or not image.get("session_id"):
+                continue
+            try:
+                image_media = await self.media_sessions.issue_token(
+                    str(image["session_id"]), user_id=user_id
+                )
+            except AppError as error:
+                if error.code == "MEDIA_SESSION_EXPIRED":
+                    continue
+                raise
+            image_path = f"{self.settings.public_base_url.rstrip('/')}/api/v1/media/{image_media.token}"
+            public_images.append(
+                {
+                    "image_id": image.get("image_id") or f"image-{len(public_images) + 1}",
+                    "mime_type": image.get("mime_type") or image_media.mime_type,
+                    "size_bytes": image.get("size_bytes") or image_media.size_bytes,
+                    "alt": image.get("alt") or result.get("title") or "",
+                    "preview_url": f"{image_path}/preview",
+                    "download_url": f"{image_path}/download",
+                    "expires_at": image_media.access_token_expires_at.isoformat().replace("+00:00", "Z"),
+                    "media_expires_at": image_media.expires_at.isoformat().replace("+00:00", "Z"),
+                }
+            )
+        return public_images
+
     async def _public(self, job: ParseJob, *, user_id: int) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "job_id": job.job_id,
@@ -281,6 +314,33 @@ class ParseJobService:
         }
         if job.status == "ready" and job.result_json:
             result = json.loads(job.result_json)
+            if result.get("media_type") == "image":
+                try:
+                    media = await self.media_sessions.issue_token(
+                        str(result.get("session_id")), user_id=user_id
+                    )
+                except AppError as error:
+                    if error.code != "MEDIA_SESSION_EXPIRED":
+                        raise
+                    payload.update(
+                        status="expired",
+                        stage="图片已过期，请重新提取",
+                        media_available=False,
+                    )
+                    return payload
+                path = f"{self.settings.public_base_url.rstrip('/')}/api/v1/media/{media.token}"
+                result.update(
+                    sources=[],
+                    selected_source_id=None,
+                    preview_url=f"{path}/preview",
+                    download_url=f"{path}/download",
+                    expires_at=media.access_token_expires_at.isoformat().replace("+00:00", "Z"),
+                    media_expires_at=media.expires_at.isoformat().replace("+00:00", "Z"),
+                )
+                result["images"] = await self._public_images(result, user_id=user_id)
+                payload["media_available"] = True
+                payload["result"] = result
+                return payload
             sources: list[dict[str, Any]] = []
             for source in self._stored_sources(result):
                 try:
@@ -325,32 +385,7 @@ class ParseJobService:
                 expires_at=selected["expires_at"],
                 media_expires_at=selected["media_expires_at"],
             )
-            public_images: list[dict[str, Any]] = []
-            for image in result.get("images") or []:
-                if not isinstance(image, dict) or not image.get("session_id"):
-                    continue
-                try:
-                    image_media = await self.media_sessions.issue_token(
-                        str(image["session_id"]), user_id=user_id
-                    )
-                except AppError as error:
-                    if error.code == "MEDIA_SESSION_EXPIRED":
-                        continue
-                    raise
-                image_path = f"{self.settings.public_base_url.rstrip('/')}/api/v1/media/{image_media.token}"
-                public_images.append(
-                    {
-                        "image_id": image.get("image_id") or f"image-{len(public_images) + 1}",
-                        "mime_type": image.get("mime_type") or image_media.mime_type,
-                        "size_bytes": image.get("size_bytes") or image_media.size_bytes,
-                        "alt": image.get("alt") or result.get("title") or "",
-                        "preview_url": f"{image_path}/preview",
-                        "download_url": f"{image_path}/download",
-                        "expires_at": image_media.access_token_expires_at.isoformat().replace("+00:00", "Z"),
-                        "media_expires_at": image_media.expires_at.isoformat().replace("+00:00", "Z"),
-                    }
-                )
-            result["images"] = public_images
+            result["images"] = await self._public_images(result, user_id=user_id)
             payload["media_available"] = True
             payload["result"] = result
         elif job.status == "failed":
@@ -376,6 +411,9 @@ class ParseJobService:
         }
         if job.status == "ready" and job.result_json:
             result = json.loads(job.result_json)
+            history_sources = self._stored_sources(result)
+            if result.get("media_type") == "image" and result.get("session_id"):
+                history_sources = [{"session_id": result["session_id"]}]
             available_until_values = [
                 value
                 for value in await asyncio.gather(
@@ -383,7 +421,7 @@ class ParseJobService:
                         self.media_sessions.available_until(
                             str(source.get("session_id")), user_id=user_id
                         )
-                        for source in self._stored_sources(result)
+                        for source in history_sources
                     ]
                 )
                 if value is not None
