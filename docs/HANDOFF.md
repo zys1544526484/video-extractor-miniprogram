@@ -70,13 +70,14 @@
 - `.github/workflows/ci.yml` 继续只在 `codex/**` push 和针对 `main` 的 pull request 运行，并新增 production 配置校验、`compileall app alembic`、空 SQLite 数据库 `alembic upgrade head`、Alembic head 再校验及 backend Docker build。
 - production 配置校验使用非敏感的合成值，只确认正式 `free` 模式、Mock 关闭、24 小时媒体保留和 900 秒访问 Token TTL，不写入任何密钥或生产凭证。
 - 本地对应检查：production 配置校验通过；`compileall app alembic` 通过；Alembic 空 SQLite 升级及 head 校验通过。
-- 本机未安装 Docker CLI，因此 Docker build 未在本地运行；GitHub Actions 将在干净 runner 执行该检查，结果以最新 PR checks 为准，当前不标记为 PASS。
+- 本机未安装 Docker CLI，因此 Docker build 未在本地运行；最新分支 push CI 已在干净 runner 成功完成该检查。
 
 ### 步骤七：P0 状态文档校准（第三独立检查点）
 
 - `STATUS.md`、`RELEASE_READINESS.md` 和 `BLOCKERS.md` 已同步记录本次安全门禁、当前真实本地测试数量和未验证项，未删除任何备案域名、真实微信凭证、服务器、平台样例或真机阻塞项。
 - 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 97 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
-- Docker CLI 在本机不可用，Docker build 保持未验证；GitHub 新一轮 workflow 结果不得在远程通过前写成 PASS。
+- 最新分支 push CI 的 Node job 为 30 passed、72 files checked；Backend job 为 94 passed、3 skipped（共收集 97 项，3 skipped 因 runner 无 ffmpeg/ffprobe），ruff、production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build 均成功。
+- Docker CLI 在本机不可用，Docker build 的本地状态仍为未验证；远程 CI 成功不等于容器部署或生产运行验证。
 
 ### 步骤八：Uvicorn 访问日志收口（第四独立检查点）
 
@@ -87,7 +88,7 @@
 
 - 当前分支 `codex/p0-security-production-gates` 已推送至 `origin`，最新已推送 commit 为 `931deb090dec6ecab3cb021d39b1e777f2e719d5`。
 - 已通过 GitHub connector 尝试创建目标为 `main` 的 Draft PR，但 GitHub API 返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
-- 分支 push 触发的 GitHub Actions run 当前仍在远程执行；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
+- 分支 push 触发的最新 GitHub Actions run 已成功；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
 
 ## 未验证项
 
