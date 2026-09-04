@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -48,7 +48,8 @@ class SuccessfulParseService:
             requested_quality=quality,
             preview_url="unused",
             download_url="unused",
-            expires_at=media.expires_at,
+            expires_at=media.access_token_expires_at,
+            media_expires_at=media.expires_at,
             watermark_status="unknown",
             notice="",
         )
@@ -104,7 +105,8 @@ class ConcurrentParseService:
                 requested_quality=quality,
                 preview_url="unused",
                 download_url="unused",
-                expires_at=media.expires_at,
+                expires_at=media.access_token_expires_at,
+                media_expires_at=media.expires_at,
                 watermark_status="unknown",
                 notice="",
             )
@@ -169,6 +171,51 @@ def test_parse_job_is_idempotent_persistent_and_user_bound(
         headers={"Authorization": f"Bearer {second_auth}"},
     )
     assert forbidden.status_code == 404
+
+
+def test_ready_job_reissues_expired_token_without_extending_media_session(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    client.app.state.parse_jobs.parse_service = SuccessfulParseService(client)
+    client.app.state.media_sessions.ttl_seconds = 24 * 60 * 60
+    created = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "parse_token_refresh_e2e_01"},
+        json={"text": "https://example.com/token-refresh", "quality": "original"},
+    )
+    job_id = created.json()["job"]["job_id"]
+    first = wait_for_status(client, job_id, auth_headers, {"ready"})["result"]
+    now = utc_now_naive()
+    first_expires = first["expires_at"]
+    media_expires = first["media_expires_at"]
+    first_token = first["preview_url"].split("/media/", 1)[1].split("/", 1)[0]
+    first_ttl = (
+        datetime.fromisoformat(first_expires.replace("Z", "+00:00"))
+        - now.replace(tzinfo=UTC)
+    ).total_seconds()
+    assert 890 <= first_ttl <= 910
+    media_retention_ttl = (
+        datetime.fromisoformat(media_expires.replace("Z", "+00:00"))
+        - now.replace(tzinfo=UTC)
+    ).total_seconds()
+    assert media_retention_ttl > 12 * 60 * 60
+
+    with client.app.state.database.session_factory() as session:
+        access = session.get(MediaAccessToken, client.app.state.media_sessions._token_hash(first_token))
+        assert access is not None
+        access.expires_at = utc_now_naive() - timedelta(seconds=1)
+        session.commit()
+
+    reopened = client.get(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
+    assert reopened.status_code == 200
+    renewed = reopened.json()["job"]["result"]
+    renewed_token = renewed["preview_url"].split("/media/", 1)[1].split("/", 1)[0]
+    assert renewed_token != first_token
+    assert renewed["media_expires_at"] == media_expires
+    assert renewed["expires_at"] != first_expires
+    renewed_expires = datetime.fromisoformat(renewed["expires_at"].replace("Z", "+00:00"))
+    assert 890 <= (renewed_expires - datetime.now(UTC)).total_seconds() <= 910
 
 
 def test_processing_job_can_be_cancelled(

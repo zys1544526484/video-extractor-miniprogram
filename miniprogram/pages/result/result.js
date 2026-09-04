@@ -7,6 +7,7 @@ const { createDownloadService } = require('../../services/download')
 const { createIdempotencyKey } = require('../../utils/idempotency')
 const { formatBytes, formatDuration } = require('../../utils/format')
 const { entitlementView } = require('../../utils/time')
+const { isTokenExpired } = require('../../utils/result-expiry')
 const { getConfig } = require('../../config/index')
 
 Page({
@@ -79,7 +80,7 @@ Page({
     const result = this.data.result
     const app = getApp()
     const serverNow = Date.now() + (app.globalData.serverOffsetMs || 0)
-    if (result && Date.parse(result.expires_at) > serverNow) return result
+    if (result && !isTokenExpired(result, serverNow)) return result
     if (!result || !result.source_text) throw new Error('结果已过期，请重新提取')
     this.setData({ state: 'loading' })
     if (result.job_id) {

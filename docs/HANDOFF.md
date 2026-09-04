@@ -6,10 +6,11 @@
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
-- 任务分支：`codex/bootstrap-github-handoff`
-- `main` 已推送的基线 commit：`dd74b10e90396740599135a0b55c696533c5a6c8`
+- 任务分支：`codex/p0-security-production-gates`
+- `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
-- Draft PR：`https://github.com/zys1544526484/video-extractor-miniprogram/pull/1`
+- Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
+- 当前 P0 修复状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`；Token 时间语义、生产配置校验和 Caddy CI 门禁已完成自动化检查，真实部署与真机仍待验证。
 
 ## 长期工作规则
 
@@ -56,6 +57,76 @@
 - 最新 PR CI 检查已完成并成功：Node 30 passed、0 failed；小程序验证 72 files checked、PASS；后端 84 passed、3 skipped（共收集 87 项）；Ruff 为 All checks passed；前后端两个 job 均成功。
 - 本地与 GitHub 文件计数差异：本地 validator 递归包含 `miniprogram/project.config.json` 和 `miniprogram/project.private.config.json`；两者均由 `.gitignore` 忽略，属于本地配置，不应提交。GitHub 干净 checkout 不包含它们，因此本地为 74 文件、远程为 72 文件。
 
+### 步骤五：P0 媒体访问与 SSRF 加固（第一独立检查点）
+
+- 当前分支：`codex/p0-security-production-gates`，基于最新 `origin/main`。
+- 应用请求日志将 `/api/v1/media/{token}/preview|download` 中的 token 替换为 `<token>`；Caddy access log 删除 URI 和请求头，避免媒体 token 进入应用或 Caddy 日志。
+- 新增 `MEDIA_ACCESS_TOKEN_TTL_SECONDS`，默认 900 秒；媒体会话仍保留 24 小时，过期 token 可在用户授权的任务结果中重新签发。
+- SSRF URL 只接受 HTTP 80 和 HTTPS 443（含显式端口），并补充标准端口、协议错配和非标准端口测试。
+- 本步骤本地验证：后端 pytest `97 passed`、ruff `All checks passed`、`git diff --check` 通过。
+- 生产启动路径已在本步骤切换为 Alembic head 校验，不再在 production 调用 `create_all`；下一步补充 GitHub Actions 的生产配置、编译、空库迁移和 Docker 构建门禁。
+
+### 步骤六：生产门禁与 CI 加固（第二独立检查点）
+
+- `.github/workflows/ci.yml` 继续只在 `codex/**` push 和针对 `main` 的 pull request 运行，并新增 production 配置校验、`compileall app alembic`、空 SQLite 数据库 `alembic upgrade head`、Alembic head 再校验及 backend Docker build。
+- production 配置校验使用非敏感的合成值，只确认正式 `free` 模式、Mock 关闭、24 小时媒体保留和 900 秒访问 Token TTL，不写入任何密钥或生产凭证。
+- 本地对应检查：production 配置校验通过；`compileall app alembic` 通过；Alembic 空 SQLite 升级及 head 校验通过。
+- 本机未安装 Docker CLI，因此 Docker build 未在本地运行；最新分支 push CI 已在干净 runner 成功完成该检查。
+
+### 步骤七：P0 状态文档校准（第三独立检查点）
+
+- `STATUS.md`、`RELEASE_READINESS.md` 和 `BLOCKERS.md` 已同步记录本次安全门禁、当前真实本地测试数量和未验证项，未删除任何备案域名、真实微信凭证、服务器、平台样例或真机阻塞项。
+- 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 98 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
+- 最新分支 push CI 的 Node job 为 30 passed、72 files checked；Backend job 为 95 passed、3 skipped（共收集 98 项，3 skipped 因 runner 无 ffmpeg/ffprobe），ruff、production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build 均成功。
+- Docker CLI 在本机不可用，Docker build 的本地状态仍为未验证；远程 CI 成功不等于容器部署或生产运行验证。
+
+### 步骤八：Uvicorn 访问日志收口（第四独立检查点）
+
+- Uvicorn access logger 已禁用，Dockerfile 和 README 的启动示例显式使用 `--no-access-log`，与应用路径掩码和 Caddy URI/请求头过滤共同避免媒体 Token 进入日志。
+- 本步骤验证：`tests/test_api.py` 13 passed；ruff All checks passed。
+
+### 步骤九：Draft PR 创建状态
+
+- 当前分支 `codex/p0-security-production-gates` 已推送至 `origin`；最终本地与远程 HEAD 以交接报告执行时的 `git rev-parse HEAD` 为准。
+- 状态：`DECISION_NEEDED`。已通过 GitHub connector 两次尝试创建目标为 `main` 的 Draft PR，但 GitHub API 均返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
+- 分支 push 触发的最新 GitHub Actions run 已成功；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
+- 受影响部分：需要用户选择由具备 pull-request 写权限的 GitHub 连接器重试，或由用户在 GitHub 网页使用已登录账号创建 Draft PR；代码、测试和普通分支 push 不受影响。
+
+### 步骤十：媒体路径脱敏边界修正（第五独立检查点）
+
+- 修正媒体路径掩码正则，保留未知后缀路径中的分隔符，同时继续保证 Token 不出现在应用日志。
+- 本步骤验证：`tests/test_api.py` 14 passed；ruff All checks passed；随后已正常推送。
+
+### 步骤十一：Token 过期与媒体保留时间拆分（本轮第一独立检查点）
+
+- `result.expires_at` 现在表示当前预览/下载 Token 的实际过期时间；`result.media_expires_at` 单独表示媒体文件的 24 小时保留截止时间。
+- 任务结果重新打开时会重新签发短期 Token；旧 Token 失效不会延长媒体会话，结果页保存前按 Token 过期时间判断是否刷新。
+- 新增后端端到端覆盖：首次 Token 约 900 秒有效、Token 失效后从仍有效任务重新获取新 Token、媒体保留截止时间不变；新增结果页停留超过 15 分钟后刷新判断测试。
+- 本步骤本地验证：`npm test` 31 passed；`npm run validate:miniprogram` 76 files checked、PASS；后端 pytest 99 passed（2 warnings）。
+- 本步骤尚未完成远程 CI；下一独立步骤将补充 `npm run validate:production` 和固定版本 Caddy 配置验证。
+
+### 步骤十二：生产配置与 Caddy CI 门禁（本轮第二独立检查点）
+
+- `npm run validate:production` 现在支持通过 `MINIPROGRAM_VALIDATE_SYNTHETIC=1` 注入非敏感合成生产值；不会修改或提交真实生产配置。校验仍强制 `APP_ENV=production`，development 配置有单元测试证明会失败。
+- GitHub Actions 的小程序 job 已实际运行 `npm run validate:production`；后端 job 新增固定版本 `caddy:2.10.0-alpine`，以虚构域名 `example.invalid` 执行 `caddy validate`。Caddy 配置通过删除 request URI 和 headers 避免把媒体 Token 写入 access log；运行时日志输出仍需人工抽样确认。
+- 本步骤本地验证：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；`git diff --check` PASS。
+- 本机没有 Docker CLI，Caddy validate 与 Docker build 需由 GitHub Actions runner 实际执行后再记录为 PASS；在此之前不得将 P0 写成全部通过。
+
+### 步骤十三：Windows worker 公网目标前置校验（补充独立修复）
+
+- 在启动 yt-dlp 子进程前拒绝字面量内网/本机 IP，避免 Windows 下 worker 解析 loopback 时超时；保留既有 `PLATFORM_CHANGED` 安全错误语义。
+- 针对性测试 `test_adapter_worker_blocks_loopback_without_connecting` 和 ruff 均通过；全量 pytest 首轮曾出现该用例 `PARSE_TIMEOUT`，修复后全量复跑为 99 passed、2 warnings。
+
+### 步骤十四：本轮全量门禁与状态校准
+
+- 当前 HEAD：以本次交接时 `git rev-parse HEAD` 为准；最新提交已推送到 `origin/codex/p0-security-production-gates`。
+- 最新分支 push CI 检查（见[分支 Actions 页面](https://github.com/zys1544526484/video-extractor-miniprogram/actions?query=branch%3Acodex%2Fp0-security-production-gates)）成功：Node 32 passed、0 failed；小程序普通校验 74 files checked、生产校验真实执行 `npm run validate:production` 并通过；后端 96 passed、3 skipped（共收集 99 项，skipped 不计为 passed）；Ruff All checks passed；compileall、Alembic 空库升级/head 校验、Docker build 和固定版本 `caddy:2.10.0-alpine caddy validate` 均成功。
+- 本地复跑：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；pytest 99 passed（2 warnings）；ruff All checks passed；compileall、Alembic 空库升级/head 校验和 `git diff --check` PASS。Windows 工作区未安装 Docker CLI，因此 Docker build/Caddy validate 本地结果为 NOT VERIFIED，由上述远程 CI 验证。
+- 本地与 GitHub 小程序文件数差异仅为本地 `.gitignore` 忽略的 `miniprogram/project.config.json`、`miniprogram/project.private.config.json`；它们未提交，故本地 76、干净 checkout 74。
+- Token 语义修复已覆盖首次约 900 秒、Token 失效后从仍有效任务重新签发且不延长 `media_expires_at`，以及结果页超过 15 分钟保存前按 Token 过期时间刷新。应用/Caddy 配置静态删除 URI/headers；真实部署日志仍需人工抽样确认。
+- 本轮自动化状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`。备案域名、真实微信凭证、服务器、五平台完整样例、真机下载/相册和生产部署继续保持 `NOT VERIFIED`。
+- Draft PR 状态仍为 `DECISION_NEEDED`：本轮再次尝试创建目标为 `main` 的 Draft PR，GitHub API 返回 `403 Resource not accessible by integration`；未声称创建成功，也未影响普通分支 push。需用户在网页或使用具备 pull-request 写权限的连接器创建/重试。
+
 ## 未验证项
 
 - 未进行微信开发者工具真机验证。
@@ -64,4 +135,4 @@
 
 ## 下一步
 
-等待 ChatGPT 审查、GitHub CI 和用户合并决定。
+等待 ChatGPT 审查、GitHub CI 后续检查和用户合并决定；不得直接合并到 `main`。

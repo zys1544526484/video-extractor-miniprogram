@@ -40,8 +40,12 @@ async def validate_public_url(url: str, resolver: Resolver = resolve_host) -> tu
         raise AppError("URL_INVALID", "只支持 HTTP 或 HTTPS 链接")
     if not parsed.hostname or parsed.username or parsed.password:
         raise AppError("URL_INVALID", "链接主机无效")
-    if port is not None and not (1 <= port <= 65535):
-        raise AppError("URL_INVALID", "链接端口无效")
+    if port is not None and port not in {80, 443}:
+        raise AppError("URL_INVALID", "只允许 HTTP 80 或 HTTPS 443 端口")
+    if port is not None and (
+        (parsed.scheme == "http" and port != 80) or (parsed.scheme == "https" and port != 443)
+    ):
+        raise AppError("URL_INVALID", "链接端口与协议不匹配")
     host = parsed.hostname.rstrip(".").lower()
     if host == "localhost" or host.endswith(".localhost"):
         raise AppError("URL_INVALID", "不允许访问本机地址")
@@ -54,4 +58,3 @@ async def validate_public_url(url: str, resolver: Resolver = resolve_host) -> tu
     if not addresses or any(not is_public_ip(address) for address in addresses):
         raise AppError("URL_INVALID", "不允许访问内网、本机或保留地址")
     return host, addresses
-

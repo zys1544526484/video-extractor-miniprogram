@@ -26,7 +26,9 @@ function getConfig() {
 }
 
 function assertProductionSafe(config) {
-  if (config.APP_ENV !== 'production') return true
+  if (config.APP_ENV !== 'production') {
+    throw new Error('生产校验必须使用 production 配置')
+  }
   if (config.MOCK_API !== false || config.MOCK_WECHAT_AUTH !== false || config.MOCK_REWARDED_AD !== false) {
     throw new Error('生产环境禁止启用 Mock 能力')
   }

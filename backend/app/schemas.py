@@ -59,5 +59,6 @@ class ParsePublicResult(BaseModel):
     preview_url: str
     download_url: str
     expires_at: datetime
+    media_expires_at: datetime
     watermark_status: str
     notice: str

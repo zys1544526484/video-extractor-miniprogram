@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..config import Settings
 from ..errors import AppError
@@ -369,6 +371,13 @@ class YtDlpAdapter:
         download_media: bool = False,
         requested_quality: str = "original",
     ) -> ParserResultModel:
+        try:
+            literal_host = urlsplit(url).hostname
+            literal_ip = ipaddress.ip_address(literal_host) if literal_host else None
+        except ValueError:
+            literal_ip = None
+        if literal_ip is not None and not literal_ip.is_global:
+            raise AppError("PLATFORM_CHANGED", "平台解析目标不是公网地址", retryable=True)
         payload = {
             "url": url,
             "platform": platform,

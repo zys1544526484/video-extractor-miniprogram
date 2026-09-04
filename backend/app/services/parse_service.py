@@ -217,7 +217,8 @@ class ParseService:
                 requested_quality=quality,
                 preview_url=f"{path}/preview",
                 download_url=f"{path}/download",
-                expires_at=session.expires_at,
+                expires_at=session.access_token_expires_at,
+                media_expires_at=session.expires_at,
                 watermark_status=result.watermark_status,
                 notice="；".join(result.notices),
             )

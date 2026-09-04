@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -10,7 +11,7 @@ from pydantic import ValidationError
 from app.config import Settings
 from app.database import Database
 from app.errors import AppError
-from app.models import User
+from app.models import MediaAccessToken, User
 from app.parsers.base import BaseParser, ParseContext
 from app.schemas import ParserResultModel
 from app.services.media_sessions import MediaSessionStore
@@ -197,6 +198,7 @@ def test_default_job_limits_and_result_retention_are_bounded() -> None:
     assert settings.parse_worker_concurrency == 2
     assert settings.media_processing_concurrency == 1
     assert settings.media_session_ttl_seconds == 24 * 60 * 60
+    assert settings.media_access_token_ttl_seconds == 900
     assert settings.temp_file_ttl_seconds >= settings.media_session_ttl_seconds
 
 
@@ -207,3 +209,52 @@ def test_result_file_ttl_cannot_be_shorter_than_media_session() -> None:
             media_session_ttl_seconds=3600,
             temp_file_ttl_seconds=3599,
         )
+
+
+def test_media_access_token_ttl_cannot_exceed_media_retention() -> None:
+    with pytest.raises(ValidationError, match="MEDIA_ACCESS_TOKEN_TTL_SECONDS"):
+        Settings(
+            app_env="test",
+            media_session_ttl_seconds=900,
+            media_access_token_ttl_seconds=901,
+        )
+
+
+@pytest.mark.asyncio
+async def test_media_access_token_is_short_lived_and_reissuable(tmp_path: Path) -> None:
+    database = Database(f"sqlite:///{tmp_path / 'token-ttl.db'}")
+    database.create_schema()
+    with database.session_factory() as session:
+        session.add(User(openid="token-ttl-user"))
+        session.commit()
+    media_file = tmp_path / "media" / "video.mp4"
+    media_file.parent.mkdir(parents=True)
+    media_file.write_bytes(b"video")
+    store = MediaSessionStore(
+        database,
+        ttl_seconds=24 * 60 * 60,
+        temp_root=tmp_path / "media",
+        temp_file_ttl_seconds=90000,
+        access_token_ttl_seconds=900,
+    )
+
+    first = await store.create(
+        user_id=1,
+        platform="generic",
+        title="video",
+        upstream_url=None,
+        temporary_file=str(media_file),
+        required_headers={},
+        mime_type="video/mp4",
+        size_bytes=5,
+    )
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with database.session_factory() as session:
+        access = session.get(MediaAccessToken, store._token_hash(first.token))
+        assert access is not None
+        assert 0 < (access.expires_at - now).total_seconds() <= 900
+
+    second = await store.issue_token(first.session_id, user_id=1)
+    assert second.token != first.token
+    assert (await store.get(second.token)).session_id == first.session_id
+    database.close()

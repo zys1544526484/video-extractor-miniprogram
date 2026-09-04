@@ -244,7 +244,8 @@ class ParseJobService:
             result.update(
                 preview_url=f"{path}/preview",
                 download_url=f"{path}/download",
-                expires_at=media.expires_at.isoformat().replace("+00:00", "Z"),
+                expires_at=media.access_token_expires_at.isoformat().replace("+00:00", "Z"),
+                media_expires_at=media.expires_at.isoformat().replace("+00:00", "Z"),
             )
             payload["media_available"] = True
             payload["result"] = result
