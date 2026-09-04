@@ -23,7 +23,7 @@ from .services.parse_service import ParseService
 from .services.safe_http import SafeHttpClient
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
-MEDIA_PATH_PATTERN = re.compile(r"(/api/v1/media/)[^/]+(/(?:preview|download))(?:$|/)")
+MEDIA_PATH_PATTERN = re.compile(r"(/api/v1/media/)[^/]+(/(?:preview|download))(?=$|/)")
 logger = logging.getLogger("video_extractor")
 
 

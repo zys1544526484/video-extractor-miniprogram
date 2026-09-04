@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.config import Settings
-from app.main import configure_logging, create_app
+from app.main import configure_logging, create_app, safe_request_path
 from app.models import User
 
 
@@ -146,6 +146,12 @@ def test_media_access_token_is_not_written_to_application_logs(client: TestClien
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert token not in messages
     assert "/api/v1/media/<token>/preview" in messages
+
+
+def test_media_path_redaction_preserves_suffix() -> None:
+    assert safe_request_path("/api/v1/media/secret-token/download/extra") == (
+        "/api/v1/media/<token>/download/extra"
+    )
 
 
 def test_production_requires_alembic_head_before_startup(tmp_path) -> None:

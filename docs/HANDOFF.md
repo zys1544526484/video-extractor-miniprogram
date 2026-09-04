@@ -90,6 +90,11 @@
 - 已通过 GitHub connector 尝试创建目标为 `main` 的 Draft PR，但 GitHub API 返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
 - 分支 push 触发的最新 GitHub Actions run 已成功；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
 
+### 步骤十：媒体路径脱敏边界修正（第五独立检查点）
+
+- 修正媒体路径掩码正则，保留未知后缀路径中的分隔符，同时继续保证 Token 不出现在应用日志。
+- 本步骤验证：`tests/test_api.py` 14 passed；ruff All checks passed；随后已正常推送。
+
 ## 未验证项
 
 - 未进行微信开发者工具真机验证。
