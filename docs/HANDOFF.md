@@ -125,6 +125,7 @@
 - 本地与 GitHub 小程序文件数差异仅为本地 `.gitignore` 忽略的 `miniprogram/project.config.json`、`miniprogram/project.private.config.json`；它们未提交，故本地 76、干净 checkout 74。
 - Token 语义修复已覆盖首次约 900 秒、Token 失效后从仍有效任务重新签发且不延长 `media_expires_at`，以及结果页超过 15 分钟保存前按 Token 过期时间刷新。应用/Caddy 配置静态删除 URI/headers；真实部署日志仍需人工抽样确认。
 - 本轮自动化状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`。备案域名、真实微信凭证、服务器、五平台完整样例、真机下载/相册和生产部署继续保持 `NOT VERIFIED`。
+- Draft PR 状态仍为 `DECISION_NEEDED`：本轮再次尝试创建目标为 `main` 的 Draft PR，GitHub API 返回 `403 Resource not accessible by integration`；未声称创建成功，也未影响普通分支 push。需用户在网页或使用具备 pull-request 写权限的连接器创建/重试。
 
 ## 未验证项
 
