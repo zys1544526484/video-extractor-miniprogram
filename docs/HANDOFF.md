@@ -112,6 +112,11 @@
 - 本步骤本地验证：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；`git diff --check` PASS。
 - 本机没有 Docker CLI，Caddy validate 与 Docker build 需由 GitHub Actions runner 实际执行后再记录为 PASS；在此之前不得将 P0 写成全部通过。
 
+### 步骤十三：Windows worker 公网目标前置校验（补充独立修复）
+
+- 在启动 yt-dlp 子进程前拒绝字面量内网/本机 IP，避免 Windows 下 worker 解析 loopback 时超时；保留既有 `PLATFORM_CHANGED` 安全错误语义。
+- 针对性测试 `test_adapter_worker_blocks_loopback_without_connecting` 和 ruff 均通过；全量 pytest 首轮曾出现该用例 `PARSE_TIMEOUT`，修复后待重新复跑全量。
+
 ## 未验证项
 
 - 未进行微信开发者工具真机验证。
