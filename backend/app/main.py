@@ -23,7 +23,12 @@ from .services.parse_service import ParseService
 from .services.safe_http import SafeHttpClient
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
+MEDIA_PATH_PATTERN = re.compile(r"(/api/v1/media/)[^/]+(/(?:preview|download))(?:$|/)")
 logger = logging.getLogger("video_extractor")
+
+
+def safe_request_path(path: str) -> str:
+    return MEDIA_PATH_PATTERN.sub(r"\1<token>\2", path)
 
 
 def configure_logging(level: str) -> None:
@@ -54,7 +59,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         database = Database(app_settings.database_url)
-        database.create_schema()
+        if app_settings.app_env == "production":
+            database.verify_alembic_head()
+        else:
+            database.create_schema()
         app_settings.temp_dir.mkdir(parents=True, exist_ok=True)
         safe_http = SafeHttpClient(
             timeout_seconds=app_settings.http_timeout_seconds,
@@ -66,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app_settings.media_session_ttl_seconds,
             app_settings.temp_dir,
             app_settings.temp_file_ttl_seconds,
+            app_settings.media_access_token_ttl_seconds,
         )
         registry = ParserRegistry(app_settings)
         app.state.settings = app_settings
@@ -119,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "event": "http_request",
                     "request_id": request_id,
                     "method": request.method,
-                    "path": request.url.path,
+                    "path": safe_request_path(request.url.path),
                     "status": response.status_code,
                     "latency_ms": latency_ms,
                 },

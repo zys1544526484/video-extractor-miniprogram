@@ -11,6 +11,9 @@
 
     log {
         output stdout
-        format json
+        format filter {
+            request>uri delete
+            request>headers delete
+        }
     }
 }

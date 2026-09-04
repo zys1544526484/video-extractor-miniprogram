@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     parse_timeout_seconds: int = 1800
     media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 86400
+    media_access_token_ttl_seconds: int = 900
     temp_file_ttl_seconds: int = 90000
     parse_job_ttl_seconds: int = 86400
     max_redirects: int = 5
@@ -79,6 +80,10 @@ class Settings(BaseSettings):
             raise ValueError("MAX_QUEUED_PARSE_JOBS 必须不小于单用户上限且不超过 100")
         if self.media_session_ttl_seconds <= 0:
             raise ValueError("MEDIA_SESSION_TTL_SECONDS 必须大于 0")
+        if self.media_access_token_ttl_seconds <= 0:
+            raise ValueError("MEDIA_ACCESS_TOKEN_TTL_SECONDS 必须大于 0")
+        if self.media_access_token_ttl_seconds > self.media_session_ttl_seconds:
+            raise ValueError("MEDIA_ACCESS_TOKEN_TTL_SECONDS 不得长于媒体结果有效期")
         if self.temp_file_ttl_seconds < self.media_session_ttl_seconds:
             raise ValueError("TEMP_FILE_TTL_SECONDS 不得短于媒体结果有效期")
         if self.parse_job_ttl_seconds < self.media_session_ttl_seconds:

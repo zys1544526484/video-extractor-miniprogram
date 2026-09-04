@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -133,6 +134,36 @@ def test_http_client_info_logging_is_disabled_for_wechat_secrets() -> None:
     configure_logging("INFO")
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
+
+
+def test_media_access_token_is_not_written_to_application_logs(client: TestClient, caplog) -> None:
+    token = "capability-token-for-log-test"
+    with caplog.at_level(logging.INFO, logger="video_extractor"):
+        response = client.get(f"/api/v1/media/{token}/preview")
+
+    assert response.status_code == 410
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert token not in messages
+    assert "/api/v1/media/<token>/preview" in messages
+
+
+def test_production_requires_alembic_head_before_startup(tmp_path) -> None:
+    settings = Settings(
+        app_env="production",
+        _env_file=None,
+        database_url=f"sqlite:///{tmp_path / 'unmigrated.db'}",
+        public_base_url="https://media-api.valid-domain.cn",
+        app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
+        wechat_app_id="wx1234567890abcdef",
+        wechat_app_secret="0123456789abcdef0123456789abcdef",
+        mock_wechat_auth=False,
+        dev_bypass_download_entitlement=False,
+        download_access_mode="free",
+        temp_dir=tmp_path / "media",
+    )
+    with pytest.raises(RuntimeError, match="Alembic"):
+        with TestClient(create_app(settings)):
+            pass
 
 
 def test_development_can_bypass_download_entitlement_without_ad(tmp_path) -> None:

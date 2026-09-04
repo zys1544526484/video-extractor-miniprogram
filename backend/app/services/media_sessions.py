@@ -42,10 +42,12 @@ class MediaSessionStore:
         ttl_seconds: int,
         temp_root: Path,
         temp_file_ttl_seconds: int = 10800,
+        access_token_ttl_seconds: int = 900,
     ) -> None:
         self.database = database
         self.ttl_seconds = ttl_seconds
         self.temp_file_ttl_seconds = temp_file_ttl_seconds
+        self.access_token_ttl_seconds = access_token_ttl_seconds
         self.temp_root = temp_root.resolve()
         self._lock = asyncio.Lock()
 
@@ -62,6 +64,9 @@ class MediaSessionStore:
         if not file.is_file():
             raise AppError("PARSE_FAILED", "临时媒体不存在")
         return relative.as_posix()
+
+    def _token_expires_at(self, session_expires_at: datetime, now: datetime) -> datetime:
+        return min(session_expires_at, now + timedelta(seconds=self.access_token_ttl_seconds))
 
     def _session(self, record: MediaSessionRecord, token: str) -> MediaSession:
         temporary_file = (self.temp_root / record.file_path).resolve()
@@ -102,6 +107,7 @@ class MediaSessionStore:
         relative_file = await asyncio.to_thread(self._relative_file, temporary_file)
         now = utc_now_naive()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
+        token_expires_at = self._token_expires_at(expires_at, now)
         session_id = f"ps_{secrets.token_hex(12)}"
         token = secrets.token_urlsafe(32)
         async with self._lock:
@@ -123,7 +129,7 @@ class MediaSessionStore:
                     MediaAccessToken(
                         token_hash=self._token_hash(token),
                         session_id=session_id,
-                        expires_at=expires_at,
+                        expires_at=token_expires_at,
                     )
                 )
                 session.commit()
@@ -150,11 +156,12 @@ class MediaSessionStore:
                 record = session.get(MediaSessionRecord, session_id)
                 if record is None or record.user_id != user_id or record.expires_at <= now:
                     raise AppError("MEDIA_SESSION_EXPIRED", "结果已过期，请重新提取", status_code=410)
+                token_expires_at = self._token_expires_at(record.expires_at, now)
                 session.add(
                     MediaAccessToken(
                         token_hash=self._token_hash(token),
                         session_id=session_id,
-                        expires_at=record.expires_at,
+                        expires_at=token_expires_at,
                     )
                 )
                 session.commit()

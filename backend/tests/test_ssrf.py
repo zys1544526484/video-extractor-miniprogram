@@ -97,3 +97,32 @@ async def test_connector_resolver_rejects_rebound_private_address() -> None:
     with pytest.raises(AppError) as captured:
         await PinnedPublicResolver(rebound_resolver).resolve("example.com", 443)
     assert captured.value.code == "URL_INVALID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["http://example.com:80/video", "https://example.com:443/video"])
+async def test_validate_allows_standard_http_ports(url: str) -> None:
+    async def public_resolver(host: str) -> list[str]:
+        return ["93.184.216.34"]
+
+    host, addresses = await validate_public_url(url, public_resolver)
+    assert host == "example.com"
+    assert addresses == ["93.184.216.34"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com:443/video",
+        "https://example.com:80/video",
+        "http://example.com:8080/video",
+        "https://example.com:8443/video",
+    ],
+)
+async def test_validate_rejects_non_standard_http_ports(url: str) -> None:
+    async def public_resolver(host: str) -> list[str]:
+        return ["93.184.216.34"]
+
+    with pytest.raises(AppError, match="端口"):
+        await validate_public_url(url, public_resolver)
