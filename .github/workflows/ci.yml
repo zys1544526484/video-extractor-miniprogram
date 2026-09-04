@@ -46,3 +46,41 @@ jobs:
       - name: Run ruff
         working-directory: backend
         run: ruff check app tests alembic
+      - name: Validate production configuration
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from app.config import Settings
+
+          settings = Settings(
+              app_env="production",
+              _env_file=None,
+              public_base_url="https://media-api.valid-domain.cn",
+              wechat_app_id="wx1234567890abcdef",
+              wechat_app_secret="0123456789abcdef0123456789abcdef",
+              app_token_secret="A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6",
+              mock_wechat_auth=False,
+              dev_bypass_download_entitlement=False,
+              download_access_mode="free",
+          )
+          assert settings.media_access_token_ttl_seconds == 900
+          assert settings.media_session_ttl_seconds == 86400
+          assert settings.download_access_mode == "free"
+          assert settings.mock_wechat_auth is False
+          assert settings.dev_bypass_download_entitlement is False
+          PY
+      - name: Compile backend sources
+        working-directory: backend
+        run: python -m compileall -q app alembic
+      - name: Upgrade empty SQLite database with Alembic
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite:///./data/ci-empty.db
+        run: python -m alembic upgrade head
+      - name: Verify Alembic head
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite:///./data/ci-empty.db
+        run: python -c "from app.database import Database; db = Database('sqlite:///./data/ci-empty.db'); db.verify_alembic_head(); db.close()"
+      - name: Build backend Docker image
+        run: docker build --tag video-extractor-backend:ci ./backend

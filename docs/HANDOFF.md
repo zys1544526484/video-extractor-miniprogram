@@ -63,7 +63,14 @@
 - 新增 `MEDIA_ACCESS_TOKEN_TTL_SECONDS`，默认 900 秒；媒体会话仍保留 24 小时，过期 token 可在用户授权的任务结果中重新签发。
 - SSRF URL 只接受 HTTP 80 和 HTTPS 443（含显式端口），并补充标准端口、协议错配和非标准端口测试。
 - 本步骤本地验证：后端 pytest `97 passed`、ruff `All checks passed`、`git diff --check` 通过。
-- 本步骤尚未包含生产数据库迁移门禁和 CI 扩展；下一步完成后端生产 Alembic 校验及 GitHub Actions 加固。
+- 生产启动路径已在本步骤切换为 Alembic head 校验，不再在 production 调用 `create_all`；下一步补充 GitHub Actions 的生产配置、编译、空库迁移和 Docker 构建门禁。
+
+### 步骤六：生产门禁与 CI 加固（第二独立检查点）
+
+- `.github/workflows/ci.yml` 继续只在 `codex/**` push 和针对 `main` 的 pull request 运行，并新增 production 配置校验、`compileall app alembic`、空 SQLite 数据库 `alembic upgrade head`、Alembic head 再校验及 backend Docker build。
+- production 配置校验使用非敏感的合成值，只确认正式 `free` 模式、Mock 关闭、24 小时媒体保留和 900 秒访问 Token TTL，不写入任何密钥或生产凭证。
+- 本地对应检查：production 配置校验通过；`compileall app alembic` 通过；Alembic 空 SQLite 升级及 head 校验通过。
+- 本机未安装 Docker CLI，因此 Docker build 未在本地运行；GitHub Actions 将在干净 runner 执行该检查，结果以最新 PR checks 为准，当前不标记为 PASS。
 
 ## 未验证项
 
