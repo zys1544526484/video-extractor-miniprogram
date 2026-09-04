@@ -86,9 +86,10 @@
 
 ### 步骤九：Draft PR 创建状态
 
-- 当前分支 `codex/p0-security-production-gates` 已推送至 `origin`，最新已推送 commit 为 `931deb090dec6ecab3cb021d39b1e777f2e719d5`。
-- 已通过 GitHub connector 尝试创建目标为 `main` 的 Draft PR，但 GitHub API 返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
+- 当前分支 `codex/p0-security-production-gates` 已推送至 `origin`，最新已推送 commit 为 `eaad627d9e0462161572a4f8abeb2286ca2890ba`。
+- 状态：`DECISION_NEEDED`。已通过 GitHub connector 两次尝试创建目标为 `main` 的 Draft PR，但 GitHub API 均返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
 - 分支 push 触发的最新 GitHub Actions run 已成功；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
+- 受影响部分：需要用户选择由具备 pull-request 写权限的 GitHub 连接器重试，或由用户在 GitHub 网页使用已登录账号创建 Draft PR；代码、测试和普通分支 push 不受影响。
 
 ### 步骤十：媒体路径脱敏边界修正（第五独立检查点）
 
