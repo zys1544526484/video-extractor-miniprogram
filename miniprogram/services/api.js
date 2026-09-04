@@ -85,6 +85,9 @@ module.exports = {
   parseJob(jobId) {
     return request(`/parse/jobs/${jobId}`, { method: 'GET' })
   },
+  listParseJobs(limit = 20) {
+    return request(`/parse/jobs?limit=${Math.max(1, Math.min(Number(limit) || 20, 50))}`, { method: 'GET' })
+  },
   cancelParse(jobId) {
     return request(`/parse/jobs/${jobId}`, { method: 'DELETE' })
   },
@@ -118,7 +121,10 @@ module.exports = {
   },
   async parse(text, quality = 'original', onProgress) {
     const created = await this.createParse(text, quality)
-    return { result: await this.waitForParseJob(created.job.job_id, onProgress) }
+    return {
+      job_id: created.job.job_id,
+      result: await this.waitForParseJob(created.job.job_id, onProgress)
+    }
   },
   entitlement() {
     return request('/entitlement', { method: 'GET' })

@@ -9,6 +9,7 @@ const { HOME_TRANSITIONS, createStateMachine } = require('../../utils/state-mach
 const { presentApiError } = require('../../utils/api-error')
 const { QUALITY_OPTIONS, normalizeRequestedQuality } = require('../../utils/quality')
 const { createOperationKey } = require('../../utils/idempotency')
+const { platformLabel } = require('../../utils/history')
 
 const BUTTON_LABELS = {
   idle: '开始提取',
@@ -32,11 +33,14 @@ Page({
     qualityOptions: QUALITY_OPTIONS,
     selectedQuality: 'original',
     parseProgress: 0,
-    parseStage: ''
+    parseStage: '',
+    activeJobs: [],
+    activeJobCount: 0,
+    atJobLimit: false
   },
 
   onLoad() {
-    this.pollGeneration = 0
+    this.pageVisible = true
     this.stateMachine = createStateMachine('idle', HOME_TRANSITIONS)
     const config = getConfig()
     this.setData({
@@ -49,21 +53,31 @@ Page({
   },
 
   onUnload() {
-    this.pollGeneration += 1
+    this.pageVisible = false
+    this.stopJobPolling()
+  },
+
+  onHide() {
+    this.pageVisible = false
+    this.stopJobPolling()
   },
 
   onShow() {
+    this.pageVisible = true
     const tabBar = this.getTabBar && this.getTabBar()
     if (tabBar) tabBar.setData({ selected: 0 })
     this.updateEntitlementLabel(storage.getEntitlement())
+    this.loadDraft()
+    if (this.sessionReady) this.refreshActiveJobs()
   },
 
   async refreshSession() {
     try {
       await auth.ensureAuth()
+      this.sessionReady = true
       const value = await entitlement.refreshEntitlement()
       this.updateEntitlementLabel(value)
-      await this.resumeParseJob()
+      await this.refreshActiveJobs()
     } catch (error) {
       this.updateEntitlementLabel(storage.getEntitlement())
     }
@@ -74,6 +88,18 @@ Page({
     const now = Date.now() + (app.globalData.serverOffsetMs || 0)
     const view = entitlementView(value, now)
     this.setData({ entitlementLabel: view.label, accessMode: view.accessMode || this.data.accessMode })
+  },
+
+  loadDraft() {
+    if (this.data.inputText) return
+    const draft = storage.takeParseDraft()
+    if (!draft || !draft.source_text) return
+    const inputText = normalizeShareText(draft.source_text)
+    this.setData({
+      inputText,
+      charCount: inputText.length,
+      selectedQuality: normalizeRequestedQuality(draft.requested_quality)
+    })
   },
 
   setState(state) {
@@ -117,6 +143,10 @@ Page({
 
   async startParse() {
     if (this.data.busy) return
+    if (this.data.atJobLimit) {
+      wx.showToast({ title: '最多同时提取 2 个视频', icon: 'none' })
+      return
+    }
     const inputText = normalizeShareText(this.data.inputText)
     if (!inputText) {
       wx.showToast({ title: '请先粘贴分享文案或链接', icon: 'none' })
@@ -140,11 +170,16 @@ Page({
       storage.setParseJob({
         job_id: jobId,
         source_text: inputText,
-        requested_quality: this.data.selectedQuality
+        requested_quality: this.data.selectedQuality,
+        platform: created.job.platform,
+        status: created.job.status,
+        progress: created.job.progress || 0,
+        stage: created.job.stage || '等待处理'
       })
-      const result = await this.watchParseJob(jobId)
-      if (!result) return
-      this.completeParseResult(result, inputText, this.data.selectedQuality)
+      this.setData({ inputText: '', charCount: 0, parseProgress: 0, parseStage: '' })
+      this.setState('idle')
+      await this.refreshActiveJobs()
+      wx.showToast({ title: '已加入提取任务', icon: 'success' })
     } catch (error) {
       this.setState('error')
       const presented = presentApiError(error)
@@ -156,40 +191,66 @@ Page({
     }
   },
 
-  async watchParseJob(jobId) {
-    if (this.data.state === 'idle' || this.data.state === 'error') this.setState('checking')
-    if (this.data.state === 'checking') this.setState('parsing')
-    const generation = ++this.pollGeneration
-    return api.waitForParseJob(jobId, (job) => {
-      this.setData({ parseProgress: job.progress || 0, parseStage: job.stage || '处理中' })
-    }, {
-      shouldContinue: () => generation === this.pollGeneration
-    })
+  stopJobPolling() {
+    if (this.jobPollTimer) clearTimeout(this.jobPollTimer)
+    this.jobPollTimer = null
   },
 
-  async resumeParseJob() {
-    const pending = storage.getParseJob()
-    if (!pending || !pending.job_id || this.data.busy) return
+  async refreshActiveJobs() {
+    if (this.refreshJobsInFlight) return
+    this.refreshJobsInFlight = true
+    const localJobs = storage.getParseJobs()
+    const localById = new Map(localJobs.map((job) => [job.job_id, job]))
     try {
-      const result = await this.watchParseJob(pending.job_id)
-      if (result) this.completeParseResult(result, pending.source_text || '', pending.requested_quality || 'original')
+      const response = await api.listParseJobs(20)
+      const activeJobs = (response.jobs || [])
+        .filter((job) => job.status === 'queued' || job.status === 'processing')
+        .slice(0, 2)
+        .map((job) => {
+          const local = localById.get(job.job_id) || {}
+          return {
+            ...local,
+            ...job,
+            platform_label: platformLabel(job.platform),
+            source_text: local.source_text || job.source_url || '',
+            progress: job.progress || 0,
+            stage: job.stage || '处理中'
+          }
+        })
+      const activeIds = new Set(activeJobs.map((job) => job.job_id))
+      const completed = (response.jobs || []).some((job) => (
+        localById.has(job.job_id) && !activeIds.has(job.job_id) && job.status === 'ready'
+      ))
+      storage.setParseJobs(activeJobs)
+      this.setData({
+        activeJobs,
+        activeJobCount: activeJobs.length,
+        atJobLimit: activeJobs.length >= 2
+      })
+      if (completed) wx.showToast({ title: '提取完成，请到记录中打开', icon: 'none' })
     } catch (error) {
-      storage.clearParseJob()
-      this.setState('error')
-      const presented = presentApiError(error)
-      wx.showModal({ title: presented.title, content: presented.message, showCancel: false })
+      const activeJobs = localJobs.slice(0, 2).map((job) => ({
+        ...job,
+        platform_label: platformLabel(job.platform),
+        progress: job.progress || 0,
+        stage: job.stage || '等待网络恢复'
+      }))
+      this.setData({
+        activeJobs,
+        activeJobCount: activeJobs.length,
+        atJobLimit: activeJobs.length >= 2
+      })
+    } finally {
+      this.refreshJobsInFlight = false
+      this.stopJobPolling()
+      if (this.pageVisible && this.data.activeJobCount > 0) {
+        this.jobPollTimer = setTimeout(() => this.refreshActiveJobs(), 1500)
+      }
     }
   },
 
-  completeParseResult(result, sourceText, requestedQuality) {
-    storage.setCurrentResult({
-      ...result,
-      source_text: sourceText,
-      requested_quality: result.requested_quality || requestedQuality
-    })
-    storage.clearParseJob()
-    this.setState('idle')
-    wx.navigateTo({ url: '/pages/result/result' })
+  openHistory() {
+    wx.navigateTo({ url: '/pages/history/history' })
   },
 
   openTutorial() {

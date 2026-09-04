@@ -82,9 +82,24 @@ Page({
     if (result && Date.parse(result.expires_at) > serverNow) return result
     if (!result || !result.source_text) throw new Error('结果已过期，请重新提取')
     this.setData({ state: 'loading' })
+    if (result.job_id) {
+      const existing = await api.parseJob(result.job_id)
+      if (existing.job && existing.job.status === 'ready' && existing.job.result) {
+        const renewed = {
+          ...existing.job.result,
+          job_id: result.job_id,
+          source_text: existing.job.source_url || result.source_text,
+          requested_quality: existing.job.result.requested_quality || result.requested_quality
+        }
+        storage.setCurrentResult(renewed)
+        this.loadResult(renewed)
+        return renewed
+      }
+    }
     const response = await api.parse(result.source_text, result.requested_quality || 'original')
     const refreshed = {
       ...response.result,
+      job_id: response.job_id,
       source_text: result.source_text,
       requested_quality: response.result.requested_quality || result.requested_quality || 'original'
     }

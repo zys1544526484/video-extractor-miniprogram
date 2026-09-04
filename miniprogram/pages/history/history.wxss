@@ -1,0 +1,152 @@
+.history-page {
+  padding-top: 14px;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+}
+
+.retention-note,
+.history-summary,
+.history-card {
+  background: #fff;
+  border: 1px solid #e7e8eb;
+  border-radius: 12px;
+}
+
+.retention-note {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  color: #73757a;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.retention-title {
+  margin-bottom: 2px;
+  color: #1f1f1f;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.history-summary {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 11px 14px;
+  color: #07a950;
+  font-size: 13px;
+  background: #f0faf4;
+  border-color: #c8ecd5;
+}
+
+.refresh-copy {
+  color: #73757a;
+}
+
+.history-list {
+  margin-top: 12px;
+}
+
+.history-card {
+  margin-bottom: 12px;
+  padding: 15px;
+}
+
+.history-card-heading,
+.history-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.platform-badge {
+  padding: 2px 7px;
+  color: #5f6166;
+  font-size: 12px;
+  background: #f3f4f5;
+  border-radius: 4px;
+}
+
+.history-status {
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.history-status-ready {
+  color: #07a950;
+}
+
+.history-title {
+  display: block;
+  margin-top: 11px;
+  overflow: hidden;
+  color: #1f1f1f;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 23px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  display: block;
+  margin-top: 3px;
+  color: #8a8a8a;
+  font-size: 13px;
+}
+
+.history-progress {
+  height: 5px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: #e8eaec;
+  border-radius: 3px;
+}
+
+.history-progress-value {
+  height: 100%;
+  background: #07c160;
+}
+
+.history-footer {
+  margin-top: 13px;
+}
+
+.history-time {
+  color: #a0a1a4;
+  font-size: 12px;
+}
+
+.history-action {
+  min-width: 86px;
+  height: 34px;
+  margin: 0;
+  padding: 0 12px;
+  color: #07a950;
+  font-size: 13px;
+  line-height: 34px;
+  background: #fff;
+  border: 1px solid #07c160;
+  border-radius: 7px;
+}
+
+.history-empty,
+.history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 55vh;
+  color: #8a8a8a;
+  font-size: 13px;
+  text-align: center;
+}
+
+.history-empty {
+  flex-direction: column;
+}
+
+.history-empty-title {
+  margin-bottom: 6px;
+  color: #44464a;
+  font-size: 17px;
+  font-weight: 600;
+}

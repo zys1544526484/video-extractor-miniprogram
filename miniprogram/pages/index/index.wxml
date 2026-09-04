@@ -61,14 +61,24 @@
   </view>
 
   <view class="action-row">
-    <button class="primary-button parse-button" disabled="{{busy}}" bindtap="startParse">{{buttonText}}</button>
+    <button class="primary-button parse-button" disabled="{{busy || atJobLimit}}" bindtap="startParse">{{atJobLimit ? '已有 2 个任务' : buttonText}}</button>
     <button class="secondary-button paste-button" disabled="{{busy}}" bindtap="pasteClipboard">粘贴</button>
   </view>
 
-  <view class="parse-progress" wx:if="{{state === 'parsing'}}">
-    <view class="parse-progress-copy"><text>{{parseStage || '正在准备完整视频'}}</text><text>{{parseProgress}}%</text></view>
-    <view class="parse-progress-track"><view class="parse-progress-value" style="width: {{parseProgress}}%;"></view></view>
-    <text class="parse-progress-hint">大视频可能需要较长时间，可离开页面后稍后返回查看</text>
+  <view class="active-tasks" wx:if="{{activeJobCount}}">
+    <view class="active-tasks-heading">
+      <view><text class="active-tasks-title">正在提取 {{activeJobCount}} 个视频</text><text class="active-tasks-hint">最多同时提交 2 个</text></view>
+      <text class="history-link" bindtap="openHistory">查看记录</text>
+    </view>
+    <view class="active-task" wx:for="{{activeJobs}}" wx:key="job_id" bindtap="openHistory">
+      <view class="active-task-copy">
+        <text class="active-task-platform">{{item.platform_label}}</text>
+        <text class="active-task-stage">{{item.stage}}</text>
+        <text class="active-task-progress">{{item.progress}}%</text>
+      </view>
+      <view class="parse-progress-track"><view class="parse-progress-value" style="width: {{item.progress}}%;"></view></view>
+    </view>
+    <text class="parse-progress-hint">任务会在后台继续，可离开页面后从提取记录打开结果</text>
   </view>
 
   <view class="legal-copy">

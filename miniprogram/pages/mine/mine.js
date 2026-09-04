@@ -50,6 +50,10 @@ Page({
     wx.navigateTo({ url: '/pages/faq/faq' })
   },
 
+  openHistory() {
+    wx.navigateTo({ url: '/pages/history/history' })
+  },
+
   showPrivacy() {
     wx.showModal({
       title: '隐私与存储说明',

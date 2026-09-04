@@ -30,4 +30,11 @@ test('mock parse job is idempotent and progresses to one complete result', async
   assert.equal(completed.job.status, 'ready')
   assert.equal(completed.job.progress, 100)
   assert.equal(completed.job.result.requested_quality, '540p')
+
+  const history = await mockApi.handle('/parse/jobs?limit=20', { method: 'GET' })
+  const saved = history.jobs.find((item) => item.job_id === created.job.job_id)
+  assert.equal(saved.status, 'ready')
+  assert.equal(saved.media_available, true)
+  assert.equal(saved.summary.quality_label, '540P')
+  assert.equal(saved.result, undefined)
 })
