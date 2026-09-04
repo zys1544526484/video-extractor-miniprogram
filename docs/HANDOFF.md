@@ -78,6 +78,11 @@
 - 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 97 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
 - Docker CLI 在本机不可用，Docker build 保持未验证；GitHub 新一轮 workflow 结果不得在远程通过前写成 PASS。
 
+### 步骤八：Uvicorn 访问日志收口（第四独立检查点）
+
+- Uvicorn access logger 已禁用，Dockerfile 和 README 的启动示例显式使用 `--no-access-log`，与应用路径掩码和 Caddy URI/请求头过滤共同避免媒体 Token 进入日志。
+- 本步骤验证：`tests/test_api.py` 13 passed；ruff All checks passed。
+
 ## 未验证项
 
 - 未进行微信开发者工具真机验证。

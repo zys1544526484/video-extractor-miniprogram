@@ -19,7 +19,7 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
-.\.venv\Scripts\python -m uvicorn app.main:app --reload
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --no-access-log
 ```
 
 小程序在没有真实凭证时使用开发配置。复制 `miniprogram/project.config.json.example` 为 `project.config.json` 后，用微信开发者工具打开 `miniprogram/`。真实 AppID、AppSecret 和广告单元不要提交到 Git。

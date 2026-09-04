@@ -134,6 +134,7 @@ def test_http_client_info_logging_is_disabled_for_wechat_secrets() -> None:
     configure_logging("INFO")
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("uvicorn.access").disabled is True
 
 
 def test_media_access_token_is_not_written_to_application_logs(client: TestClient, caplog) -> None:

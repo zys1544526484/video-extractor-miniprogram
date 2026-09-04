@@ -38,6 +38,9 @@ def configure_logging(level: str) -> None:
     # libraries must never inherit the application INFO level.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # Uvicorn's default access formatter includes the request path verbatim;
+    # disable it because media capability URLs contain a short-lived token.
+    logging.getLogger("uvicorn.access").disabled = True
 
 
 def error_payload(request: Request, error: AppError) -> dict[str, object]:
