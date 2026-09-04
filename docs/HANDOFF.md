@@ -14,6 +14,7 @@
 - 验证：前端 `npm test` 36 passed、`npm run validate:miniprogram` PASS；后端 pytest 100 passed、ruff PASS、compileall PASS；`git diff --check` PASS。
 - 未验证：微信开发者工具本轮未自动化截图；真实域名、真实五平台样例、真机相册保存仍为 `NOT VERIFIED`。
 - Draft PR：连接器调用 GitHub API 返回 `403 Resource not accessible by integration`，未创建成功；请使用有 Pull Request 写权限的 GitHub 账号打开 compare/new-PR 链接创建 Draft PR，不要直接合并。
+- 收尾修正：源编号改为按返回列表位置生成，兼容非 `source-N` 的后端源 ID；`npm test` 36 passed，`npm run validate:miniprogram` PASS，已随 commit `45f7c785840f498eed27f1f207d5e422cfad70fb` 推送。
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
