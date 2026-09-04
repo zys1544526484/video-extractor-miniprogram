@@ -102,11 +102,19 @@ Page({
         wx.showToast({ title: '结果已过期，请重新提取', icon: 'none' })
         return
       }
+      const cached = storage.getCurrentResult()
+      const preferredSourceId = cached && cached.job_id === jobId
+        ? cached.selected_source_id
+        : ''
       storage.setCurrentResult({
         ...response.job.result,
         job_id: jobId,
         source_text: response.job.source_url || job.source_url,
-        requested_quality: response.job.result.requested_quality || job.requested_quality
+        requested_quality: response.job.result.requested_quality || job.requested_quality,
+        // Keep a locally selected source when the history endpoint reissues
+        // fresh capability URLs.  The result page will fall back only if the
+        // server no longer returns that source.
+        selected_source_id: preferredSourceId || response.job.result.selected_source_id
       })
       wx.navigateTo({ url: '/pages/result/result' })
     } catch (error) {

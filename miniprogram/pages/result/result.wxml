@@ -12,15 +12,20 @@
     <view class="result-tab {{activeTab === 'title' ? 'result-tab-active' : ''}}" data-tab="title" bindtap="switchTab">标题</view>
   </view>
 
-  <block wx:if="{{activeTab === 'video'}}">
+  <block wx:if="{{activeTab === 'video' && result.media_type !== 'image'}}">
     <video class="video-preview" src="{{result.preview_url}}" controls="true" object-fit="cover" enable-progress-gesture="true" show-center-play-btn="true" aria-label="视频预览" />
     <view class="media-heading">
       <text class="platform-label">{{result.platform}}</text>
-      <view class="media-copy"><text class="media-title">{{result.title}}</text><text class="media-info">{{infoText}}</text></view>
-    </view>
-    <view class="source-entry" wx:if="{{sourceOptions.length > 1}}" bindtap="openSourceSheet">
-      <view><text class="source-entry-label">当前视频源</text><text class="source-entry-value">{{selectedSourceLabel}} · {{result.quality_label}} · {{selectedSourceSizeLabel}}</text></view>
-      <text class="source-entry-arrow">切换 ›</text>
+      <view class="media-copy">
+        <text class="media-title">{{result.title}}</text>
+        <view class="media-meta-line">
+          <text class="media-info">{{result.quality_label || '清晰度未知'}}</text>
+          <text class="media-size">{{selectedSourceSizeLabel}}</text>
+          <view class="source-compact-button" wx:if="{{sourceOptions.length > 1}}" bindtap="openSourceSheet">
+            <text>{{selectedSourceLabel}}</text><text class="source-compact-arrow">⌄</text>
+          </view>
+        </view>
+      </view>
     </view>
     <view class="notice-card">
       <view class="notice-row"><text class="notice-symbol">✓</text><text>请确认你有权保存该内容</text></view>

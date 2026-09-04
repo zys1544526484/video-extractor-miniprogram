@@ -2,6 +2,8 @@
 
 每个 Parser 实现 `can_handle(url)` 与 `parse(url, context)`，返回统一 `ParserResult`。策略依次为公开元数据、标准 HTML/JSON-LD/OpenGraph、正常公开网络请求、隔离的 yt-dlp；不可合规获取则失败。
 
+图片必须由解析器从公开页面的明确图片元素/JSON-LD 图片列表或直接图片 URL 返回；视频 `cover_url` 只用于封面展示，绝不自动充当作品图片。直接公开图片和无视频的公开图片页返回 `media_type: "image"`，没有安全图片时返回真实空状态。
+
 禁止浏览器 Cookie、模拟登录、验证码、DRM、地域/年龄/付费绕过和来源不明第三方解析 API。
 
 yt-dlp 运行在受超时控制的独立子进程中，禁用第三方插件、用户 site-packages 与环境代理；子进程逐次校验 DNS 结果只能是公网 IP，并受文件、内存、CPU 和文件描述符限制。异常、取消和超时会终止整个子进程树，遗留临时目录由 TTL 清理任务补偿。工作进程禁止向 JSON 协议的标准输出写下载进度。

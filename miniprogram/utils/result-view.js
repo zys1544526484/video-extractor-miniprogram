@@ -12,7 +12,7 @@ function normalizeResult(result) {
   // Older cached results only contain top-level media URLs. Convert them to source-1.
   const rawSources = Array.isArray(result.sources) && result.sources.length
     ? result.sources
-    : (result.preview_url || result.download_url ? [{
+    : (result.media_type !== 'image' && (result.preview_url || result.download_url) ? [{
         source_id: 'source-1',
         quality_label: result.quality_label,
         size_bytes: result.size_bytes,
@@ -58,6 +58,21 @@ function selectSource(result, sourceId) {
   return normalizeResult({ ...normalized, selected_source_id: selected.source_id })
 }
 
+function restorePreferredSource(result, preferredSourceId) {
+  const normalized = normalizeResult(result)
+  if (!normalized) return { result: null, fallback: false }
+  if (!preferredSourceId || normalized.media_type === 'image') {
+    return { result: normalized, fallback: false }
+  }
+  const preferred = normalized.sources.find((item) => item.source_id === preferredSourceId)
+  if (preferred) return { result: selectSource(normalized, preferredSourceId), fallback: false }
+  // A non-empty source list that no longer contains the user's choice means
+  // that source has genuinely expired/been removed.  The caller can notify the
+  // user before using the first remaining source.
+  if (normalized.sources.length) return { result: normalized, fallback: true }
+  return { result: normalized, fallback: false }
+}
+
 function sourceInfo(source) {
   return `${(source && source.quality_label) || '清晰度未知'} · ${formatDuration(source && source.duration_seconds)} · ${formatBytes(source && source.size_bytes)}`
 }
@@ -80,6 +95,7 @@ module.exports = {
   safeSourceUrl,
   normalizeResult,
   selectSource,
+  restorePreferredSource,
   sourceInfo,
   copyableDownloadUrl,
   copyAllText

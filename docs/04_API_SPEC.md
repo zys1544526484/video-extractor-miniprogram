@@ -12,13 +12,15 @@
 - `GET /parse/jobs/{job_id}`：查询 `queued/processing/ready/failed/cancelled/expired` 状态、0–100 进度和当前阶段。`ready` 时返回媒体结果，`quality_label` 始终描述实际媒体。
 - `DELETE /parse/jobs/{job_id}`：取消未完成任务。任务和结果均绑定当前登录用户。
 - `GET /media/{token}/preview`
-- `GET /media/{token}/download`：必须认证且 token 属于当前用户；仅 `rewarded_ad` 模式额外检查下载权益。
+- `GET /media/{token}/download`：短期能力链接，不要求小程序 `Authorization` 请求头，适合复制后独立打开；token 仍必须由服务端签发并映射到已验证用户的媒体会话，不能作为任意 URL 代理。`rewarded_ad` 模式在访问时检查该媒体会话所属用户的下载权益。
 
 `ready.result` 兼容旧缓存的单媒体字段，并新增：
 
 - `sources[]`：每项包含 `source_id`、实际 `quality_label`、`size_bytes`、`mime_type`、短期 `preview_url`、短期 `download_url`、`expires_at` 和 `media_expires_at`。所有地址均为本服务签发的媒体 token 地址，不返回上游媒体直链、Cookie 或长期 token。
 - `images[]`：每项包含 `image_id`、`alt`、`mime_type`、`size_bytes` 及本服务短期预览/下载地址；服务端无法安全落盘的图片不进入列表。
 - `share_text`：作品分享文案；`selected_source_id`：当前视频源。旧结果没有这些字段时，客户端按顶层 `preview_url`/`download_url` 合成 `source-1`。
+
+视频结果只有解析器明确返回的作品图片才进入 `images[]`；`cover_url` 永远只是封面，不能自动变成图片项。纯图片作品返回 `media_type: "image"`、`sources: []`，并以 `images[]` 作为图片页的唯一内容来源。
 
 媒体接口只接受服务端签发 token。错误包含稳定 `code`、中文 `message` 和 `retryable`。
 

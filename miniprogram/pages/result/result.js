@@ -12,6 +12,7 @@ const { getConfig } = require('../../config/index')
 const {
   normalizeResult,
   selectSource,
+  restorePreferredSource,
   copyableDownloadUrl,
   copyAllText
 } = require('../../utils/result-view')
@@ -88,6 +89,7 @@ Page({
       progress: 0,
       infoText: this.infoText(result),
       watermarkText: SOURCE_LABELS[result.watermark_status] || SOURCE_LABELS.unknown,
+      activeTab: result.media_type === 'image' ? 'images' : 'video',
       sourceOptions: result.sources || [],
       selectedSourceId: result.selected_source_id || '',
       selectedSourceLabel: this.sourceLabel(result.selected_source_id || '', result.sources),
@@ -114,6 +116,7 @@ Page({
 
   async ensureFreshResult() {
     const result = normalizeResult(this.data.result)
+    const preferredSourceId = result && result.selected_source_id
     const app = getApp()
     const serverNow = Date.now() + (app.globalData.serverOffsetMs || 0)
     if (result && !isTokenExpired(result, serverNow)) return result
@@ -122,27 +125,41 @@ Page({
     if (result.job_id) {
       const existing = await api.parseJob(result.job_id)
       if (existing.job && existing.job.status === 'ready' && existing.job.result) {
-        const renewed = normalizeResult({
+        const renewedRaw = normalizeResult({
           ...existing.job.result,
           job_id: result.job_id,
           source_text: existing.job.source_url || result.source_text,
           requested_quality: existing.job.result.requested_quality || result.requested_quality
         })
+        const restored = restorePreferredSource(renewedRaw, preferredSourceId)
+        const renewed = restored.result
+        if (restored.fallback) this.notifySourceFallback()
         storage.setCurrentResult(renewed)
         this.loadResult(renewed)
         return renewed
       }
     }
     const response = await api.parse(result.source_text, result.requested_quality || 'original')
-    const refreshed = normalizeResult({
+    const refreshedRaw = normalizeResult({
       ...response.result,
       job_id: response.job_id,
       source_text: result.source_text,
       requested_quality: response.result.requested_quality || result.requested_quality || 'original'
     })
+    const restored = restorePreferredSource(refreshedRaw, preferredSourceId)
+    const refreshed = restored.result
+    if (restored.fallback) this.notifySourceFallback()
     storage.setCurrentResult(refreshed)
     this.loadResult(refreshed)
     return refreshed
+  },
+
+  notifySourceFallback() {
+    wx.showModal({
+      title: '视频源已过期',
+      content: '原选择的视频源已过期，已切换到当前可用源。',
+      showCancel: false
+    })
   },
 
   switchTab(event) {

@@ -16,6 +16,16 @@
 - Draft PR：连接器调用 GitHub API 返回 `403 Resource not accessible by integration`，未创建成功；请使用有 Pull Request 写权限的 GitHub 账号打开 compare/new-PR 链接创建 Draft PR，不要直接合并。
 - 收尾修正：源编号改为按返回列表位置生成，兼容非 `source-N` 的后端源 ID；`npm test` 36 passed，`npm run validate:miniprogram` PASS，已随 commit `45f7c785840f498eed27f1f207d5e422cfad70fb` 推送。
 
+### 当前请求：参考结果页修正（2026-09-05）
+
+- 当前分支保持为 `codex/p1-reference-result-sources`，不新建分支、不创建 PR。
+- 下载链接现在是服务端签发的短期媒体能力地址；`/media/{token}/download` 可在没有小程序 `Authorization` 请求头的情况下独立打开，仍受媒体会话 token、过期时间和 `rewarded_ad` 权益检查保护。
+- 结果页刷新或从历史记录重开时保留本地选择的源2；只有服务端不再返回该源（已真实过期/失效）才切换到可用源并提示。视频清晰度、大小和源按钮已收敛到同一行，源列表从底部弹出。
+- 图片数据只来自解析器明确提供的公开图片；视频封面不再自动变成图片项。Generic 支持直接图片和显式画廊图片；纯图片作品使用 `media_type=image`，没有安全图片时显示空状态。
+- 本轮新增/更新后端和前端回归测试；本地后端 pytest 105 项、Ruff、compileall，前端 `npm test` 39 项、`npm run validate:miniprogram` 与 `git diff --check` 均通过。
+- 微信开发者工具验证：当前 CUA 状态没有微信开发者工具原生应用，工作区也未发现官方 DevTools CLI；因此本轮不能自动打开、操作或截图开发者工具，只能记录为 `NOT VERIFIED`，不得把静态校验当作截图/真机证据。
+- 未验证：真实五平台图片/视频样例、真实 HTTPS 合法域名、真实登录、真机预览/下载/相册权限和生产部署。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
 - 任务分支：`codex/p1-reference-result-sources`

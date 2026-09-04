@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-- P1 参考结果页与多媒体源：`IMPLEMENTED / LOCAL VERIFIED`。首页已移除画质预选；结果页提供视频/图片/标题 Tab、真实源列表切换、短期安全链接复制和图片保存；旧单源结果缓存兼容。
+- P1 参考结果页与多媒体源：`IMPLEMENTED / LOCAL VERIFIED`。首页已移除画质预选；结果页提供视频/图片/标题 Tab、真实源列表切换、短期能力链接复制和图片保存；旧单源结果缓存兼容。源2刷新/历史重开会保持，只有服务端确认源已过期才回退并提示；视频封面不会自动进入作品图片列表，纯图片结果使用 `media_type=image`。
 
 - Phase 00 工程基线：`COMPLETE`。
 - Phase 01–03 微信端与 Mock 闭环：`COMPLETE / LOCAL VERIFIED`。
@@ -24,6 +24,7 @@
 - Alembic 空 SQLite 数据库升级到 `0003_parse_jobs_media_sessions`：本地 PASS；最新分支 push CI PASS。
 - Uvicorn 进程级 health/auth/entitlement/ad-complete：PASS。
 - 首版正式免费模式：`DOWNLOAD_ACCESS_MODE=free` 时登录用户可直接下载，前端隐藏广告与权益 Gate，生产配置不要求 adUnitId；广告模式代码保留但默认关闭。
+- 本轮结果来源修正：`/media/{token}/download` 是可独立打开的短期能力链接，不要求小程序 `Authorization` 请求头；`rewarded_ad` 仍在服务端按媒体会话所属用户检查权益。后端新增独立链接、源2续签/过期回退和 Generic 直接图片/画廊测试；本地后端 pytest 105 项、前端 Node 39 项均通过。
 - 持久解析任务：创建/轮询/取消、幂等、用户隔离、服务重启恢复、页面重开续查和 0–100 进度自动测试 PASS；任务与媒体会话存入 SQLite，媒体结果保留 24 小时。每次返回的 `result.expires_at` 是当前访问 Token 的实际过期时间，`media_expires_at` 独立表示媒体保留截止时间；结果页保存前按 Token 过期时间刷新，Token 失效不会延长媒体会话。
 - 媒体访问安全：`MEDIA_ACCESS_TOKEN_TTL_SECONDS` 默认 900 秒，媒体会话保留 24 小时并支持重新签发；应用请求日志掩码媒体 Token，Caddy access log 删除 URI/请求头；公开 URL 仅允许 HTTP 80 或 HTTPS 443。
 - production 数据库启动：不再依赖 `create_all`；启动前校验数据库存在且 Alembic 已到 head，迁移由部署命令负责。
@@ -35,7 +36,7 @@
 - 432×911、360×800、430×932 浏览器视觉验收与核心广告保存流程：PASS。
 - 微信开发者工具 Stable 2.02.2608060、基础库 3.17.2、362×783 模拟器：页面加载、输入、Mock 提取、结果页、广告解锁、下载进度和保存成功状态 PASS。
 - P0 修复后使用官方开发者工具 CLI 重新执行 `open` 与 `auto`：项目载入/编译 PASS；本轮未把该检查扩大为真机或真实广告验证。
-- 旧画质选择版本曾执行官方 CLI `open` 与 `auto`；当前结果源/Tab 改版尚未在微信开发者工具中完成自动截图，需人工确认。
+- 旧画质选择版本曾执行官方 CLI `open` 与 `auto`；当前结果源/Tab 改版尚未在微信开发者工具中完成自动截图，需人工确认。当前环境的 CUA 可见浏览器标签但没有微信开发者工具原生应用，且未发现官方 DevTools CLI，因此本轮无法生成新的开发者工具截图；不能将静态校验写成工具/真机验证。
 - 首版免费模式改动后再次执行官方开发者工具 CLI `open` 与 `auto`：项目载入/编译 PASS；广告隐藏后的完整视觉与真机保存仍为 `NOT VERIFIED`。
 - 持久任务与大视频进度改动后再次执行官方开发者工具 CLI `open` 与 `auto`：项目载入/编译 PASS；65 分钟长任务、接近 180MiB 成品和相册保存仍需真机验证。
 - 修复 Windows Uvicorn 事件循环不支持 asyncio 子进程的问题；真实服务再次完成用户提供的 43 分钟 B站样例，输出 171,656,688 bytes 单一 MP4，预览与下载 Range 均为 HTTP 206。

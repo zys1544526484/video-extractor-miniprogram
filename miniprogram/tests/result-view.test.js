@@ -5,6 +5,7 @@ const {
   safeSourceUrl,
   normalizeResult,
   selectSource,
+  restorePreferredSource,
   copyableDownloadUrl,
   copyAllText
 } = require('../utils/result-view')
@@ -61,4 +62,44 @@ test('copy link rejects upstream URLs and copy all includes title and share text
 test('image data remains empty when the backend has no safe image URL', () => {
   const result = normalizeResult({ title: '无图', images: [{ image_id: 'cover', url: 'https://upstream.example/cover.jpg' }] })
   assert.deepEqual(result.images, [])
+})
+
+test('source 2 is restored after a token renewal while it remains available', () => {
+  const renewed = normalizeResult({
+    title: '多源',
+    selected_source_id: 'source-1',
+    sources: [
+      { source_id: 'source-1', preview_url: 'https://api.example.com/api/v1/media/one/preview', download_url: 'https://api.example.com/api/v1/media/one/download' },
+      { source_id: 'source-2', preview_url: 'https://api.example.com/api/v1/media/two/preview', download_url: 'https://api.example.com/api/v1/media/two/download' }
+    ]
+  })
+  const restored = restorePreferredSource(renewed, 'source-2')
+  assert.equal(restored.fallback, false)
+  assert.equal(restored.result.selected_source_id, 'source-2')
+  assert.equal(restored.result.download_url, renewed.sources[1].download_url)
+})
+
+test('source 2 falls back only when the renewed result no longer contains it', () => {
+  const renewed = normalizeResult({
+    title: '多源',
+    sources: [
+      { source_id: 'source-1', preview_url: 'https://api.example.com/api/v1/media/one/preview', download_url: 'https://api.example.com/api/v1/media/one/download' }
+    ]
+  })
+  const restored = restorePreferredSource(renewed, 'source-2')
+  assert.equal(restored.fallback, true)
+  assert.equal(restored.result.selected_source_id, 'source-1')
+})
+
+test('pure image results do not synthesize a video source from top-level URLs', () => {
+  const result = normalizeResult({
+    media_type: 'image',
+    title: '图片作品',
+    preview_url: 'https://api.example.com/api/v1/media/image/preview',
+    download_url: 'https://api.example.com/api/v1/media/image/download',
+    images: [{ image_id: 'image-1', preview_url: 'https://api.example.com/api/v1/media/image/preview' }]
+  })
+  assert.deepEqual(result.sources, [])
+  assert.equal(result.media_type, 'image')
+  assert.equal(result.images.length, 1)
 })

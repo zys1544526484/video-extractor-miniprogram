@@ -117,7 +117,8 @@ async function handle(path, options = {}) {
         session_id: 'mock_session',
         platform: '抖音',
         title: '示例视频标题',
-        cover_url: '/assets/mock-cover.png',
+        // The fixture is an explicit work image, not a video-cover fallback.
+        cover_url: '',
         media_type: 'video',
         duration_seconds: 42,
         size_bytes: 5320000,
@@ -154,8 +155,8 @@ async function handle(path, options = {}) {
         ],
         images: [
           {
-            image_id: 'cover',
-            alt: '作品封面',
+            image_id: 'work-image-1',
+            alt: '作品图片 1',
             mime_type: 'image/png',
             size_bytes: 1000,
             preview_url: '/assets/mock-cover.png',
