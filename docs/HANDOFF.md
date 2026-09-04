@@ -10,6 +10,7 @@
 - `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
 - Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
+- 当前 P0 修复状态：`REVISION_IN_PROGRESS`；Token 时间语义已完成本地检查，生产配置/Caddy CI 门禁仍待本轮完成。
 
 ## 长期工作规则
 
@@ -95,6 +96,14 @@
 
 - 修正媒体路径掩码正则，保留未知后缀路径中的分隔符，同时继续保证 Token 不出现在应用日志。
 - 本步骤验证：`tests/test_api.py` 14 passed；ruff All checks passed；随后已正常推送。
+
+### 步骤十一：Token 过期与媒体保留时间拆分（本轮第一独立检查点）
+
+- `result.expires_at` 现在表示当前预览/下载 Token 的实际过期时间；`result.media_expires_at` 单独表示媒体文件的 24 小时保留截止时间。
+- 任务结果重新打开时会重新签发短期 Token；旧 Token 失效不会延长媒体会话，结果页保存前按 Token 过期时间判断是否刷新。
+- 新增后端端到端覆盖：首次 Token 约 900 秒有效、Token 失效后从仍有效任务重新获取新 Token、媒体保留截止时间不变；新增结果页停留超过 15 分钟后刷新判断测试。
+- 本步骤本地验证：`npm test` 31 passed；`npm run validate:miniprogram` 76 files checked、PASS；后端 pytest 99 passed（2 warnings）。
+- 本步骤尚未完成远程 CI；下一独立步骤将补充 `npm run validate:production` 和固定版本 Caddy 配置验证。
 
 ## 未验证项
 

@@ -32,6 +32,7 @@ class MediaSession:
     required_headers: dict[str, str]
     mime_type: str
     size_bytes: int | None
+    access_token_expires_at: datetime
     expires_at: datetime
 
 
@@ -68,7 +69,12 @@ class MediaSessionStore:
     def _token_expires_at(self, session_expires_at: datetime, now: datetime) -> datetime:
         return min(session_expires_at, now + timedelta(seconds=self.access_token_ttl_seconds))
 
-    def _session(self, record: MediaSessionRecord, token: str) -> MediaSession:
+    def _session(
+        self,
+        record: MediaSessionRecord,
+        token: str,
+        access_token_expires_at: datetime,
+    ) -> MediaSession:
         temporary_file = (self.temp_root / record.file_path).resolve()
         try:
             temporary_file.relative_to(self.temp_root)
@@ -87,6 +93,7 @@ class MediaSessionStore:
             required_headers={},
             mime_type="video/mp4",
             size_bytes=record.size_bytes,
+            access_token_expires_at=access_token_expires_at.replace(tzinfo=UTC),
             expires_at=record.expires_at.replace(tzinfo=UTC),
         )
 
@@ -133,7 +140,7 @@ class MediaSessionStore:
                     )
                 )
                 session.commit()
-                return self._session(record, token)
+                return self._session(record, token, token_expires_at)
 
     async def available_until(self, session_id: str, *, user_id: int) -> datetime | None:
         now = utc_now_naive()
@@ -143,7 +150,7 @@ class MediaSessionStore:
                 if record is None or record.user_id != user_id or record.expires_at <= now:
                     return None
                 try:
-                    self._session(record, "")
+                    self._session(record, "", record.expires_at)
                 except AppError:
                     return None
                 return record.expires_at.replace(tzinfo=UTC)
@@ -165,7 +172,7 @@ class MediaSessionStore:
                     )
                 )
                 session.commit()
-                return self._session(record, token)
+                return self._session(record, token, token_expires_at)
 
     async def get(self, token: str) -> MediaSession:
         token_hash = self._token_hash(token)
@@ -181,7 +188,7 @@ class MediaSessionStore:
                 record = session.get(MediaSessionRecord, access.session_id)
                 if record is None or record.expires_at <= now:
                     raise AppError("MEDIA_SESSION_EXPIRED", "结果已过期，请重新提取", status_code=410)
-                return self._session(record, token)
+                return self._session(record, token, access.expires_at)
 
     def _remove_relative_file(self, relative_file: str) -> None:
         file = (self.temp_root / relative_file).resolve()

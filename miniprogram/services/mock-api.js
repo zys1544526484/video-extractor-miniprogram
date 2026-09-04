@@ -125,7 +125,8 @@ async function handle(path, options = {}) {
         requested_quality: requestedQuality,
         preview_url: '/assets/mock-video.mp4',
         download_url: '/assets/mock-video.mp4',
-        expires_at: new Date(Date.now() + 2 * 3600000).toISOString(),
+        expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
+        media_expires_at: new Date(Date.now() + 24 * 3600000).toISOString(),
         watermark_status: 'source_original',
         notice: '开发模式示例，不代表真实平台解析结果。'
       }
@@ -189,7 +190,7 @@ function mockHistoryView(job) {
   const { result, ...summary } = view
   return {
     ...summary,
-    media_expires_at: result.expires_at,
+    media_expires_at: result.media_expires_at,
     summary: {
       title: result.title,
       cover_url: result.cover_url,
