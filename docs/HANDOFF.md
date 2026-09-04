@@ -47,6 +47,14 @@
 - 本次本地验证：`npm test` 30/30；`npm run validate:miniprogram` 74 个文件；后端 pytest 87/87；ruff 通过；`git diff --check` 通过。
 - GitHub Actions 远程 runner 结果需以 PR checks 为准，本地未将其写成 PASS。
 
+### 步骤四：GitHub CI 最小修复
+
+- 第一次远程 CI（PR #1 的 run #1）失败在 `actions/setup-node` 的 npm lockfile 检查阶段：仓库没有 `package-lock.json`，而旧配置启用了 `cache: npm`；后续 `npm ci` 也不适用于当前无依赖的根 `package.json`。
+- 因此第一次远程 Node 测试没有执行；后端 CI 已通过。
+- 本次只做最小修复：升级 `actions/checkout` 与 `actions/setup-node` 到 v5，保留 Node 20，删除 npm cache 和 `npm ci`，直接运行 `npm test` 与 `npm run validate:miniprogram`。
+- 未生成依赖、未修改业务代码、未写入任何密钥或生产凭证。
+- 新一轮 GitHub CI 结果待 PR checks 实际完成后记录；在此之前不得将远程 Node CI 写成 PASS。
+
 ## 未验证项
 
 - 未进行微信开发者工具真机验证。
