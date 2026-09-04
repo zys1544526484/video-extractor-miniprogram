@@ -14,6 +14,12 @@
 - `GET /media/{token}/preview`
 - `GET /media/{token}/download`：必须认证且 token 属于当前用户；仅 `rewarded_ad` 模式额外检查下载权益。
 
+`ready.result` 兼容旧缓存的单媒体字段，并新增：
+
+- `sources[]`：每项包含 `source_id`、实际 `quality_label`、`size_bytes`、`mime_type`、短期 `preview_url`、短期 `download_url`、`expires_at` 和 `media_expires_at`。所有地址均为本服务签发的媒体 token 地址，不返回上游媒体直链、Cookie 或长期 token。
+- `images[]`：每项包含 `image_id`、`alt`、`mime_type`、`size_bytes` 及本服务短期预览/下载地址；服务端无法安全落盘的图片不进入列表。
+- `share_text`：作品分享文案；`selected_source_id`：当前视频源。旧结果没有这些字段时，客户端按顶层 `preview_url`/`download_url` 合成 `source-1`。
+
 媒体接口只接受服务端签发 token。错误包含稳定 `code`、中文 `message` 和 `retryable`。
 
 同一用户最多保留 2 个活动任务，开发默认启用 2 个任务 worker；生产示例仍按 2 核 4GB 配置 1 个 worker，第二个任务进入队列。FFmpeg 媒体处理默认只允许 1 路，避免多条大视频同时转码耗尽资源。服务端结果和任务记录默认保留 24 小时；用户读取已完成任务时重新签发不超过该结果原有效期的短期 token。

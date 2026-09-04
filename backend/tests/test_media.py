@@ -105,3 +105,31 @@ def test_media_token_survives_store_restart(
 
     assert restored.user_id == user_id
     assert restored.temporary_file.read_bytes().startswith(b"0123456789")
+
+
+def test_image_media_uses_image_content_type_and_filename(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    user_id = decode_auth_token(token, client.app.state.settings.app_token_secret.get_secret_value())
+    directory = client.app.state.settings.temp_dir / "image-session"
+    directory.mkdir(parents=True, exist_ok=True)
+    file = directory / "cover.jpg"
+    file.write_bytes(b"fake-jpeg")
+    media = asyncio.run(
+        client.app.state.media_sessions.create(
+            user_id=user_id,
+            platform="测试平台",
+            title="封面",
+            upstream_url=None,
+            temporary_file=str(file),
+            required_headers={},
+            mime_type="image/jpeg",
+            size_bytes=file.stat().st_size,
+        )
+    )
+    client.app.state.settings.download_access_mode = "free"
+    response = client.get(f"/api/v1/media/{media.token}/download", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.headers["content-disposition"].endswith(".jpg\"")

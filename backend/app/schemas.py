@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +25,35 @@ class ErrorDetail(BaseModel):
     retryable: bool = False
 
 
+class ParserSourceModel(BaseModel):
+    """A parser-provided media candidate; upstream URLs never leave the backend."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=64)
+    quality_label: str | None = None
+    upstream_media_url: str | None = None
+    temporary_file: str | None = None
+    mime_type: str = "video/mp4"
+    size_bytes: int | None = None
+    required_headers: dict[str, str] = Field(default_factory=dict)
+    notices: list[str] = Field(default_factory=list)
+
+
+class ParserImageModel(BaseModel):
+    """A parser-provided image candidate; it is materialized before exposure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_id: str = Field(min_length=1, max_length=64)
+    url: str | None = None
+    temporary_file: str | None = None
+    mime_type: str = "image/jpeg"
+    size_bytes: int | None = None
+    alt: str = ""
+    required_headers: dict[str, str] = Field(default_factory=dict)
+
+
 class ParserResultModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -44,6 +73,9 @@ class ParserResultModel(BaseModel):
     ] = "unknown"
     required_headers: dict[str, str] = Field(default_factory=dict)
     notices: list[str] = Field(default_factory=list)
+    sources: list[ParserSourceModel] = Field(default_factory=list)
+    images: list[ParserImageModel] = Field(default_factory=list)
+    share_text: str = ""
 
 
 class ParsePublicResult(BaseModel):
@@ -62,3 +94,7 @@ class ParsePublicResult(BaseModel):
     media_expires_at: datetime
     watermark_status: str
     notice: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    images: list[dict[str, Any]] = Field(default_factory=list)
+    share_text: str = ""
+    selected_source_id: str | None = None

@@ -12,7 +12,7 @@ from ..config import Settings
 from ..errors import AppError
 from ..parsers.base import ParseContext
 from ..parsers.registry import ParserRegistry
-from ..schemas import ParsePublicResult
+from ..schemas import ParsePublicResult, ParserImageModel, ParserResultModel, ParserSourceModel
 from .media_processor import MediaProcessor
 from .media_sessions import MediaSessionStore
 from .safe_http import SafeHttpClient
@@ -134,6 +134,80 @@ class ParseService:
             await asyncio.to_thread(shutil.rmtree, directory, True)
             raise
 
+    async def _materialize_image(
+        self,
+        image: ParserImageModel,
+    ) -> None:
+        """Download a parser image into the managed temp root before issuing a token."""
+        if not image.url:
+            return
+        directory = Path(
+            await asyncio.to_thread(tempfile.mkdtemp, prefix="image_", dir=self.settings.temp_dir)
+        )
+        partial = directory / "image.part"
+        final = directory / "image.bin"
+        try:
+            opened = await self.http.open_stream(image.url, headers=image.required_headers)
+            try:
+                content_type = opened.response.headers.get("content-type", image.mime_type)
+                content_type = content_type.split(";", 1)[0].strip().lower()
+                if content_type == "image/jpg":
+                    content_type = "image/jpeg"
+                if not content_type.startswith("image/"):
+                    raise AppError("MEDIA_FORMAT_UNSUPPORTED", "解析图片格式无效")
+                declared = opened.response.headers.get("content-length")
+                max_image_bytes = min(self.settings.max_source_video_bytes, 20 * 1024 * 1024)
+                if declared and declared.isdigit() and int(declared) > max_image_bytes:
+                    raise AppError("MEDIA_TOO_LARGE", "解析图片超过服务器处理上限")
+                transferred = 0
+                with partial.open("wb") as output:
+                    async for chunk in opened.response.aiter_bytes():
+                        transferred += len(chunk)
+                        if transferred > max_image_bytes:
+                            raise AppError("MEDIA_TOO_LARGE", "解析图片超过服务器处理上限")
+                        output.write(chunk)
+                partial.replace(final)
+                image.temporary_file = str(final)
+                image.url = None
+                image.required_headers = {}
+                image.mime_type = content_type
+                image.size_bytes = transferred
+            finally:
+                await opened.close()
+        except BaseException:
+            await asyncio.to_thread(shutil.rmtree, directory, True)
+            raise
+
+    def _source_candidates(self, result: ParserResultModel) -> list[ParserSourceModel]:
+        if result.sources:
+            return list(result.sources[:4])
+        return [
+            ParserSourceModel(
+                source_id="source-1",
+                quality_label=result.quality_label,
+                upstream_media_url=result.upstream_media_url,
+                temporary_file=result.temporary_file,
+                mime_type=result.mime_type,
+                size_bytes=result.size_bytes,
+                required_headers=result.required_headers,
+                notices=result.notices,
+            )
+        ]
+
+    def _validate_local_file(self, value: str | None) -> Path:
+        if not value:
+            raise AppError("PARSE_FAILED", "临时媒体不存在")
+        file = Path(value).resolve()
+        try:
+            file.relative_to(self.settings.temp_dir.resolve())
+        except ValueError as error:
+            raise AppError("PARSE_FAILED", "临时媒体路径无效") from error
+        if not file.is_file():
+            raise AppError("PARSE_FAILED", "临时媒体不存在")
+        if file.stat().st_size > self.settings.max_source_video_bytes:
+            raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
+        return file
+
     async def parse(
         self,
         text: str,
@@ -162,65 +236,123 @@ class ParseService:
 
             if progress:
                 await progress(20, "准备媒体文件")
-            await self._materialize_remote(result, progress)
-
-            if bool(result.upstream_media_url) == bool(result.temporary_file):
-                raise AppError("PARSE_FAILED", "解析结果缺少唯一媒体来源")
-            if result.upstream_media_url:
-                await self.http.validate_url(result.upstream_media_url)
-            if result.temporary_file:
-                file = await asyncio.to_thread(Path(result.temporary_file).resolve)
-                try:
-                    file.relative_to(self.settings.temp_dir.resolve())
-                except ValueError as error:
-                    raise AppError("PARSE_FAILED", "临时媒体路径无效") from error
-                if not file.is_file():
-                    raise AppError("PARSE_FAILED", "临时媒体不存在")
-                if file.stat().st_size > self.settings.max_source_video_bytes:
-                    raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
-                processed = await self.media_processor.process(
-                    file,
-                    quality,
-                    result.quality_label,
-                    progress,
+            sources: list[dict[str, object]] = []
+            for index, source in enumerate(self._source_candidates(result), start=1):
+                if bool(source.upstream_media_url) == bool(source.temporary_file):
+                    if not source.upstream_media_url and not source.temporary_file:
+                        continue
+                    raise AppError("PARSE_FAILED", "解析结果缺少唯一媒体来源")
+                await self._materialize_remote(source, progress)
+                if source.upstream_media_url:
+                    await self.http.validate_url(source.upstream_media_url)
+                if source.temporary_file:
+                    file = self._validate_local_file(source.temporary_file)
+                    processed = await self.media_processor.process(
+                        file,
+                        quality,
+                        source.quality_label or result.quality_label,
+                        progress,
+                    )
+                    source.temporary_file = str(processed.file)
+                    source.size_bytes = processed.probe.size_bytes
+                    source.mime_type = "video/mp4"
+                    if result.duration_seconds is None:
+                        result.duration_seconds = processed.probe.duration_seconds
+                    source.quality_label = processed.quality_label
+                    if processed.notice:
+                        source.notices.append(processed.notice)
+                session = await self.media_sessions.create(
+                    user_id=user_id,
+                    platform=result.platform,
+                    title=result.title,
+                    upstream_url=source.upstream_media_url,
+                    temporary_file=source.temporary_file,
+                    required_headers=source.required_headers,
+                    mime_type=source.mime_type,
+                    size_bytes=source.size_bytes,
                 )
-                result.temporary_file = str(processed.file)
-                result.size_bytes = processed.probe.size_bytes
-                result.duration_seconds = processed.probe.duration_seconds
-                result.quality_label = processed.quality_label
-                result.mime_type = "video/mp4"
-                if processed.notice:
-                    result.notices.append(processed.notice)
+                sources.append(
+                    {
+                        "source_id": source.source_id or f"source-{index}",
+                        "session_id": session.session_id,
+                        "quality_label": source.quality_label,
+                        "size_bytes": source.size_bytes,
+                        "mime_type": source.mime_type,
+                        "expires_at": session.access_token_expires_at,
+                        "media_expires_at": session.expires_at,
+                    }
+                )
+                if len(sources) >= 4:
+                    break
+            if not sources:
+                raise AppError("PARSE_FAILED", "解析结果没有可用视频源")
 
-            session = await self.media_sessions.create(
-                user_id=user_id,
-                platform=result.platform,
-                title=result.title,
-                upstream_url=result.upstream_media_url,
-                temporary_file=result.temporary_file,
-                required_headers=result.required_headers,
-                mime_type=result.mime_type,
-                size_bytes=result.size_bytes,
-            )
+            images: list[dict[str, object]] = []
+            image_candidates = list(result.images)
+            if not image_candidates and result.cover_url:
+                image_candidates = [
+                    ParserImageModel(image_id="cover", url=result.cover_url, alt=result.title)
+                ]
+            for image in image_candidates[:8]:
+                try:
+                    if bool(image.url) == bool(image.temporary_file):
+                        if not image.url and not image.temporary_file:
+                            continue
+                        raise AppError("PARSE_FAILED", "解析图片缺少唯一来源")
+                    await self._materialize_image(image)
+                    file = self._validate_local_file(image.temporary_file)
+                    image_session = await self.media_sessions.create(
+                        user_id=user_id,
+                        platform=result.platform,
+                        title=image.alt or result.title,
+                        upstream_url=None,
+                        temporary_file=str(file),
+                        required_headers={},
+                        mime_type=image.mime_type,
+                        size_bytes=image.size_bytes,
+                    )
+                    images.append(
+                        {
+                            "image_id": image.image_id,
+                            "session_id": image_session.session_id,
+                            "mime_type": image.mime_type,
+                            "size_bytes": image.size_bytes,
+                            "alt": image.alt,
+                            "expires_at": image_session.access_token_expires_at,
+                            "media_expires_at": image_session.expires_at,
+                        }
+                    )
+                except AppError:
+                    # A cover/image is optional; a failed image must not discard a valid video.
+                    continue
+
+            primary = sources[0]
             if progress:
                 await progress(95, "生成安全下载链接")
             base = self.settings.public_base_url.rstrip("/")
-            path = f"{base}/api/v1/media/{session.token}"
+            primary_session = await self.media_sessions.issue_token(
+                str(primary["session_id"]), user_id=user_id
+            )
+            primary_path = f"{base}/api/v1/media/{primary_session.token}"
             return ParsePublicResult(
-                session_id=session.session_id,
+                session_id=primary_session.session_id,
                 platform=result.platform,
                 title=result.title,
                 cover_url=result.cover_url,
                 duration_seconds=result.duration_seconds,
-                size_bytes=result.size_bytes,
-                quality_label=result.quality_label,
+                size_bytes=primary.get("size_bytes") or result.size_bytes,
+                quality_label=primary.get("quality_label") or result.quality_label,
                 requested_quality=quality,
-                preview_url=f"{path}/preview",
-                download_url=f"{path}/download",
-                expires_at=session.access_token_expires_at,
-                media_expires_at=session.expires_at,
+                preview_url=f"{primary_path}/preview",
+                download_url=f"{primary_path}/download",
+                expires_at=primary_session.access_token_expires_at,
+                media_expires_at=primary_session.expires_at,
                 watermark_status=result.watermark_status,
                 notice="；".join(result.notices),
+                sources=sources,
+                images=images,
+                share_text=result.share_text or f"{result.title}\n{result.canonical_url}",
+                selected_source_id=str(primary["source_id"]),
             )
         finally:
             await self._leave(user_id)

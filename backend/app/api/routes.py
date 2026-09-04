@@ -27,11 +27,16 @@ def ok(request: Request, **payload: Any) -> dict[str, Any]:
     return {"success": True, "request_id": request.state.request_id, **payload}
 
 
-def safe_filename(platform: str, title: str) -> str:
+def safe_filename(platform: str, title: str, mime_type: str = "video/mp4") -> str:
     raw = f"{platform}_{title}".replace("\r", " ").replace("\n", " ")
     clean = re.sub(r"[^A-Za-z0-9_-]+", "_", raw).strip("_.")
     digest = sha256(raw.encode("utf-8")).hexdigest()[:8]
-    return f"{(clean or 'video')[:72]}_{digest}.mp4"
+    extension = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }.get((mime_type or "").split(";", 1)[0].lower(), ".mp4")
+    return f"{(clean or 'video')[:72]}_{digest}{extension}"
 
 
 def effective_entitlement(request: Request, user_id: int) -> dict[str, object]:
@@ -177,10 +182,16 @@ async def cancel_parse_job(
     return ok(request, job=job)
 
 
-def local_file_response(file: Path, *, download: bool, filename: str) -> FileResponse:
+def local_file_response(
+    file: Path,
+    *,
+    download: bool,
+    filename: str,
+    media_type: str = "video/mp4",
+) -> FileResponse:
     return FileResponse(
         file,
-        media_type="video/mp4",
+        media_type=media_type,
         filename=filename if download else None,
         content_disposition_type="attachment" if download else "inline",
     )
@@ -217,7 +228,7 @@ async def remote_stream_response(request: Request, media: Any, *, download: bool
         if value:
             headers[name] = value
     if download:
-        filename = safe_filename(media.platform, media.title)
+        filename = safe_filename(media.platform, media.title, media.mime_type)
         headers["content-disposition"] = f'attachment; filename="{filename}"'
     return StreamingResponse(
         iterator(),
@@ -234,7 +245,8 @@ async def preview_media(token: str, request: Request):
         return local_file_response(
             media.temporary_file,
             download=False,
-            filename=safe_filename(media.platform, media.title),
+            filename=safe_filename(media.platform, media.title, media.mime_type),
+            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=False)
 
@@ -252,6 +264,7 @@ async def download_media(token: str, request: Request, user_id: int = Depends(cu
         return local_file_response(
             media.temporary_file,
             download=True,
-            filename=safe_filename(media.platform, media.title),
+            filename=safe_filename(media.platform, media.title, media.mime_type),
+            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=True)

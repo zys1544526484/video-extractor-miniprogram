@@ -117,7 +117,7 @@ async function handle(path, options = {}) {
         session_id: 'mock_session',
         platform: '抖音',
         title: '示例视频标题',
-        cover_url: '',
+        cover_url: '/assets/mock-cover.png',
         media_type: 'video',
         duration_seconds: 42,
         size_bytes: 5320000,
@@ -128,7 +128,43 @@ async function handle(path, options = {}) {
         expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
         media_expires_at: new Date(Date.now() + 24 * 3600000).toISOString(),
         watermark_status: 'source_original',
-        notice: '开发模式示例，不代表真实平台解析结果。'
+        notice: '开发模式示例，不代表真实平台解析结果。',
+        selected_source_id: 'source-1',
+        sources: [
+          {
+            source_id: 'source-1',
+            quality_label: '原视频 · 1080P',
+            size_bytes: 5320000,
+            mime_type: 'video/mp4',
+            preview_url: '/assets/mock-video.mp4',
+            download_url: '/assets/mock-video.mp4',
+            expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
+            media_expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
+          },
+          {
+            source_id: 'source-2',
+            quality_label: '720P · 兼容源',
+            size_bytes: 3180000,
+            mime_type: 'video/mp4',
+            preview_url: '/assets/mock-video.mp4',
+            download_url: '/assets/mock-video.mp4',
+            expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
+            media_expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
+          }
+        ],
+        images: [
+          {
+            image_id: 'cover',
+            alt: '作品封面',
+            mime_type: 'image/png',
+            size_bytes: 1000,
+            preview_url: '/assets/mock-cover.png',
+            download_url: '/assets/mock-cover.png',
+            expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
+            media_expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
+          }
+        ],
+        share_text: '示例视频标题\n开发模式示例分享文案'
       }
     }
     MOCK_JOBS.set(job.job_id, job)

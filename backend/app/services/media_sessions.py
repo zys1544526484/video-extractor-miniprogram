@@ -20,6 +20,25 @@ def utc_now_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+ALLOWED_MEDIA_TYPES = {
+    "video/mp4",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+
+def normalize_media_type(value: str | None) -> str:
+    media_type = (value or "video/mp4").split(";", 1)[0].strip().lower()
+    if media_type == "video/*":
+        media_type = "video/mp4"
+    if media_type in {"image/jpg", "image/pjpeg"}:
+        media_type = "image/jpeg"
+    if media_type not in ALLOWED_MEDIA_TYPES:
+        raise AppError("MEDIA_FORMAT_UNSUPPORTED", "媒体格式暂不支持")
+    return media_type
+
+
 @dataclass
 class MediaSession:
     token: str
@@ -91,7 +110,7 @@ class MediaSessionStore:
             upstream_url=None,
             temporary_file=temporary_file,
             required_headers={},
-            mime_type="video/mp4",
+            mime_type=normalize_media_type(record.mime_type),
             size_bytes=record.size_bytes,
             access_token_expires_at=access_token_expires_at.replace(tzinfo=UTC),
             expires_at=record.expires_at.replace(tzinfo=UTC),
@@ -111,6 +130,7 @@ class MediaSessionStore:
     ) -> MediaSession:
         if upstream_url or not temporary_file:
             raise AppError("PARSE_FAILED", "媒体必须先安全落盘")
+        normalized_mime = normalize_media_type(mime_type)
         relative_file = await asyncio.to_thread(self._relative_file, temporary_file)
         now = utc_now_naive()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
@@ -125,7 +145,7 @@ class MediaSessionStore:
                     platform=platform,
                     title=title,
                     file_path=relative_file,
-                    mime_type="video/mp4",
+                    mime_type=normalized_mime,
                     size_bytes=size_bytes,
                     created_at=now,
                     expires_at=expires_at,

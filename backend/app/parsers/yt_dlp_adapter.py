@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from ..config import Settings
 from ..errors import AppError
-from ..schemas import ParserResultModel
+from ..schemas import ParserResultModel, ParserSourceModel
 
 PLATFORM_LABELS = {
     "bilibili": "Bilibili",
@@ -98,6 +98,57 @@ class YtDlpAdapter:
         if info.get("url") and info.get("ext") == "mp4":
             return info
         return None
+
+    @classmethod
+    def _select_progressive_sources(
+        cls,
+        info: dict[str, Any],
+        requested_quality: str = "original",
+        max_source_bytes: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return up to two distinct public progressive sources, best first."""
+        formats = info.get("formats") or []
+        candidates = [
+            item
+            for item in formats
+            if item.get("url")
+            and item.get("vcodec") not in {None, "none"}
+            and item.get("acodec") not in {None, "none"}
+            and str(item.get("protocol") or "").lower().startswith("http")
+            and str(item.get("ext") or "").lower() == "mp4"
+        ]
+        if not candidates:
+            selected = cls._select_progressive_format(info, requested_quality)
+            return [selected] if selected else []
+        max_height = QUALITY_MAX_HEIGHT.get(requested_quality)
+        if max_height is not None:
+            bounded = [item for item in candidates if int(item.get("height") or 0) <= max_height]
+            if bounded:
+                candidates = bounded
+        candidates.sort(
+            key=lambda item: (
+                int(item.get("height") or 0),
+                float(item.get("tbr") or item.get("vbr") or 0),
+            ),
+            reverse=True,
+        )
+        selected: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        seen_heights: set[int] = set()
+        for item in candidates:
+            item_url = str(item.get("url"))
+            height = int(item.get("height") or 0)
+            if item_url in seen_urls or height in seen_heights:
+                continue
+            size = cls._known_size(item)
+            if max_source_bytes is not None and size and size > max_source_bytes:
+                continue
+            selected.append(item)
+            seen_urls.add(item_url)
+            seen_heights.add(height)
+            if len(selected) == 2:
+                break
+        return selected
 
     @staticmethod
     def _known_size(item: dict[str, Any]) -> int | None:
@@ -309,6 +360,7 @@ class YtDlpAdapter:
         mime_type = "video/mp4"
         size = None
         quality = None
+        source_models: list[ParserSourceModel] = []
 
         if download_media:
             files = [
@@ -329,7 +381,12 @@ class YtDlpAdapter:
             temporary_file = str(file)
             quality = selected_quality or "已合并"
         else:
-            selected = self._select_progressive_format(info, requested_quality)
+            selected_candidates = self._select_progressive_sources(
+                info,
+                requested_quality,
+                self.settings.max_source_video_bytes,
+            )
+            selected = selected_candidates[0] if selected_candidates else None
             if selected is None:
                 raise AppError("MEDIA_FORMAT_UNSUPPORTED", "没有可直接保存的公开视频格式")
             upstream_url = str(selected["url"])
@@ -342,6 +399,22 @@ class YtDlpAdapter:
             height = selected.get("height")
             quality = f"{height}P" if height else str(selected.get("format_note") or "公开资源")
             headers = {**headers, **self._safe_headers(selected)}
+            for index, candidate in enumerate(selected_candidates, start=1):
+                candidate_height = candidate.get("height")
+                source_models.append(
+                    ParserSourceModel(
+                        source_id=f"source-{index}",
+                        quality_label=(
+                            f"{candidate_height}P"
+                            if candidate_height
+                            else str(candidate.get("format_note") or "公开资源")
+                        ),
+                        upstream_media_url=str(candidate["url"]),
+                        mime_type="video/mp4",
+                        size_bytes=self._known_size(candidate),
+                        required_headers={**headers, **self._safe_headers(candidate)},
+                    )
+                )
 
         notices = ["仅处理无需登录即可公开访问的媒体"]
         if quality and "H.265" in quality:
@@ -361,6 +434,8 @@ class YtDlpAdapter:
             watermark_status="unknown",
             required_headers=headers,
             notices=notices,
+            sources=source_models,
+            share_text=f"{title}\n{str(info.get('webpage_url') or url)}",
         )
 
     async def extract(
