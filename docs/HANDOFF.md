@@ -6,11 +6,21 @@
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
-- 任务分支：`codex/p0-security-production-gates`
-- `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
+- 任务分支：`codex/current-product-audit`
+- `main` 已推送的最新 commit：`b006c3f7bcf00d369d22c7e99ab2f738764ea84f`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
-- Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
-- 当前 P0 修复状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`；Token 时间语义、生产配置校验和 Caddy CI 门禁已完成自动化检查，真实部署与真机仍待验证。
+- 已合并 PR：PR #1（协作初始化）与 PR #2（P0 security production gates）。
+- 当前 Draft PR：审计文档提交并推送后创建，目标为 `main`，不得在本任务中合并。
+- 当前任务：`PRODUCT_AUDIT_DOCUMENTATION_ONLY`。仅整理历史沟通与当前实现交接，不继续功能开发；真实部署与真机仍待验证。
+
+## 当前产品审计任务
+
+- 基线检查：工作区干净；`main` 与 `origin/main` 均为 `b006c3f7bcf00d369d22c7e99ab2f738764ea84f`。
+- 当前分支：`codex/current-product-audit`。
+- PR #2：已合并到 `main`。
+- 允许变更：仅 `docs/CODEX_HISTORY.md` 与 `docs/HANDOFF.md`。
+- 禁止事项：本任务不是继续开发；不修改业务代码，不执行需求冲突修复，不合并 Draft PR。
+- 审计输出：用户需求演变、已实现功能、失败/返工、当前流程、平台真实验证、未完成 Gate 和 6 组需求/文档冲突。
 
 ## 长期工作规则
 
