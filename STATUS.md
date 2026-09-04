@@ -12,10 +12,10 @@
 
 ## 本地验证结果
 
-- 前端 Node 单测：30/30 PASS（本次收尾复跑）。
-- 小程序 JSON、路由、资源引用、JS 语法：74 文件 PASS（本次收尾复跑）。
-- 后端 pytest：87/87 PASS（本次收尾复跑）。
-- `ruff check app tests alembic`：PASS（本次收尾复跑）。
+- 前端 Node 单测：本地 `npm test` 30/30；GitHub 最新 PR CI 为 30 passed、0 failed。
+- 小程序 JSON、路由、资源引用、JS 语法：本地工作区 74 文件；GitHub 干净环境 72 files checked，均通过。
+- 后端 pytest：GitHub 最新 PR CI 共收集 87 项：84 passed、3 skipped；skipped 不计为 passed。
+- `ruff check app tests alembic`：本地复跑通过；GitHub 最新 PR CI 为 All checks passed。
 - 除明确标注“本次收尾复跑”的条目外，其余 PASS 为既有历史验证记录，本次未重跑，不作为本次收尾的新验证。
 - `compileall app alembic`：PASS。
 - Alembic 空 SQLite 数据库升级到 `0003_parse_jobs_media_sessions`：PASS。
@@ -37,7 +37,7 @@
 - 小程序上传包估算由约 2.6MiB 降至约 99KiB；测试目录与未使用的大图已通过 `packOptions.ignore` 排除，尚未执行真实上传。
 - 上线前 P0 代码修复：体验版/正式版生产配置强制校验、微信登录查询串日志降级、服务端广告尝试凭证、yt-dlp 独立受限子进程与 Windows UTF-8 协议均已本地回归通过。
 - 用户提供的抖音公开短链真实 smoke test到达解析器，但上游要求 fresh cookies，按合规边界返回 `CONTENT_RESTRICTED`；没有导入 Cookie，抖音能力仍为 `NOT VERIFIED`。
-- GitHub Actions CI：已配置 `codex/**` push 与针对 `main` 的 pull request 触发；新一轮 run #4 已由 GitHub runner 实际执行并成功完成 Node、小程序校验、后端 pytest 和 ruff。
+- GitHub Actions CI：已配置 `codex/**` push 与针对 `main` 的 pull request 触发；最新 PR CI 检查的前后端两个 job 均成功。
 
 ## 已确认产品决策
 

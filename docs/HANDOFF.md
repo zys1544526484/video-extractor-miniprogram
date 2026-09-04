@@ -53,7 +53,8 @@
 - 因此第一次远程 Node 测试没有执行；后端 CI 已通过。
 - 本次只做最小修复：升级 `actions/checkout` 与 `actions/setup-node` 到 v5，保留 Node 20，删除 npm cache 和 `npm ci`，直接运行 `npm test` 与 `npm run validate:miniprogram`。
 - 未生成依赖、未修改业务代码、未写入任何密钥或生产凭证。
-- 新一轮 GitHub CI run #4 已完成并成功；Node、小程序验证、后端 pytest 和 ruff 均由 workflow 实际执行通过。
+- 最新 PR CI 检查已完成并成功：Node 30 passed、0 failed；小程序验证 72 files checked、PASS；后端 84 passed、3 skipped（共收集 87 项）；Ruff 为 All checks passed；前后端两个 job 均成功。
+- 本地与 GitHub 文件计数差异：本地 validator 递归包含 `miniprogram/project.config.json` 和 `miniprogram/project.private.config.json`；两者均由 `.gitignore` 忽略，属于本地配置，不应提交。GitHub 干净 checkout 不包含它们，因此本地为 74 文件、远程为 72 文件。
 
 ## 未验证项
 
