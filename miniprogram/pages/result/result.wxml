@@ -47,7 +47,7 @@
   <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveVideo">{{saveButtonText}}</button>
   <button class="secondary-button retry-button" bindtap="extractAgain">重新提取</button>
 
-  <text class="expiry-hint">结果默认保留 2 小时，请及时保存</text>
+  <text class="expiry-hint">结果默认保留 24 小时，可从提取记录再次打开</text>
   <text class="mock-hint" wx:if="{{mockMode}}">当前为开发 Mock，只演示下载流程，不会写入系统相册</text>
 </view>
 

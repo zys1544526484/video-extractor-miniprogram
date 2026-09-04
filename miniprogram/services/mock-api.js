@@ -5,6 +5,11 @@ const { getConfig } = require('../config/index')
 const MOCK_ENTITLEMENT_KEY = 'video_extractor_mock_entitlement'
 const MOCK_JOBS = new Map()
 
+function firstHttpUrl(value) {
+  const match = normalizeShareText(value).match(/https?:\/\/[^\s]+/i)
+  return match ? match[0] : ''
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -106,6 +111,8 @@ async function handle(path, options = {}) {
       key,
       job_id: `pj_mock_${Date.now()}`,
       createdAt: Date.now(),
+      sourceUrl: firstHttpUrl(text),
+      requestedQuality,
       result: {
         session_id: 'mock_session',
         platform: '抖音',
@@ -125,6 +132,13 @@ async function handle(path, options = {}) {
     }
     MOCK_JOBS.set(job.job_id, job)
     return { success: true, request_id: 'req_mock_parse', job: mockJobView(job) }
+  }
+
+  if (/^\/parse\/jobs(?:\?limit=\d+)?$/.test(path) && options.method === 'GET') {
+    const jobs = [...MOCK_JOBS.values()]
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map(mockHistoryView)
+    return { success: true, request_id: 'req_mock_history', jobs, retention_hours: 24 }
   }
 
   const jobMatch = /^\/parse\/jobs\/([^/]+)$/.exec(path)
@@ -151,13 +165,39 @@ async function handle(path, options = {}) {
 function mockJobView(job) {
   if (!job) return { status: 'cancelled', progress: 0, stage: '已取消' }
   const elapsed = Date.now() - job.createdAt
-  if (job.cancelled) return { job_id: job.job_id, status: 'cancelled', progress: 0, stage: '已取消' }
-  if (elapsed < 250) return { job_id: job.job_id, status: 'queued', progress: 0, stage: '等待处理' }
+  const common = {
+    job_id: job.job_id,
+    platform: 'douyin',
+    source_url: job.sourceUrl,
+    requested_quality: job.requestedQuality,
+    created_at: new Date(job.createdAt).toISOString(),
+    updated_at: new Date().toISOString(),
+    media_available: false
+  }
+  if (job.cancelled) return { ...common, status: 'cancelled', progress: 0, stage: '已取消' }
+  if (elapsed < 250) return { ...common, status: 'queued', progress: 0, stage: '等待处理' }
   if (elapsed < 900) {
     const progress = Math.min(92, Math.round((elapsed - 250) / 7))
-    return { job_id: job.job_id, status: 'processing', progress, stage: '准备完整视频' }
+    return { ...common, status: 'processing', progress, stage: '准备完整视频' }
   }
-  return { job_id: job.job_id, status: 'ready', progress: 100, stage: '处理完成', result: job.result }
+  return { ...common, status: 'ready', progress: 100, stage: '处理完成', media_available: true, result: job.result }
+}
+
+function mockHistoryView(job) {
+  const view = mockJobView(job)
+  if (view.status !== 'ready') return view
+  const { result, ...summary } = view
+  return {
+    ...summary,
+    media_expires_at: result.expires_at,
+    summary: {
+      title: result.title,
+      cover_url: result.cover_url,
+      duration_seconds: result.duration_seconds,
+      size_bytes: result.size_bytes,
+      quality_label: result.quality_label
+    }
+  }
 }
 
 module.exports = { handle, currentEntitlement }

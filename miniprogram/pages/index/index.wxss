@@ -183,23 +183,78 @@
   margin-top: 14px;
 }
 
-.parse-progress {
+.active-tasks {
   margin-top: 14px;
   padding: 14px;
   background: #fff;
+  border: 1px solid #e7e8eb;
   border-radius: 12px;
 }
 
-.parse-progress-copy {
+.active-tasks-heading,
+.active-task-copy {
   display: flex;
+  align-items: center;
+}
+
+.active-tasks-heading {
   justify-content: space-between;
-  color: #44464a;
+  margin-bottom: 12px;
+}
+
+.active-tasks-heading > view {
+  display: flex;
+  flex-direction: column;
+}
+
+.active-tasks-title {
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.active-tasks-hint {
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.history-link {
+  color: #07a950;
   font-size: 14px;
+}
+
+.active-task {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f1;
+}
+
+.active-task-copy {
+  margin-bottom: 7px;
+  color: #73757a;
+  font-size: 13px;
+}
+
+.active-task-platform {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  color: #07a950;
+}
+
+.active-task-stage {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-task-progress {
+  margin-left: 8px;
 }
 
 .parse-progress-track {
   height: 7px;
-  margin-top: 10px;
   overflow: hidden;
   background: #e8eaec;
   border-radius: 4px;
