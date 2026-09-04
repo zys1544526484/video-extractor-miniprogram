@@ -53,7 +53,7 @@
 - 因此第一次远程 Node 测试没有执行；后端 CI 已通过。
 - 本次只做最小修复：升级 `actions/checkout` 与 `actions/setup-node` 到 v5，保留 Node 20，删除 npm cache 和 `npm ci`，直接运行 `npm test` 与 `npm run validate:miniprogram`。
 - 未生成依赖、未修改业务代码、未写入任何密钥或生产凭证。
-- 新一轮 GitHub CI 结果待 PR checks 实际完成后记录；在此之前不得将远程 Node CI 写成 PASS。
+- 新一轮 GitHub CI run #4 已完成并成功；Node、小程序验证、后端 pytest 和 ruff 均由 workflow 实际执行通过。
 
 ## 未验证项
 

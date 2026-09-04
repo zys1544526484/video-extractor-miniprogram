@@ -37,7 +37,7 @@
 - 小程序上传包估算由约 2.6MiB 降至约 99KiB；测试目录与未使用的大图已通过 `packOptions.ignore` 排除，尚未执行真实上传。
 - 上线前 P0 代码修复：体验版/正式版生产配置强制校验、微信登录查询串日志降级、服务端广告尝试凭证、yt-dlp 独立受限子进程与 Windows UTF-8 协议均已本地回归通过。
 - 用户提供的抖音公开短链真实 smoke test到达解析器，但上游要求 fresh cookies，按合规边界返回 `CONTENT_RESTRICTED`；没有导入 Cookie，抖音能力仍为 `NOT VERIFIED`。
-- GitHub Actions CI：已配置 `codex/**` push 与针对 `main` 的 pull request 触发，包含 Node、小程序校验、后端 pytest 和 ruff；本次尚未把远程 runner 结果写成 PASS，等待 PR checks。
+- GitHub Actions CI：已配置 `codex/**` push 与针对 `main` 的 pull request 触发；新一轮 run #4 已由 GitHub runner 实际执行并成功完成 Node、小程序校验、后端 pytest 和 ruff。
 
 ## 已确认产品决策
 
