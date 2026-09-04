@@ -10,7 +10,7 @@
 - `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
 - Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
-- 当前 P0 修复状态：`REVISION_IN_PROGRESS`；Token 时间语义已完成本地检查，生产配置/Caddy CI 门禁仍待本轮完成。
+- 当前 P0 修复状态：`REVISION_IN_PROGRESS`；Token 时间语义和生产配置校验已完成本地检查，Caddy CI 门禁及远程回归仍待本轮完成。
 
 ## 长期工作规则
 
@@ -104,6 +104,13 @@
 - 新增后端端到端覆盖：首次 Token 约 900 秒有效、Token 失效后从仍有效任务重新获取新 Token、媒体保留截止时间不变；新增结果页停留超过 15 分钟后刷新判断测试。
 - 本步骤本地验证：`npm test` 31 passed；`npm run validate:miniprogram` 76 files checked、PASS；后端 pytest 99 passed（2 warnings）。
 - 本步骤尚未完成远程 CI；下一独立步骤将补充 `npm run validate:production` 和固定版本 Caddy 配置验证。
+
+### 步骤十二：生产配置与 Caddy CI 门禁（本轮第二独立检查点）
+
+- `npm run validate:production` 现在支持通过 `MINIPROGRAM_VALIDATE_SYNTHETIC=1` 注入非敏感合成生产值；不会修改或提交真实生产配置。校验仍强制 `APP_ENV=production`，development 配置有单元测试证明会失败。
+- GitHub Actions 的小程序 job 已实际运行 `npm run validate:production`；后端 job 新增固定版本 `caddy:2.10.0-alpine`，以虚构域名 `example.invalid` 执行 `caddy validate`。Caddy 配置通过删除 request URI 和 headers 避免把媒体 Token 写入 access log；运行时日志输出仍需人工抽样确认。
+- 本步骤本地验证：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；`git diff --check` PASS。
+- 本机没有 Docker CLI，Caddy validate 与 Docker build 需由 GitHub Actions runner 实际执行后再记录为 PASS；在此之前不得将 P0 写成全部通过。
 
 ## 未验证项
 

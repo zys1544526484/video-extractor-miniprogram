@@ -74,7 +74,20 @@ if (/WECHAT_APP_SECRET\s*[:=]\s*['"][^'"]+/.test(combined)) fail('小程序代�
 if (productionCheck) {
   try {
     const { getConfig, assertProductionSafe, assertRuntimeSafe } = require(path.join(mini, 'config'))
-    const config = getConfig()
+    const useSynthetic = process.env.MINIPROGRAM_VALIDATE_SYNTHETIC === '1'
+    const config = useSynthetic
+      ? {
+          APP_ENV: process.env.VALIDATE_PRODUCTION_APP_ENV || 'production',
+          API_BASE_URL: process.env.VALIDATE_PRODUCTION_API_BASE_URL || 'https://media-api.valid-domain.cn/api/v1',
+          MOCK_API: false,
+          MOCK_WECHAT_AUTH: false,
+          MOCK_REWARDED_AD: false,
+          MOCK_AD_OUTCOME: 'completed',
+          DOWNLOAD_ACCESS_MODE: 'free',
+          REWARDED_AD_UNIT_ID: '',
+          BANNER_AD_UNIT_ID: ''
+        }
+      : getConfig()
     assertProductionSafe(config)
     assertRuntimeSafe(config, 'release')
   } catch (error) {

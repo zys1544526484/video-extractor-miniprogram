@@ -26,6 +26,10 @@ jobs:
         run: npm test
       - name: Validate Mini Program
         run: npm run validate:miniprogram
+      - name: Validate production configuration
+        env:
+          MINIPROGRAM_VALIDATE_SYNTHETIC: '1'
+        run: npm run validate:production
 
   backend:
     name: Backend checks
@@ -84,3 +88,10 @@ jobs:
         run: python -c "from app.database import Database; db = Database('sqlite:///./data/ci-empty.db'); db.verify_alembic_head(); db.close()"
       - name: Build backend Docker image
         run: docker build --tag video-extractor-backend:ci ./backend
+      - name: Validate Caddy configuration
+        run: |
+          docker run --rm \
+            --env API_DOMAIN=example.invalid \
+            --volume "${{ github.workspace }}/deploy/Caddyfile.example:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.0-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
