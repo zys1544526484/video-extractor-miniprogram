@@ -9,7 +9,7 @@
 - 任务分支：`codex/p0-security-production-gates`
 - `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
-- Draft PR：`https://github.com/zys1544526484/video-extractor-miniprogram/pull/1`
+- Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
 
 ## 长期工作规则
 
@@ -82,6 +82,12 @@
 
 - Uvicorn access logger 已禁用，Dockerfile 和 README 的启动示例显式使用 `--no-access-log`，与应用路径掩码和 Caddy URI/请求头过滤共同避免媒体 Token 进入日志。
 - 本步骤验证：`tests/test_api.py` 13 passed；ruff All checks passed。
+
+### 步骤九：Draft PR 创建状态
+
+- 当前分支 `codex/p0-security-production-gates` 已推送至 `origin`，最新已推送 commit 为 `931deb090dec6ecab3cb021d39b1e777f2e719d5`。
+- 已通过 GitHub connector 尝试创建目标为 `main` 的 Draft PR，但 GitHub API 返回 `403 Resource not accessible by integration`；本机未安装 `gh` CLI，因此未声称 PR 已创建。
+- 分支 push 触发的 GitHub Actions run 当前仍在远程执行；在获得 PR 权限前，Draft PR 地址保持为“未创建”。
 
 ## 未验证项
 
