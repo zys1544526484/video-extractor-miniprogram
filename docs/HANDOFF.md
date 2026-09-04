@@ -6,8 +6,8 @@
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
-- 任务分支：`codex/bootstrap-github-handoff`
-- `main` 已推送的基线 commit：`dd74b10e90396740599135a0b55c696533c5a6c8`
+- 任务分支：`codex/p0-security-production-gates`
+- `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
 - Draft PR：`https://github.com/zys1544526484/video-extractor-miniprogram/pull/1`
 
@@ -71,6 +71,12 @@
 - production 配置校验使用非敏感的合成值，只确认正式 `free` 模式、Mock 关闭、24 小时媒体保留和 900 秒访问 Token TTL，不写入任何密钥或生产凭证。
 - 本地对应检查：production 配置校验通过；`compileall app alembic` 通过；Alembic 空 SQLite 升级及 head 校验通过。
 - 本机未安装 Docker CLI，因此 Docker build 未在本地运行；GitHub Actions 将在干净 runner 执行该检查，结果以最新 PR checks 为准，当前不标记为 PASS。
+
+### 步骤七：P0 状态文档校准（第三独立检查点）
+
+- `STATUS.md`、`RELEASE_READINESS.md` 和 `BLOCKERS.md` 已同步记录本次安全门禁、当前真实本地测试数量和未验证项，未删除任何备案域名、真实微信凭证、服务器、平台样例或真机阻塞项。
+- 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 97 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
+- Docker CLI 在本机不可用，Docker build 保持未验证；GitHub 新一轮 workflow 结果不得在远程通过前写成 PASS。
 
 ## 未验证项
 

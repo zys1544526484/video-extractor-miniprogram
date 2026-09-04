@@ -1,10 +1,10 @@
 # Release Readiness — V1
 
-更新时间：2026-09-03
+更新时间：2026-09-04
 
 ## 当前结论
 
-**不可提审（NOT READY）**。本地 Mock、静态检查和后端自动测试通过，不代表真实微信能力或五平台解析已验证。
+**不可提审（NOT READY）**。本地 Mock、静态检查、后端自动测试和 P0 安全门禁通过，不代表真实微信能力、容器部署或五平台解析已验证；本分支新增 GitHub CI 仍待远程检查完成。
 
 ## 已完成
 
@@ -15,11 +15,13 @@
 - SQLite 持久解析任务、重启恢复、页面续查、0–100 进度和持久媒体 token 摘要。
 - 大源文件分块续传、FFprobe 校验、FFmpeg 自动压缩/降档与单一 MP4 交付管道。
 - 体验版/正式版 production 配置门禁、服务端广告尝试凭证和敏感 HTTP 日志抑制。
-- Generic 与平台适配器、短期媒体 token、Range、大小/超时/并发限制。
+- Generic 与平台适配器、900 秒短期媒体 token（媒体结果保留 24 小时且可重新签发）、Range、大小/超时/并发限制。
+- 应用与 Caddy 日志不记录媒体 Token；用户 URL 仅允许 HTTP 80 / HTTPS 443；production 启动校验 Alembic head，不调用 `create_all`。
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：前端 25 项、后端 82 项；小程序 67 个文件的结构/语法/资源校验通过；Alembic 升级到 `0003_parse_jobs_media_sessions`。
+- 自动测试：本地前端 30 passed、后端 97 passed；小程序本地 74 个文件的结构/语法/资源校验通过；Alembic 空库升级到 `0003_parse_jobs_media_sessions`。GitHub 历史 PR CI 的后端结果为 84 passed、3 skipped（共 87 项），skipped 不计为 passed。
+- GitHub Actions 已增加 production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build；本分支新一轮远程结果尚待完成。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
 ## 未验证 Gate

@@ -15,4 +15,4 @@
 
 当前首版为正式免费模式，广告资格和 adUnitId 不再阻塞上线。备案域名、真实微信凭证、服务器、五平台样例和真机仍属于外部 Gate，不能用 Mock 或自动测试代替。
 
-本次收尾（2026-09-04）新增了 GitHub Actions 自动检查并校准了状态文档，但未消除任何真实上线阻塞；备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。
+本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查，但未消除任何真实上线阻塞；备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。Docker 构建和部署仍需真实环境验证。
