@@ -10,7 +10,7 @@
 - `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
 - Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
-- 当前 P0 修复状态：`REVISION_IN_PROGRESS`；Token 时间语义和生产配置校验已完成本地检查，Caddy CI 门禁及远程回归仍待本轮完成。
+- 当前 P0 修复状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`；Token 时间语义、生产配置校验和 Caddy CI 门禁已完成自动化检查，真实部署与真机仍待验证。
 
 ## 长期工作规则
 
@@ -115,7 +115,16 @@
 ### 步骤十三：Windows worker 公网目标前置校验（补充独立修复）
 
 - 在启动 yt-dlp 子进程前拒绝字面量内网/本机 IP，避免 Windows 下 worker 解析 loopback 时超时；保留既有 `PLATFORM_CHANGED` 安全错误语义。
-- 针对性测试 `test_adapter_worker_blocks_loopback_without_connecting` 和 ruff 均通过；全量 pytest 首轮曾出现该用例 `PARSE_TIMEOUT`，修复后待重新复跑全量。
+- 针对性测试 `test_adapter_worker_blocks_loopback_without_connecting` 和 ruff 均通过；全量 pytest 首轮曾出现该用例 `PARSE_TIMEOUT`，修复后全量复跑为 99 passed、2 warnings。
+
+### 步骤十四：本轮全量门禁与状态校准
+
+- 当前 HEAD：`02d9d9425292a711e8ce233ff90a3ec787e43ddc`，已推送到 `origin/codex/p0-security-production-gates`。
+- 最新分支 push CI 检查：[GitHub Actions run](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/33882545080) 成功：Node 32 passed、0 failed；小程序普通校验 74 files checked、生产校验真实执行 `npm run validate:production` 并通过；后端 96 passed、3 skipped（共收集 99 项，skipped 不计为 passed）；Ruff All checks passed；compileall、Alembic 空库升级/head 校验、Docker build 和固定版本 `caddy:2.10.0-alpine caddy validate` 均成功。
+- 本地复跑：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；pytest 99 passed（2 warnings）；ruff All checks passed；compileall、Alembic 空库升级/head 校验和 `git diff --check` PASS。Windows 工作区未安装 Docker CLI，因此 Docker build/Caddy validate 本地结果为 NOT VERIFIED，由上述远程 CI 验证。
+- 本地与 GitHub 小程序文件数差异仅为本地 `.gitignore` 忽略的 `miniprogram/project.config.json`、`miniprogram/project.private.config.json`；它们未提交，故本地 76、干净 checkout 74。
+- Token 语义修复已覆盖首次约 900 秒、Token 失效后从仍有效任务重新签发且不延长 `media_expires_at`，以及结果页超过 15 分钟保存前按 Token 过期时间刷新。应用/Caddy 配置静态删除 URI/headers；真实部署日志仍需人工抽样确认。
+- 本轮自动化状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`。备案域名、真实微信凭证、服务器、五平台完整样例、真机下载/相册和生产部署继续保持 `NOT VERIFIED`。
 
 ## 未验证项
 
@@ -125,4 +134,4 @@
 
 ## 下一步
 
-等待 ChatGPT 审查、GitHub CI 和用户合并决定。
+等待 ChatGPT 审查、GitHub CI 后续检查和用户合并决定；不得直接合并到 `main`。
