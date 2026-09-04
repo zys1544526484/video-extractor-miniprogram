@@ -6,7 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..errors import AppError, entitlement_required
@@ -147,6 +147,16 @@ async def create_parse_job(
     return ok(request, job=job)
 
 
+@router.get("/parse/jobs")
+async def list_parse_jobs(
+    request: Request,
+    user_id: int = Depends(current_user_id),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    jobs = await request.app.state.parse_jobs.list(user_id=user_id, limit=limit)
+    return ok(request, jobs=jobs, retention_hours=24)
+
+
 @router.get("/parse/jobs/{job_id}")
 async def get_parse_job(
     job_id: str,
@@ -167,10 +177,10 @@ async def cancel_parse_job(
     return ok(request, job=job)
 
 
-def local_file_response(file: Path, *, download: bool, filename: str, media_type: str) -> FileResponse:
+def local_file_response(file: Path, *, download: bool, filename: str) -> FileResponse:
     return FileResponse(
         file,
-        media_type=media_type,
+        media_type="video/mp4",
         filename=filename if download else None,
         content_disposition_type="attachment" if download else "inline",
     )
@@ -225,7 +235,6 @@ async def preview_media(token: str, request: Request):
             media.temporary_file,
             download=False,
             filename=safe_filename(media.platform, media.title),
-            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=False)
 
@@ -244,6 +253,5 @@ async def download_media(token: str, request: Request, user_id: int = Depends(cu
             media.temporary_file,
             download=True,
             filename=safe_filename(media.platform, media.title),
-            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=True)

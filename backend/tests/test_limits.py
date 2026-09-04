@@ -189,3 +189,21 @@ def test_production_rejects_development_entitlement_bypass() -> None:
             wechat_app_secret="0123456789abcdef0123456789abcdef",
             app_token_secret="vF3_7sQ9-jL2_xM8-aC4_kR6-zT1_wN5",
         )
+
+
+def test_default_job_limits_and_result_retention_are_bounded() -> None:
+    settings = Settings(app_env="test", _env_file=None)
+    assert settings.max_active_parse_jobs_per_user == 2
+    assert settings.parse_worker_concurrency == 2
+    assert settings.media_processing_concurrency == 1
+    assert settings.media_session_ttl_seconds == 24 * 60 * 60
+    assert settings.temp_file_ttl_seconds >= settings.media_session_ttl_seconds
+
+
+def test_result_file_ttl_cannot_be_shorter_than_media_session() -> None:
+    with pytest.raises(ValidationError, match="TEMP_FILE_TTL_SECONDS"):
+        Settings(
+            app_env="test",
+            media_session_ttl_seconds=3600,
+            temp_file_ttl_seconds=3599,
+        )

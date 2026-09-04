@@ -38,12 +38,16 @@ class Settings(BaseSettings):
     min_free_disk_bytes: int = 10 * 1024 * 1024 * 1024
     parse_timeout_seconds: int = 1800
     media_processing_timeout_seconds: int = 1800
-    media_session_ttl_seconds: int = 7200
-    temp_file_ttl_seconds: int = 10800
+    media_session_ttl_seconds: int = 86400
+    temp_file_ttl_seconds: int = 90000
     parse_job_ttl_seconds: int = 86400
     max_redirects: int = 5
     http_timeout_seconds: int = 20
-    global_parse_concurrency: int = 1
+    global_parse_concurrency: int = 2
+    parse_worker_concurrency: int = 2
+    media_processing_concurrency: int = 1
+    max_active_parse_jobs_per_user: int = 2
+    max_queued_parse_jobs: int = 20
     user_parse_limit_per_10_minutes: int = 10
     ad_attempt_min_seconds: int = 5
     ad_attempt_ttl_seconds: int = 600
@@ -63,6 +67,22 @@ class Settings(BaseSettings):
             raise ValueError("MIN_FREE_DISK_BYTES 不得为负数")
         if self.media_processing_timeout_seconds < 30:
             raise ValueError("MEDIA_PROCESSING_TIMEOUT_SECONDS 不得低于 30 秒")
+        if not 1 <= self.global_parse_concurrency <= 8:
+            raise ValueError("GLOBAL_PARSE_CONCURRENCY 必须在 1..8 范围内")
+        if not 1 <= self.parse_worker_concurrency <= 8:
+            raise ValueError("PARSE_WORKER_CONCURRENCY 必须在 1..8 范围内")
+        if not 1 <= self.media_processing_concurrency <= 4:
+            raise ValueError("MEDIA_PROCESSING_CONCURRENCY 必须在 1..4 范围内")
+        if not 1 <= self.max_active_parse_jobs_per_user <= 5:
+            raise ValueError("MAX_ACTIVE_PARSE_JOBS_PER_USER 必须在 1..5 范围内")
+        if not self.max_active_parse_jobs_per_user <= self.max_queued_parse_jobs <= 100:
+            raise ValueError("MAX_QUEUED_PARSE_JOBS 必须不小于单用户上限且不超过 100")
+        if self.media_session_ttl_seconds <= 0:
+            raise ValueError("MEDIA_SESSION_TTL_SECONDS 必须大于 0")
+        if self.temp_file_ttl_seconds < self.media_session_ttl_seconds:
+            raise ValueError("TEMP_FILE_TTL_SECONDS 不得短于媒体结果有效期")
+        if self.parse_job_ttl_seconds < self.media_session_ttl_seconds:
+            raise ValueError("PARSE_JOB_TTL_SECONDS 不得短于媒体结果有效期")
         if self.max_redirects < 0 or self.max_redirects > 10:
             raise ValueError("MAX_REDIRECTS 必须在 0..10 范围内")
         if self.ad_attempt_min_seconds < 0 or self.ad_attempt_min_seconds > 120:

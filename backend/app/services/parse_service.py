@@ -34,7 +34,7 @@ class ParseService:
         self.media_sessions = media_sessions
         self.media_processor = media_processor or MediaProcessor(settings)
         self.semaphore = asyncio.Semaphore(settings.global_parse_concurrency)
-        self.active_users: set[int] = set()
+        self.active_users: dict[int, int] = defaultdict(int)
         self.recent: dict[int, deque[datetime]] = defaultdict(deque)
         self.lock = asyncio.Lock()
 
@@ -47,14 +47,23 @@ class ParseService:
                 attempts.popleft()
             if len(attempts) >= self.settings.user_parse_limit_per_10_minutes:
                 raise AppError("RATE_LIMITED", "请求过于频繁，请稍后重试", status_code=429, retryable=True)
-            if user_id in self.active_users:
-                raise AppError("RATE_LIMITED", "已有提取任务正在进行", status_code=409, retryable=True)
+            if self.active_users[user_id] >= self.settings.max_active_parse_jobs_per_user:
+                raise AppError(
+                    "PARSE_CONCURRENCY_LIMIT",
+                    f"每位用户最多同时提取 {self.settings.max_active_parse_jobs_per_user} 个视频",
+                    status_code=429,
+                    retryable=True,
+                )
             attempts.append(now)
-            self.active_users.add(user_id)
+            self.active_users[user_id] += 1
 
     async def _leave(self, user_id: int) -> None:
         async with self.lock:
-            self.active_users.discard(user_id)
+            remaining = self.active_users.get(user_id, 0) - 1
+            if remaining > 0:
+                self.active_users[user_id] = remaining
+            else:
+                self.active_users.pop(user_id, None)
 
     async def _materialize_remote(
         self,

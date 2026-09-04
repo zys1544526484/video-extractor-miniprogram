@@ -8,7 +8,12 @@ from app.security.tokens import decode_auth_token
 from app.services.media_sessions import MediaSessionStore
 
 
-def create_local_media(client: TestClient, auth_headers: dict[str, str]) -> tuple[str, int]:
+def create_local_media(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    *,
+    mime_type: str = "video/mp4",
+) -> tuple[str, int]:
     token = auth_headers["Authorization"].removeprefix("Bearer ")
     settings = client.app.state.settings
     user_id = decode_auth_token(token, settings.app_token_secret.get_secret_value())
@@ -24,7 +29,7 @@ def create_local_media(client: TestClient, auth_headers: dict[str, str]) -> tupl
             upstream_url=None,
             temporary_file=str(file),
             required_headers={},
-            mime_type="video/mp4",
+            mime_type=mime_type,
             size_bytes=file.stat().st_size,
         )
     )
@@ -72,7 +77,7 @@ def test_free_mode_download_requires_owner_but_not_entitlement(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     client.app.state.settings.download_access_mode = "free"
-    token, _ = create_local_media(client, auth_headers)
+    token, _ = create_local_media(client, auth_headers, mime_type="video/*")
 
     unauthenticated = client.get(f"/api/v1/media/{token}/download")
     downloaded = client.get(f"/api/v1/media/{token}/download", headers=auth_headers)
@@ -80,6 +85,8 @@ def test_free_mode_download_requires_owner_but_not_entitlement(
     assert unauthenticated.status_code == 401
     assert downloaded.status_code == 200
     assert downloaded.content.startswith(b"0123456789")
+    assert downloaded.headers["content-type"].startswith("video/mp4")
+    assert ".mp4" in downloaded.headers["content-disposition"]
 
 
 def test_media_token_survives_store_restart(

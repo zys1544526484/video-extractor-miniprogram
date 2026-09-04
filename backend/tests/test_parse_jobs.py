@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.models import MediaAccessToken, ParseJob
+from app.models import MediaAccessToken, MediaSessionRecord, ParseJob
 from app.schemas import ParsePublicResult
 from app.security.tokens import decode_auth_token
 from app.services.parse_jobs import utc_now_naive
@@ -60,6 +60,56 @@ class SlowParseService:
             await progress(10, "等待取消")
         await asyncio.sleep(30)
         raise AssertionError("cancelled task must not complete")
+
+
+class ConcurrentParseService:
+    def __init__(self, client: TestClient) -> None:
+        self.client = client
+        self.release = asyncio.Event()
+        self.started = 0
+        self.active = 0
+        self.max_active = 0
+
+    async def parse(self, text, user_id, quality, progress=None) -> ParsePublicResult:
+        self.started += 1
+        sequence = self.started
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            if progress:
+                await progress(20, "并发测试")
+            await self.release.wait()
+            directory = self.client.app.state.settings.temp_dir / f"concurrent-{sequence}"
+            directory.mkdir(parents=True, exist_ok=True)
+            file = directory / "video.mp4"
+            file.write_bytes(f"video-{sequence}".encode())
+            media = await self.client.app.state.media_sessions.create(
+                user_id=user_id,
+                platform="测试平台",
+                title=f"并发任务 {sequence}",
+                upstream_url=None,
+                temporary_file=str(file),
+                required_headers={},
+                mime_type="video/mp4",
+                size_bytes=file.stat().st_size,
+            )
+            return ParsePublicResult(
+                session_id=media.session_id,
+                platform="测试平台",
+                title=f"并发任务 {sequence}",
+                cover_url="",
+                duration_seconds=1,
+                size_bytes=file.stat().st_size,
+                quality_label="测试画质",
+                requested_quality=quality,
+                preview_url="unused",
+                download_url="unused",
+                expires_at=media.expires_at,
+                watermark_status="unknown",
+                notice="",
+            )
+        finally:
+            self.active -= 1
 
 
 def wait_for_status(
@@ -137,6 +187,111 @@ def test_processing_job_can_be_cancelled(
     cancelled = client.delete(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
     assert cancelled.status_code == 200
     assert cancelled.json()["job"]["status"] == "cancelled"
+
+
+def test_two_jobs_can_run_together_and_third_is_limited(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    service = ConcurrentParseService(client)
+    client.app.state.parse_jobs.parse_service = service
+    job_ids: list[str] = []
+    try:
+        for index in range(2):
+            response = client.post(
+                "/api/v1/parse",
+                headers={**auth_headers, "Idempotency-Key": f"parse_concurrent_{index:02d}"},
+                json={"text": f"https://example.com/video-{index}", "quality": "540p"},
+            )
+            assert response.status_code == 202
+            job_ids.append(response.json()["job"]["job_id"])
+
+        for job_id in job_ids:
+            wait_for_status(client, job_id, auth_headers, {"processing"})
+
+        limited = client.post(
+            "/api/v1/parse",
+            headers={**auth_headers, "Idempotency-Key": "parse_concurrent_03"},
+            json={"text": "https://example.com/video-3", "quality": "540p"},
+        )
+        assert limited.status_code == 429
+        assert limited.json()["error"]["code"] == "PARSE_CONCURRENCY_LIMIT"
+        assert service.max_active == 2
+    finally:
+        client.portal.call(service.release.set)
+
+    for job_id in job_ids:
+        wait_for_status(client, job_id, auth_headers, {"ready"})
+
+
+def test_history_is_user_bound_does_not_issue_tokens_and_reopens_ready_result(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    client.app.state.parse_jobs.parse_service = SuccessfulParseService(client)
+    created = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "parse_history_test_01"},
+        json={"text": "https://example.com/history", "quality": "720p"},
+    )
+    job_id = created.json()["job"]["job_id"]
+    ready = wait_for_status(client, job_id, auth_headers, {"ready"})
+
+    with client.app.state.database.session_factory() as session:
+        token_count_before = len(list(session.scalars(select(MediaAccessToken))))
+    history = client.get("/api/v1/parse/jobs?limit=10", headers=auth_headers)
+    with client.app.state.database.session_factory() as session:
+        token_count_after = len(list(session.scalars(select(MediaAccessToken))))
+
+    assert history.status_code == 200
+    item = history.json()["jobs"][0]
+    assert item["job_id"] == job_id
+    assert item["status"] == "ready"
+    assert item["media_available"] is True
+    assert item["summary"]["title"] == "持久任务"
+    assert "result" not in item
+    assert "preview_url" not in item
+    assert token_count_after == token_count_before
+
+    reopened = client.get(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
+    assert reopened.json()["job"]["result"]["download_url"].endswith("/download")
+    assert reopened.json()["job"]["source_url"] == "https://example.com/history"
+    assert ready["result"]["requested_quality"] == "720p"
+
+    second_token = client.post("/api/v1/auth/wechat", json={"code": "history-other-user"}).json()[
+        "token"
+    ]
+    other_history = client.get(
+        "/api/v1/parse/jobs",
+        headers={"Authorization": f"Bearer {second_token}"},
+    )
+    assert other_history.json()["jobs"] == []
+
+
+def test_history_marks_cleaned_media_expired_without_losing_metadata(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    client.app.state.parse_jobs.parse_service = SuccessfulParseService(client)
+    created = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "parse_history_expired_01"},
+        json={"text": "https://example.com/expired-history", "quality": "original"},
+    )
+    job_id = created.json()["job"]["job_id"]
+    ready = wait_for_status(client, job_id, auth_headers, {"ready"})
+    session_id = ready["result"]["session_id"]
+    with client.app.state.database.session_factory() as session:
+        media = session.get(MediaSessionRecord, session_id)
+        assert media is not None
+        media.expires_at = utc_now_naive() - timedelta(seconds=1)
+        session.commit()
+
+    history = client.get("/api/v1/parse/jobs", headers=auth_headers).json()["jobs"]
+    item = next(value for value in history if value["job_id"] == job_id)
+    assert item["status"] == "expired"
+    assert item["media_available"] is False
+    assert item["summary"]["title"] == "持久任务"
 
 
 def test_parse_requires_idempotency_key(client: TestClient, auth_headers: dict[str, str]) -> None:

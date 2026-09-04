@@ -53,6 +53,7 @@ class TranscodePlan:
 class MediaProcessor:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.processing_semaphore = asyncio.Semaphore(settings.media_processing_concurrency)
 
     @staticmethod
     def _tool(name: str) -> str:
@@ -261,6 +262,18 @@ class MediaProcessor:
             raise AppError("PARSE_FAILED", "视频合成失败", retryable=True)
 
     async def process(
+        self,
+        file: Path,
+        requested_quality: str,
+        quality_label: str | None,
+        progress: ProgressCallback | None = None,
+    ) -> MediaProcessResult:
+        if progress and self.processing_semaphore.locked():
+            await progress(56, "等待媒体处理资源")
+        async with self.processing_semaphore:
+            return await self._process(file, requested_quality, quality_label, progress)
+
+    async def _process(
         self,
         file: Path,
         requested_quality: str,

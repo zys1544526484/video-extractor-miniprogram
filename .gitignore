@@ -7,6 +7,7 @@ __pycache__/
 htmlcov/
 backend/data/
 backend/tmp/
+backend/app.db
 backend/.env
 backend/.env.*
 !backend/.env.example

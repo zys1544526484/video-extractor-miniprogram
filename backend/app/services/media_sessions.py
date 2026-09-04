@@ -69,6 +69,8 @@ class MediaSessionStore:
             temporary_file.relative_to(self.temp_root)
         except ValueError as error:
             raise AppError("MEDIA_SESSION_EXPIRED", "结果已失效，请重新提取", status_code=410) from error
+        if not temporary_file.is_file():
+            raise AppError("MEDIA_SESSION_EXPIRED", "结果文件已清理，请重新提取", status_code=410)
         return MediaSession(
             token=token,
             session_id=record.session_id,
@@ -78,7 +80,7 @@ class MediaSessionStore:
             upstream_url=None,
             temporary_file=temporary_file,
             required_headers={},
-            mime_type=record.mime_type,
+            mime_type="video/mp4",
             size_bytes=record.size_bytes,
             expires_at=record.expires_at.replace(tzinfo=UTC),
         )
@@ -110,7 +112,7 @@ class MediaSessionStore:
                     platform=platform,
                     title=title,
                     file_path=relative_file,
-                    mime_type=mime_type,
+                    mime_type="video/mp4",
                     size_bytes=size_bytes,
                     created_at=now,
                     expires_at=expires_at,
@@ -126,6 +128,19 @@ class MediaSessionStore:
                 )
                 session.commit()
                 return self._session(record, token)
+
+    async def available_until(self, session_id: str, *, user_id: int) -> datetime | None:
+        now = utc_now_naive()
+        async with self._lock:
+            with self.database.session_factory() as session:
+                record = session.get(MediaSessionRecord, session_id)
+                if record is None or record.user_id != user_id or record.expires_at <= now:
+                    return None
+                try:
+                    self._session(record, "")
+                except AppError:
+                    return None
+                return record.expires_at.replace(tzinfo=UTC)
 
     async def issue_token(self, session_id: str, *, user_id: int) -> MediaSession:
         token = secrets.token_urlsafe(32)
