@@ -9,7 +9,7 @@
 - 任务分支：`codex/bootstrap-github-handoff`
 - `main` 已推送的基线 commit：`dd74b10e90396740599135a0b55c696533c5a6c8`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
-- Draft PR：由本分支 push 后创建，地址以最终任务报告为准
+- Draft PR：`https://github.com/zys1544526484/video-extractor-miniprogram/pull/1`
 
 ## 长期工作规则
 
@@ -36,7 +36,16 @@
 
 - 本步骤创建或更新根目录 `AGENTS.md`、本文件和 `.github/pull_request_template.md`。
 - 验证：`npm test` 通过（30/30）；`npm run validate:miniprogram` 通过（74 个文件）；`git diff --check` 通过。
-- 状态：待 commit、push 和 Draft PR 创建后补充最终链接与结果。
+- commit：`aad61e489a68d48a65f24ce079591d8abf523e07`
+- push：已成功推送到 `origin/codex/bootstrap-github-handoff`。
+
+### 步骤三：收尾状态与 CI
+
+- `STATUS.md` 已更新为当前真实 Node、小程序验证和后端检查数量，并记录提取记录、最多两个后台任务及 24 小时结果再次打开的实现状态。
+- `BLOCKERS.md` 已保留备案域名、真实微信凭证、服务器、平台样例和真机验证等上线阻塞项；本次协作收尾未消除这些 Gate。
+- `.github/workflows/ci.yml` 已配置为在 `codex/**` push 和针对 `main` 的 pull request 上运行前端 Node 测试、小程序校验、后端 pytest 与 ruff。
+- 本次本地验证：`npm test` 30/30；`npm run validate:miniprogram` 74 个文件；后端 pytest 87/87；ruff 通过；`git diff --check` 通过。
+- GitHub Actions 远程 runner 结果需以 PR checks 为准，本地未将其写成 PASS。
 
 ## 未验证项
 
@@ -46,4 +55,4 @@
 
 ## 下一步
 
-完成本步骤的文档检查后，创建第二个独立 commit 并立即 push；随后以 `main` 为目标创建 Draft PR。保持 Draft 状态，等待 ChatGPT 审查和用户明确的合并决定。
+等待 ChatGPT 审查、GitHub CI 和用户合并决定。
