@@ -13,6 +13,7 @@
 - 已完成：首页移除画质预选；结果页视频/图片/标题 Tab；多源安全 token、源切换同步、图片保存、标题/分享文案复制；后端旧单源缓存兼容。
 - 验证：前端 `npm test` 36 passed、`npm run validate:miniprogram` PASS；后端 pytest 100 passed、ruff PASS、compileall PASS；`git diff --check` PASS。
 - 未验证：微信开发者工具本轮未自动化截图；真实域名、真实五平台样例、真机相册保存仍为 `NOT VERIFIED`。
+- Draft PR：连接器调用 GitHub API 返回 `403 Resource not accessible by integration`，未创建成功；请使用有 Pull Request 写权限的 GitHub 账号打开 compare/new-PR 链接创建 Draft PR，不要直接合并。
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
