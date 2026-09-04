@@ -20,7 +20,7 @@
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：本地前端 30 passed、后端 97 passed；小程序本地 74 个文件的结构/语法/资源校验通过；Alembic 空库升级到 `0003_parse_jobs_media_sessions`。最新分支 push CI 为 Node 30 passed、小程序 72 files checked、后端 94 passed/3 skipped（共收集 97 项，skipped 不计为 passed），Ruff 通过。
+- 自动测试：本地前端 30 passed、后端 98 passed；小程序本地 74 个文件的结构/语法/资源校验通过；Alembic 空库升级到 `0003_parse_jobs_media_sessions`。最新分支 push CI 为 Node 30 passed、小程序 72 files checked、后端 95 passed/3 skipped（共收集 98 项，skipped 不计为 passed），Ruff 通过。
 - GitHub Actions 已增加 production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build；最新分支 push CI 的前后端两个 job 均成功，Docker build 已成功。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 

@@ -15,7 +15,7 @@
 
 - 前端 Node 单测：本地 `npm test` 30/30；GitHub 最新 PR CI 为 30 passed、0 failed。
 - 小程序 JSON、路由、资源引用、JS 语法：本地工作区 74 文件；GitHub 干净环境 72 files checked，均通过。
-- 后端 pytest：本地当前测试 `97 passed`；最新分支 push CI 为 `94 passed、3 skipped`（共收集 97 项，另有 3 warnings），skipped 主要因 runner 未安装 ffmpeg/ffprobe，不计为 passed。
+- 后端 pytest：本地当前测试 `98 passed`；最新分支 push CI 为 `95 passed、3 skipped`（共收集 98 项，另有 3 warnings），skipped 主要因 runner 未安装 ffmpeg/ffprobe，不计为 passed。
 - `ruff check app tests alembic`：本地复跑通过；最新分支 push CI 为 All checks passed。
 - 除明确标注“本次收尾复跑”的条目外，其余 PASS 为既有历史验证记录，本次未重跑，不作为本次收尾的新验证。
 - `compileall app alembic`：本地 PASS；最新分支 push CI PASS。

@@ -75,8 +75,8 @@
 ### 步骤七：P0 状态文档校准（第三独立检查点）
 
 - `STATUS.md`、`RELEASE_READINESS.md` 和 `BLOCKERS.md` 已同步记录本次安全门禁、当前真实本地测试数量和未验证项，未删除任何备案域名、真实微信凭证、服务器、平台样例或真机阻塞项。
-- 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 97 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
-- 最新分支 push CI 的 Node job 为 30 passed、72 files checked；Backend job 为 94 passed、3 skipped（共收集 97 项，3 skipped 因 runner 无 ffmpeg/ffprobe），ruff、production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build 均成功。
+- 本地最终验证：`npm test` 30 passed；`npm run validate:miniprogram` 74 files checked、PASS；后端 pytest 98 passed（2 个依赖警告）；ruff All checks passed；`git diff --check` 通过。
+- 最新分支 push CI 的 Node job 为 30 passed、72 files checked；Backend job 为 95 passed、3 skipped（共收集 98 项，3 skipped 因 runner 无 ffmpeg/ffprobe），ruff、production 配置校验、compileall、Alembic 空库升级/head 校验和 Docker build 均成功。
 - Docker CLI 在本机不可用，Docker build 的本地状态仍为未验证；远程 CI 成功不等于容器部署或生产运行验证。
 
 ### 步骤八：Uvicorn 访问日志收口（第四独立检查点）
