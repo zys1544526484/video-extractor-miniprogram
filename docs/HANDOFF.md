@@ -119,7 +119,7 @@
 
 ### 步骤十四：本轮全量门禁与状态校准
 
-- 当前 HEAD：`ffc5396ed411651542d98e1c4966067dce09f770`，已推送到 `origin/codex/p0-security-production-gates`。
+- 当前 HEAD：以本次交接时 `git rev-parse HEAD` 为准；最新提交已推送到 `origin/codex/p0-security-production-gates`。
 - 最新分支 push CI 检查（见[分支 Actions 页面](https://github.com/zys1544526484/video-extractor-miniprogram/actions?query=branch%3Acodex%2Fp0-security-production-gates)）成功：Node 32 passed、0 failed；小程序普通校验 74 files checked、生产校验真实执行 `npm run validate:production` 并通过；后端 96 passed、3 skipped（共收集 99 项，skipped 不计为 passed）；Ruff All checks passed；compileall、Alembic 空库升级/head 校验、Docker build 和固定版本 `caddy:2.10.0-alpine caddy validate` 均成功。
 - 本地复跑：`npm test` 32 passed；`npm run validate:miniprogram` 76 files checked、PASS；`MINIPROGRAM_VALIDATE_SYNTHETIC=1 npm run validate:production` PASS；pytest 99 passed（2 warnings）；ruff All checks passed；compileall、Alembic 空库升级/head 校验和 `git diff --check` PASS。Windows 工作区未安装 Docker CLI，因此 Docker build/Caddy validate 本地结果为 NOT VERIFIED，由上述远程 CI 验证。
 - 本地与 GitHub 小程序文件数差异仅为本地 `.gitignore` 忽略的 `miniprogram/project.config.json`、`miniprogram/project.private.config.json`；它们未提交，故本地 76、干净 checkout 74。
