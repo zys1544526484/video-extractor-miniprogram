@@ -56,7 +56,7 @@
 - 新增远程媒体会话字段和迁移 `backend/alembic/versions/0004_remote_media_sessions.py`。对于已通过 SafeHttpClient 元数据探测、SSRF 检查、MIME/大小限制的 HTTPS MP4，解析阶段不读取完整媒体体；仅在预览/保存请求时使用短期媒体 Token 代理传输。非 HTTPS、非 MP4、降档或探测不完整的源继续走现有分块下载/ffprobe/处理回退路径。旧本地文件会话保持兼容，媒体清理规则未放宽。
 - 本轮测试：后端 pytest `116 passed`（2 warnings）；Ruff PASS；compileall PASS；前端 Node `46 passed`；`npm run validate:miniprogram` `80 files checked` PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
 - 人工验证仍未完成：当前环境没有可操作的微信开发者工具原生应用或官方 CLI，无法提供本轮截图；真实微信登录、合法 HTTPS 域名、五个平台公开样例、真机网络/相册保存和生产部署均继续标记 `NOT VERIFIED`。本轮未接入 SPAPI 或 media-parser。
-- PR #5 描述需要同步本轮实现和测试结果；完成 push 后尝试通过 GitHub 连接器更新，若权限继续返回 `403 Resource not accessible by integration`，只报告失败，不声称已更新。保持 Draft，不合并。
+- PR #5 已确认仍为 Draft、目标为 `main`，当前 head 为 `84537d1f7b2b8bbf2bfd0653674340bc3967b8f5`。完成 push 后尝试通过 GitHub 连接器更新描述，但 GitHub API 返回 `403 Resource not accessible by integration`，因此描述尚未更新；保持 Draft，不合并，需具备 PR 写权限的 GitHub 账号手动更新。
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`

@@ -68,3 +68,4 @@
 - 本轮不接入 SPAPI 或 media-parser；保留现有 SafeHttpClient、用户归属校验、短期 Token、24 小时媒体清理和 rewarded_ad 权益门禁。
 - 本轮本地验证：后端 pytest `116 passed`（2 warnings）；Ruff PASS；`compileall` PASS；前端 Node `46 passed`；`npm run validate:miniprogram`（80 files）PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
 - 微信开发者工具、真机、真实 HTTPS 合法域名、生产微信登录、五平台真实公开样例和相册保存本轮仍为 `NOT VERIFIED`；当前环境未发现可操作的微信开发者工具原生应用或官方 CLI，静态校验不替代这些人工验收。
+- PR #5 已保持 Draft 且未合并；尝试通过 GitHub 连接器同步描述时返回 `403 Resource not accessible by integration`，描述更新需具备 PR 写权限的 GitHub 账号手动完成。
