@@ -1,10 +1,12 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const api = require('../services/api')
 
 let pageDefinition
 const toasts = []
 let copiedValue = ''
 const storedValues = new Map()
+storedValues.set('video_extractor_auth_token', 'test-token')
 
 global.wx = {
   getStorageSync(key) {
@@ -12,6 +14,9 @@ global.wx = {
   },
   setStorageSync(key, value) {
     storedValues.set(key, value)
+  },
+  removeStorageSync(key) {
+    storedValues.delete(key)
   },
   setClipboardData(options) {
     copiedValue = options.data
@@ -87,4 +92,67 @@ test('loadResult falls back with a prompt when the persisted source is gone', ()
   })
   assert.equal(context.lastData.selectedSourceId, 'source-1')
   assert.equal(toasts.some((item) => item.modal && item.title === '视频源已过期'), true)
+})
+
+test('result page polls a created job and renders the completed result', async () => {
+  const originalWait = api.waitForParseJob
+  api.waitForParseJob = async (jobId, onProgress) => {
+    onProgress({ job_id: jobId, status: 'processing', progress: 42, stage: '解析公开页面', source_url: 'https://example.com/a' })
+    onProgress({ job_id: jobId, status: 'ready', progress: 100, stage: '处理完成', source_url: 'https://example.com/a' })
+    return {
+      title: '已完成作品',
+      platform: 'generic',
+      media_type: 'video',
+      preview_url: 'https://api.example.com/api/v1/media/a/preview',
+      download_url: 'https://api.example.com/api/v1/media/a/download',
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+      sources: [{
+        source_id: 'source-1',
+        quality_label: '720P',
+        size_bytes: 100,
+        preview_url: 'https://api.example.com/api/v1/media/a/preview',
+        download_url: 'https://api.example.com/api/v1/media/a/download'
+      }]
+    }
+  }
+  const context = {
+    ...pageDefinition,
+    data: {},
+    pageVisible: true,
+    pollGeneration: 0,
+    setData(value) { this.data = { ...this.data, ...value } }
+  }
+  try {
+    await pageDefinition.startJobPolling.call(context, 'job-success')
+    assert.equal(context.data.state, 'ready')
+    assert.equal(context.data.progress, 0)
+    assert.equal(context.data.result.title, '已完成作品')
+  } finally {
+    api.waitForParseJob = originalWait
+  }
+})
+
+test('result page exposes backend error code and reason after polling failure', async () => {
+  const originalWait = api.waitForParseJob
+  api.waitForParseJob = async (jobId, onProgress) => {
+    onProgress({ job_id: jobId, status: 'processing', progress: 18, stage: '解析公开页面', source_url: 'https://example.com/a' })
+    const error = new Error('该内容不可公开访问')
+    error.code = 'CONTENT_NOT_PUBLIC'
+    throw error
+  }
+  const context = {
+    ...pageDefinition,
+    data: {},
+    pageVisible: true,
+    pollGeneration: 0,
+    setData(value) { this.data = { ...this.data, ...value } }
+  }
+  try {
+    await pageDefinition.startJobPolling.call(context, 'job-failed')
+    assert.equal(context.data.state, 'error')
+    assert.equal(context.data.parseErrorCode, 'CONTENT_NOT_PUBLIC')
+    assert.equal(context.data.parseErrorMessage, '该内容不可公开访问')
+  } finally {
+    api.waitForParseJob = originalWait
+  }
 })

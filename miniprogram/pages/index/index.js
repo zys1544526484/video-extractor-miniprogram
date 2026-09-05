@@ -168,8 +168,9 @@ Page({
       })
       this.setData({ inputText: '', charCount: 0, parseProgress: 0, parseStage: '' })
       this.setState('idle')
-      await this.refreshActiveJobs()
-      wx.showToast({ title: '已加入提取任务', icon: 'success' })
+      wx.navigateTo({
+        url: `/pages/result/result?job_id=${encodeURIComponent(jobId)}`
+      })
     } catch (error) {
       this.setState('error')
       const presented = presentApiError(error)

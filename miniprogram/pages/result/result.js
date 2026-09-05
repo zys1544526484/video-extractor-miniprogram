@@ -28,7 +28,11 @@ Page({
   data: {
     result: null,
     state: 'loading',
+    jobId: '',
     progress: 0,
+    parseStage: '等待任务状态',
+    parseErrorCode: '',
+    parseErrorMessage: '',
     infoText: '',
     watermarkText: '媒体来源：未知',
     activeTab: 'video',
@@ -47,7 +51,8 @@ Page({
     saveButtonText: '保存视频'
   },
 
-  onLoad() {
+  onLoad(options = {}) {
+    this.pageVisible = true
     const config = getConfig()
     this.downloadService = createDownloadService({ config })
     if (config.DOWNLOAD_ACCESS_MODE === 'rewarded_ad') {
@@ -64,11 +69,138 @@ Page({
       accessMode: config.DOWNLOAD_ACCESS_MODE,
       mockMode: config.MOCK_API
     })
-    this.loadResult(storage.getCurrentResult())
+    const jobId = String(options.job_id || '')
+    if (jobId) {
+      this.setData({ jobId })
+      this.startJobPolling(jobId)
+    } else {
+      this.loadResult(storage.getCurrentResult())
+    }
+  },
+
+  onShow() {
+    this.pageVisible = true
+    if (this.data.jobId && (this.data.state === 'loading' || !this.data.result)) {
+      this.startJobPolling(this.data.jobId)
+    }
+  },
+
+  onHide() {
+    this.pageVisible = false
+    this.stopJobPolling()
   },
 
   onUnload() {
+    this.pageVisible = false
+    this.stopJobPolling()
     if (this.adService) this.adService.destroy()
+  },
+
+  stopJobPolling() {
+    if (this.jobPollTimer) clearTimeout(this.jobPollTimer)
+    this.jobPollTimer = null
+    this.pollGeneration = (this.pollGeneration || 0) + 1
+  },
+
+  updateJobProgress(job) {
+    if (!job) return
+    this.lastJob = job
+    const progress = Math.max(0, Math.min(100, Number(job.progress) || 0))
+    const local = {
+      job_id: job.job_id || this.data.jobId,
+      source_text: job.source_url || (this.data.result && this.data.result.source_text) || '',
+      requested_quality: job.requested_quality || 'original',
+      platform: job.platform,
+      status: job.status,
+      progress,
+      stage: job.stage || '处理中',
+      error: job.error
+    }
+    if (local.job_id) storage.upsertParseJob(local)
+    this.setData({
+      state: job.status === 'ready' ? 'ready' : 'loading',
+      progress,
+      parseStage: job.stage || '处理中',
+      parseErrorCode: '',
+      parseErrorMessage: ''
+    })
+  },
+
+  async startJobPolling(jobId) {
+    if (!jobId || this.pollInFlight) return
+    this.pollInFlight = true
+    this.pageVisible = this.pageVisible !== false
+    const generation = this.pollGeneration || 0
+    this.setData({
+      jobId,
+      result: null,
+      state: 'loading',
+      progress: 0,
+      parseStage: '正在连接提取任务',
+      parseErrorCode: '',
+      parseErrorMessage: ''
+    })
+    try {
+      await auth.ensureAuth()
+      const result = await api.waitForParseJob(
+        jobId,
+        (job) => this.updateJobProgress(job),
+        {
+          shouldContinue: () => this.pageVisible !== false && generation === (this.pollGeneration || 0)
+        }
+      )
+      if (!result || generation !== (this.pollGeneration || 0)) return
+      const job = this.lastJob || {}
+      const normalized = normalizeResult({
+        ...result,
+        job_id: jobId,
+        source_text: job.source_url || '',
+        requested_quality: result.requested_quality || job.requested_quality || 'original'
+      })
+      storage.setParseJob({
+        job_id: jobId,
+        source_text: job.source_url || '',
+        requested_quality: normalized.requested_quality,
+        platform: job.platform || normalized.platform,
+        status: 'ready',
+        progress: 100,
+        stage: '处理完成'
+      })
+      storage.setCurrentResult(normalized)
+      this.loadResult(normalized)
+    } catch (error) {
+      if (generation !== (this.pollGeneration || 0) || error.code === 'JOB_CANCELLED') return
+      this.showJobFailure(error, this.lastJob)
+    } finally {
+      this.pollInFlight = false
+    }
+  },
+
+  showJobFailure(error, job) {
+    const detail = (job && job.error) || {}
+    const code = error.code || detail.code || 'PARSE_FAILED'
+    const message = error.message || detail.message || '暂时无法完成提取'
+    const jobId = (job && job.job_id) || this.data.jobId
+    if (jobId) {
+      storage.upsertParseJob({
+        job_id: jobId,
+        source_text: (job && job.source_url) || '',
+        requested_quality: (job && job.requested_quality) || 'original',
+        platform: job && job.platform,
+        status: (job && job.status) || 'failed',
+        progress: (job && job.progress) || 0,
+        stage: (job && job.stage) || '处理失败',
+        error: { code, message, retryable: Boolean(error.retryable || detail.retryable) }
+      })
+    }
+    this.setData({
+      result: null,
+      state: 'error',
+      progress: (job && job.progress) || 0,
+      parseStage: (job && job.stage) || '处理失败',
+      parseErrorCode: code,
+      parseErrorMessage: message
+    })
   },
 
   loadResult(value) {
@@ -79,12 +211,10 @@ Page({
     const restored = restorePreferredSource(normalized, preferredSourceId)
     const result = restored.result
     if (!result) {
-      this.setData({ state: 'error' })
-      wx.showModal({
-        title: '结果已失效',
-        content: '请返回首页重新提取。',
-        showCancel: false,
-        success: () => wx.navigateBack()
+      this.setData({
+        state: 'error',
+        parseErrorCode: 'RESULT_NOT_FOUND',
+        parseErrorMessage: '结果已失效，请返回首页重新提取。'
       })
       return
     }
@@ -92,7 +222,11 @@ Page({
     this.setData({
       result,
       state: 'ready',
+      jobId: result.job_id || this.data.jobId || '',
       progress: 0,
+      parseStage: '处理完成',
+      parseErrorCode: '',
+      parseErrorMessage: '',
       infoText: this.infoText(result),
       watermarkText: SOURCE_LABELS[result.watermark_status] || SOURCE_LABELS.unknown,
       activeTab: result.media_type === 'image' ? 'images' : 'video',

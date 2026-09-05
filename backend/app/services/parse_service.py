@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import tempfile
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..config import Settings
 from ..errors import AppError
@@ -182,6 +184,55 @@ class ParseService:
             await asyncio.to_thread(shutil.rmtree, directory, True)
             raise
 
+    @staticmethod
+    def _quality_height(label: str | None) -> int | None:
+        match = re.search(r"(?:^|\D)(\d{3,4})P(?:\D|$)", label or "", re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    async def _prepare_remote_source(
+        self,
+        source: ParserSourceModel,
+        requested_quality: str,
+    ) -> bool:
+        """Probe a direct HTTPS source without downloading its body.
+
+        A source is eligible for lazy delivery only when the parser and the
+        metadata probe both identify a bounded MP4.  Unknown containers,
+        non-HTTPS URLs, missing sizes, and requested downscaling deliberately
+        use the existing materialize/ffmpeg fallback path.
+        """
+
+        url = source.upstream_media_url
+        if not url or urlsplit(url).scheme.lower() != "https":
+            return False
+        if source.mime_type.lower().split(";", 1)[0] != "video/mp4":
+            return False
+        if requested_quality != "original":
+            height = self._quality_height(source.quality_label)
+            requested_height = {"720p": 720, "540p": 540}.get(requested_quality)
+            if requested_height and (height is None or height > requested_height):
+                return False
+        probe_media = getattr(self.http, "probe_media", None)
+        if probe_media is None:
+            return False
+        metadata = await probe_media(url, headers=source.required_headers)
+        content_type = str(metadata.get("content_type") or source.mime_type).split(";", 1)[0].lower()
+        if content_type != "video/mp4":
+            return False
+        size = metadata.get("size") or source.size_bytes
+        if size is None:
+            return False
+        size = int(size)
+        if size <= 0 or size > self.settings.max_video_bytes:
+            raise AppError("MEDIA_TOO_LARGE", "源视频超过微信可可靠保存上限")
+        resolved_url = str(metadata.get("url") or url)
+        if urlsplit(resolved_url).scheme.lower() != "https":
+            return False
+        source.upstream_media_url = resolved_url
+        source.mime_type = "video/mp4"
+        source.size_bytes = size
+        return True
+
     def _source_candidates(self, result: ParserResultModel) -> list[ParserSourceModel]:
         # An image-only work has no video sources.  Do not synthesize a video
         # source from its primary image or from the cover field.
@@ -250,7 +301,11 @@ class ParseService:
                     if not source.upstream_media_url and not source.temporary_file:
                         continue
                     raise AppError("PARSE_FAILED", "解析结果缺少唯一媒体来源")
-                await self._materialize_remote(source, progress)
+                lazy_remote = False
+                if source.upstream_media_url:
+                    lazy_remote = await self._prepare_remote_source(source, quality)
+                if not lazy_remote:
+                    await self._materialize_remote(source, progress)
                 if source.upstream_media_url:
                     await self.http.validate_url(source.upstream_media_url)
                 if source.temporary_file:

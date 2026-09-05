@@ -38,7 +38,7 @@
     </view>
     <view class="progress-block" wx:if="{{state === 'downloading' || state === 'saving' || state === 'success'}}">
       <view class="progress-label"><text>{{state === 'saving' ? '正在写入相册' : '下载进度'}}</text><text>{{progress}}%</text></view>
-      <view class="progress-track"><view class="progress-value" style="width: {{progress}}%;"></view></view>
+      <progress class="progress-native" percent="{{progress}}" stroke-width="4" activeColor="#07C160" backgroundColor="#E4E5E7" active="true" />
     </view>
     <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveCurrentVideo">{{saveButtonText}}</button>
   </block>
@@ -83,4 +83,20 @@
   </view>
 </view>
 
-<view class="empty-state" wx:if="{{!result}}"><text>{{state === 'loading' ? '加载结果中…' : '结果已失效'}}</text></view>
+<view class="result-status-page" wx:if="{{!result && state === 'loading'}}">
+  <view class="result-status-spinner">⏳</view>
+  <text class="result-status-title">正在提取</text>
+  <text class="result-status-stage">{{parseStage || '正在等待任务处理'}}</text>
+  <view class="result-status-progress"><progress class="progress-native" percent="{{progress}}" stroke-width="4" activeColor="#07C160" backgroundColor="#E4E5E7" active="true" /><text>{{progress}}%</text></view>
+  <text class="result-status-hint">你可以离开页面，任务会在后台继续</text>
+</view>
+
+<view class="result-status-page result-error-page" wx:elif="{{!result && state === 'error'}}">
+  <view class="result-status-spinner result-error-icon">!</view>
+  <text class="result-status-title">提取失败</text>
+  <text class="result-error-code">错误码：{{parseErrorCode || 'PARSE_FAILED'}}</text>
+  <text class="result-status-stage">{{parseErrorMessage || '暂时无法完成提取'}}</text>
+  <button class="primary-button result-retry-button" bindtap="extractAgain">重新提取</button>
+</view>
+
+<view class="empty-state" wx:if="{{!result && state !== 'loading' && state !== 'error'}}"><text>结果已失效</text></view>

@@ -139,3 +139,30 @@ def test_image_media_uses_image_content_type_and_filename(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/jpeg")
     assert response.headers["content-disposition"].endswith(".jpg\"")
+
+
+def test_remote_media_session_keeps_validated_source_for_on_demand_streaming(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    user_id = decode_auth_token(token, client.app.state.settings.app_token_secret.get_secret_value())
+    media = asyncio.run(
+        client.app.state.media_sessions.create(
+            user_id=user_id,
+            platform="测试平台",
+            title="远程视频",
+            upstream_url="https://cdn.example/video.mp4",
+            temporary_file=None,
+            required_headers={
+                "Referer": "https://example.com/watch",
+                "X-Unsafe": "discarded",
+            },
+            mime_type="video/mp4",
+            size_bytes=123,
+        )
+    )
+
+    restored = asyncio.run(client.app.state.media_sessions.get(media.token))
+    assert restored.temporary_file is None
+    assert restored.upstream_url == "https://cdn.example/video.mp4"
+    assert restored.required_headers == {"Referer": "https://example.com/watch"}

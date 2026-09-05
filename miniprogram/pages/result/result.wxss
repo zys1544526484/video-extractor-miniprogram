@@ -399,6 +399,11 @@
   margin: 2px 2px 18px;
 }
 
+.progress-native {
+  display: block;
+  width: 100%;
+}
+
 .progress-label {
   display: flex;
   justify-content: space-between;
@@ -450,4 +455,87 @@
   justify-content: center;
   min-height: 70vh;
   color: #8a8a8a;
+}
+
+.result-status-page {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  min-height: 72vh;
+  padding: 96px 28px 32px;
+  color: #73757a;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.result-status-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 18px;
+  color: #07c160;
+  font-size: 27px;
+  background: #eefaf3;
+  border-radius: 50%;
+}
+
+.result-status-title {
+  color: #202124;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.result-status-stage {
+  max-width: 300px;
+  margin-top: 10px;
+  color: #73757a;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.result-status-progress {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 24px;
+}
+
+.result-status-progress .progress-track {
+  flex: 1;
+}
+
+.result-status-progress .progress-native {
+  flex: 1;
+}
+
+.result-status-progress > text {
+  width: 42px;
+  margin-left: 10px;
+  color: #07a950;
+  font-size: 13px;
+  text-align: right;
+}
+
+.result-status-hint {
+  margin-top: 18px;
+  color: #9a9ca0;
+  font-size: 13px;
+}
+
+.result-error-icon {
+  color: #d45b54;
+  background: #fff1ef;
+}
+
+.result-error-code {
+  margin-top: 16px;
+  color: #9a9ca0;
+  font-size: 12px;
+}
+
+.result-retry-button {
+  width: 100%;
+  margin-top: 28px;
 }
