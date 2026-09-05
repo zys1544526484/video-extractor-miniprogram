@@ -48,6 +48,16 @@
 - 本次实现提交为 `cfbeb76`，已推送到原分支；尚未合并，按 Issue 要求后续仅创建 Draft PR，不标记 ready。
 - 交付门禁：后端 pytest `113 passed`（2 warnings）、Ruff PASS、compileall PASS；前端 Node `43 passed`；小程序校验 `79 files checked PASS`；合成生产校验 PASS；`git diff --check` PASS。
 
+### 当前请求：P1 任务跳转、轮询与快速媒体路径收尾（2026-09-05）
+
+- 当前分支保持为 `codex/p1-reference-result-sources`，不新建分支、不合并 PR。当前基线仍为 main `b006c3f7bcf00d369d22c7e99ab2f738764ea84f`；PR #2 已合并；PR #5 保持 Draft、目标为 `main`。
+- 首页在 `POST /parse` 成功创建任务后立即跳转 `pages/result/result?job_id=...`。结果页自动轮询任务状态，显示进度/阶段；ready 后加载视频、图片、标题、真实来源和画质；failed 后显示后端错误码、中文原因和“重新提取”。历史记录使用同一错误明细，不再只显示“提取失败”。
+- `result.wxml` 的下载/解析进度条已改用微信原生 `progress`，不再使用动态宽度 style，消除开发者工具 CSS 检查错误来源。
+- 新增远程媒体会话字段和迁移 `backend/alembic/versions/0004_remote_media_sessions.py`。对于已通过 SafeHttpClient 元数据探测、SSRF 检查、MIME/大小限制的 HTTPS MP4，解析阶段不读取完整媒体体；仅在预览/保存请求时使用短期媒体 Token 代理传输。非 HTTPS、非 MP4、降档或探测不完整的源继续走现有分块下载/ffprobe/处理回退路径。旧本地文件会话保持兼容，媒体清理规则未放宽。
+- 本轮测试：后端 pytest `116 passed`（2 warnings）；Ruff PASS；compileall PASS；前端 Node `46 passed`；`npm run validate:miniprogram` `80 files checked` PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
+- 人工验证仍未完成：当前环境没有可操作的微信开发者工具原生应用或官方 CLI，无法提供本轮截图；真实微信登录、合法 HTTPS 域名、五个平台公开样例、真机网络/相册保存和生产部署均继续标记 `NOT VERIFIED`。本轮未接入 SPAPI 或 media-parser。
+- PR #5 描述需要同步本轮实现和测试结果；完成 push 后尝试通过 GitHub 连接器更新，若权限继续返回 `403 Resource not accessible by integration`，只报告失败，不声称已更新。保持 Draft，不合并。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
 - 任务分支：`codex/p1-reference-result-sources`

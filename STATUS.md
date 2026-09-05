@@ -59,3 +59,12 @@
 ## 发布判断
 
 **不可提审 / NOT READY**。见 `RELEASE_READINESS.md` 和 `BLOCKERS.md`；任何未完成的真实能力均不得写成 PASS。
+
+## 本轮 P1 收尾（2026-09-05）
+
+- 首页创建持久解析任务后立即跳转 `pages/result/result?job_id=...`；结果页按 1.5 秒轮询任务，展示后端进度阶段，成功后加载视频、图片、标题、来源和画质信息，失败时展示稳定 `error_code`、中文原因和“重新提取”。提取记录同步保存具体失败原因。
+- 结果页进度条改用微信原生 `progress` 组件，移除动态 `style="width: ..."`，规避开发者工具 CSS 检查器误报。
+- 直连路径：对已验证的 HTTPS MP4 源只执行 SafeHttpClient 元数据探测和 SSRF/大小校验，媒体会话保存短期能力所需的受限上游地址，用户点击预览/保存时才代理传输；非 HTTPS、非 MP4、需要降档或元数据不完整的源继续走安全落盘、ffprobe/处理回退路径。新增 Alembic `0004_remote_media_sessions`，兼容旧本地文件会话。
+- 本轮不接入 SPAPI 或 media-parser；保留现有 SafeHttpClient、用户归属校验、短期 Token、24 小时媒体清理和 rewarded_ad 权益门禁。
+- 本轮本地验证：后端 pytest `116 passed`（2 warnings）；Ruff PASS；`compileall` PASS；前端 Node `46 passed`；`npm run validate:miniprogram`（80 files）PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
+- 微信开发者工具、真机、真实 HTTPS 合法域名、生产微信登录、五平台真实公开样例和相册保存本轮仍为 `NOT VERIFIED`；当前环境未发现可操作的微信开发者工具原生应用或官方 CLI，静态校验不替代这些人工验收。
