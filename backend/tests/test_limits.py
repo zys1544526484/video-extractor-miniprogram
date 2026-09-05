@@ -148,6 +148,7 @@ async def test_expired_media_token_and_orphan_cleanup(tmp_path: Path) -> None:
     assert await store.cleanup() == 2
     assert not stored.parent.exists()
     assert not orphan.parent.exists()
+    assert (tmp_path / "sessions.db").exists()
     database.close()
 
 

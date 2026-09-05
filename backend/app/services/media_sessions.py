@@ -224,6 +224,18 @@ class MediaSessionStore:
         else:
             shutil.rmtree(parent, ignore_errors=True)
 
+    @staticmethod
+    def _is_media_file(path: Path) -> bool:
+        """Return whether a root-level file is safe for orphan cleanup.
+
+        ``TEMP_DIR`` can be colocated with SQLite in development.  Cleanup must
+        never treat database files (or other operator-managed files) as media.
+        Media sessions are constrained to the formats accepted by
+        ``normalize_media_type``.
+        """
+
+        return path.suffix.lower() in {".mp4", ".jpg", ".jpeg", ".png", ".webp"}
+
     async def cleanup(self) -> int:
         now = utc_now_naive()
         expired_files: list[str] = []
@@ -256,7 +268,9 @@ class MediaSessionStore:
                 if modified <= cutoff:
                     if child.is_dir():
                         shutil.rmtree(child, ignore_errors=True)
-                    else:
+                    elif self._is_media_file(child):
                         child.unlink(missing_ok=True)
+                    else:
+                        continue
                     orphaned += 1
         return len(expired_files) + orphaned
