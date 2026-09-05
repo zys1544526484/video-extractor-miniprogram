@@ -39,6 +39,15 @@
 - 微信开发者工具原生应用和官方 CLI 当前不可用，无法完成本轮首页/Tab/源切换/图片保存/标题复制/免费保存的截图或真机操作，记录为 `NOT VERIFIED`；静态校验不替代开发者工具与真机证据。
 - 独立清理修复随后以 `fdb55f4` 提交并推送；文档更新将在该提交之后另行提交。远程 CI 由分支 push 触发，当前未通过 GitHub 连接器读取 run 详情，不能写成 CI 已通过。
 
+### Issue #3：P1 结果页单图语义与视觉验收（2026-09-05）
+
+- Issue #3 要求已执行：Generic 解析器现在区分“仅 og:image 封面”和“显式 img/JSON-LD 图片”。纯图片页即使显式图片与 `og:image` 相同也会返回真实图片；视频页重复封面不会进入作品图片列表。
+- `DIRECT_IMAGE_EXTENSIONS` 已移除 `.gif`，与 SafeHttpClient 和媒体会话当前只接受 JPEG、PNG、WebP 的安全格式保持一致；新增 GIF 不进入图片链路的回归测试。
+- 新增真实 SafeHttpClient + 模拟网络响应的端到端单图页面测试，覆盖 HTML 解析、图片探测、落盘、短期预览和下载；解析器单测覆盖显式封面、JSON-LD 图片、视频重复封面与 GIF 边界。
+- 平台状态明确保持：抖音、小红书、快手、微博、Bilibili 的图文解析均为 `NOT VERIFIED`。已有 Bilibili 视频样例只证明公开视频链路，不代表图文解析通过。
+- 本次实现提交为 `cfbeb76`，已推送到原分支；尚未合并，按 Issue 要求后续仅创建 Draft PR，不标记 ready。
+- 交付门禁：后端 pytest `113 passed`（2 warnings）、Ruff PASS、compileall PASS；前端 Node `43 passed`；小程序校验 `79 files checked PASS`；合成生产校验 PASS；`git diff --check` PASS。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
 - 任务分支：`codex/p1-reference-result-sources`

@@ -9,7 +9,7 @@
 - Phase 00 工程基线：`COMPLETE`。
 - Phase 01–03 微信端与 Mock 闭环：`COMPLETE / LOCAL VERIFIED`。
 - Phase 04–16 后端、权益、安全代理：`COMPLETE / LOCAL VERIFIED`。
-- Phase 17–22 平台适配：代码和 contract tests 已完成；Generic 与 Bilibili 各有 1 个真实网络样例通过，其余平台 `NOT VERIFIED`。
+- Phase 17–22 平台适配：代码和 contract tests 已完成；Generic 与 Bilibili 各有 1 个真实视频网络样例通过，其余平台 `NOT VERIFIED`；抖音、小红书、快手、微博、Bilibili 的图文解析全部保持 `NOT VERIFIED`。
 - Phase 23–26 部署与发布：Docker/Alembic/Caddy 文件已完成；微信开发者工具 Mock 主流程已本机验证，容器、真机和生产部署 `NOT VERIFIED`。
 - P0 安全与生产门禁：媒体访问 Token 短期 TTL、Token/媒体保留时间拆分、应用/Caddy 日志脱敏、HTTP(S) 标准端口 SSRF 校验、production Alembic head 校验和 CI 门禁已实现；最新分支 push CI 的两个 job 均成功。自动化门禁已通过，但部署后的日志抽样、真机和生产环境仍为 `NOT VERIFIED`，因此不代表 P0 全部上线条件已完成。
 
@@ -26,6 +26,7 @@
 - 首版正式免费模式：`DOWNLOAD_ACCESS_MODE=free` 时登录用户可直接下载，前端隐藏广告与权益 Gate，生产配置不要求 adUnitId；广告模式代码保留但默认关闭。
 - 本轮结果来源修正：`/media/{token}/download` 是可独立打开的短期能力链接，不要求小程序 `Authorization` 请求头；`rewarded_ad` 仍在服务端按媒体会话所属用户检查权益。后端新增独立链接、源2续签/过期回退和 Generic 直接图片/画廊测试；本轮最终后端 pytest 110 项、前端 Node 43 项均通过。
 - 本轮图片与源选择收尾复跑：真实 `SafeHttpClient` + 模拟网络响应覆盖图片直链、网页图片解析、落盘、预览和下载；`PATCH /parse/jobs/{job_id}/source` 与页面级 A/B/A、历史失效回退、过期复制刷新测试均通过。`npm run validate:miniprogram`（79 files）、合成 `npm run validate:production`、Ruff、compileall、`git diff --check` 均 PASS。
+- Issue #3 单图语义修正：纯图片页显式 `img`/JSON-LD 即使重复 `og:image` 也会返回作品图片；视频页重复封面仍会排除；`.gif` 不再作为直接图片入口。后端 pytest 本轮为 113 passed；五个平台图文解析仍为 `NOT VERIFIED`。
 - 持久解析任务：创建/轮询/取消、幂等、用户隔离、服务重启恢复、页面重开续查和 0–100 进度自动测试 PASS；任务与媒体会话存入 SQLite，媒体结果保留 24 小时。每次返回的 `result.expires_at` 是当前访问 Token 的实际过期时间，`media_expires_at` 独立表示媒体保留截止时间；结果页保存前按 Token 过期时间刷新，Token 失效不会延长媒体会话。
 - 媒体访问安全：`MEDIA_ACCESS_TOKEN_TTL_SECONDS` 默认 900 秒，媒体会话保留 24 小时并支持重新签发；应用请求日志掩码媒体 Token，Caddy access log 删除 URI/请求头；公开 URL 仅允许 HTTP 80 或 HTTPS 443。
 - production 数据库启动：不再依赖 `create_all`；启动前校验数据库存在且 Alembic 已到 head，迁移由部署命令负责。
