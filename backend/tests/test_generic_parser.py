@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.config import Settings
 from app.parsers.base import ParseContext
-from app.parsers.generic import GenericParser
+from app.parsers.generic import DIRECT_IMAGE_EXTENSIONS, GenericParser
 
 
 class FakeHttp:
@@ -51,6 +51,7 @@ async def test_generic_parser_keeps_explicit_gallery_images_separate_from_cover(
                 <html><head>
                   <meta property="og:image" content="/cover.jpg">
                 </head><body>
+                  <img src="/cover.jpg">
                   <img src="/gallery-1.jpg">
                   <video><source src="/media/video.mp4"></video>
                 </body></html>
@@ -112,3 +113,68 @@ async def test_generic_parser_does_not_turn_only_open_graph_cover_into_work_imag
         assert getattr(error, "code", None) == "PLATFORM_UNSUPPORTED"
     else:
         raise AssertionError("cover-only HTML must not produce a downloadable image")
+
+
+async def test_generic_parser_keeps_explicit_cover_on_video_free_image_page() -> None:
+    class ImagePageHttp(FakeHttp):
+        async def get_text(self, url: str):
+            return (
+                "https://public.example/gallery/1",
+                """
+                <html><head>
+                  <meta property="og:image" content="/photo.jpg">
+                </head><body><picture><source src="/photo.jpg">
+                <img src="/photo.jpg"></picture></body></html>
+                """,
+                {"content-type": "text/html"},
+            )
+
+    result = await GenericParser().parse(
+        "https://public.example/gallery/1",
+        ParseContext(settings=Settings(app_env="test"), http=ImagePageHttp()),
+    )
+    assert result.media_type == "image"
+    assert [image.url for image in result.images] == [
+        "https://public.example/photo.jpg"
+    ]
+
+
+async def test_generic_parser_keeps_jsonld_image_on_video_free_image_page() -> None:
+    class JsonLdImagePageHttp(FakeHttp):
+        async def get_text(self, url: str):
+            return (
+                "https://public.example/gallery/2",
+                """
+                <html><head>
+                  <meta property="og:image" content="/photo.jpg">
+                  <script type="application/ld+json">
+                    {"image":["/photo.jpg"]}
+                  </script>
+                </head><body></body></html>
+                """,
+                {"content-type": "text/html"},
+            )
+
+    result = await GenericParser().parse(
+        "https://public.example/gallery/2",
+        ParseContext(settings=Settings(app_env="test"), http=JsonLdImagePageHttp()),
+    )
+    assert result.media_type == "image"
+    assert len(result.images) == 1
+
+
+async def test_generic_parser_does_not_enter_unsupported_gif_as_image() -> None:
+    class EmptyPageHttp(FakeHttp):
+        async def get_text(self, url: str):
+            return "https://public.example/media/animated.gif", "<html></html>", {}
+
+    assert ".gif" not in DIRECT_IMAGE_EXTENSIONS
+    try:
+        await GenericParser().parse(
+            "https://public.example/media/animated.gif",
+            ParseContext(settings=Settings(app_env="test"), http=EmptyPageHttp()),
+        )
+    except Exception as error:
+        assert getattr(error, "code", None) == "PLATFORM_UNSUPPORTED"
+    else:
+        raise AssertionError("GIF must not enter the image pipeline")

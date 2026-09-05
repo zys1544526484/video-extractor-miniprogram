@@ -11,7 +11,10 @@ from ..schemas import ParserImageModel, ParserResultModel
 from .base import BaseParser, ParseContext
 
 DIRECT_VIDEO_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
-DIRECT_IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
+# GIF is intentionally excluded: the media pipeline only accepts JPEG, PNG
+# and WebP, so an extension-only GIF entry would fail later with a confusing
+# media-format error.
+DIRECT_IMAGE_EXTENSIONS = {".jpeg", ".jpg", ".png", ".webp"}
 
 
 class GenericParser(BaseParser):
@@ -113,7 +116,7 @@ class GenericParser(BaseParser):
             source = element.get("src")
             if source:
                 image_candidates.append(urljoin(final_url, str(source)))
-        for element in soup.select("video[src], video source[src], source[src]"):
+        for element in soup.select("video[src], video source[src]"):
             if element.get("src"):
                 candidates.append(urljoin(final_url, str(element["src"])))
         for prop in ("og:video", "og:video:url", "og:video:secure_url", "twitter:player:stream"):
@@ -142,11 +145,17 @@ class GenericParser(BaseParser):
                         )
 
         errors: list[AppError] = []
-        unique_images = [
-            candidate
-            for candidate in dict.fromkeys(image_candidates)
-            if candidate != cover
-        ][:8]
+        unique_image_candidates = list(dict.fromkeys(image_candidates))
+        # An OpenGraph image by itself is metadata/cover, not a downloadable
+        # work image.  Once the page explicitly contains a video candidate,
+        # also discard an explicit image that merely repeats that cover.  A
+        # video-free image page is different: its explicit img/JSON-LD image
+        # is the work itself, even when it equals og:image.
+        has_video_candidate = bool(dict.fromkeys(candidates))
+        if has_video_candidate:
+            unique_images = [candidate for candidate in unique_image_candidates if candidate != cover][:8]
+        else:
+            unique_images = unique_image_candidates[:8]
         work_images = [
             ParserImageModel(
                 image_id=f"image-{index}",

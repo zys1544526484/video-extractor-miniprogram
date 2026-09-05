@@ -43,6 +43,33 @@ def test_public_webpage_image_reaches_disk_preview_and_download(tmp_path) -> Non
                 },
                 content=image_bytes,
             )
+        if request.url.path == "/single":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html; charset=utf-8"},
+                content=(
+                    '<html><head><title>单图作品</title>'
+                    '<meta property="og:image" content="/photo.jpg"></head>'
+                    '<body><img src="/photo.jpg"></body></html>'
+                ).encode(),
+            )
+        if request.url.path == "/photo.jpg":
+            if request.method == "HEAD":
+                return httpx.Response(
+                    200,
+                    headers={
+                        "content-type": "image/jpeg",
+                        "content-length": str(len(image_bytes)),
+                    },
+                )
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "image/jpeg",
+                    "content-length": str(len(image_bytes)),
+                },
+                content=image_bytes,
+            )
         if request.url.path == "/direct.jpg":
             if request.method == "HEAD":
                 return httpx.Response(
@@ -94,6 +121,11 @@ def test_public_webpage_image_reaches_disk_preview_and_download(tmp_path) -> Non
         direct = asyncio.run(service.parse("https://example.com/direct.jpg", user_id))
         assert direct.media_type == "image"
         assert direct.images
+
+        single = asyncio.run(service.parse("https://example.com/single", user_id))
+        assert single.media_type == "image"
+        assert [image["alt"] for image in single.images] == ["单图作品"]
+        assert single.images[0]["mime_type"] == "image/jpeg"
 
         result = asyncio.run(service.parse("https://example.com/gallery", user_id))
         assert result.media_type == "image"
