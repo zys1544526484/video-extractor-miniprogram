@@ -61,6 +61,62 @@ async def test_safe_http_rejects_declared_oversized_media() -> None:
 
 
 @pytest.mark.asyncio
+async def test_safe_http_probes_and_streams_public_image() -> None:
+    image_bytes = b"fake-jpeg-bytes"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "example.com"
+        if request.method == "HEAD":
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "image/jpeg",
+                    "content-length": str(len(image_bytes)),
+                },
+            )
+        return httpx.Response(
+            200,
+            headers={
+                "content-type": "image/jpeg",
+                "content-length": str(len(image_bytes)),
+            },
+            content=image_bytes,
+        )
+
+    client = SafeHttpClient(
+        timeout_seconds=1,
+        max_redirects=1,
+        max_video_bytes=1024,
+        resolver=public_resolver,
+        transport=httpx.MockTransport(handler),
+    )
+    metadata = await client.probe_image("https://example.com/photo.jpg")
+    assert metadata == {
+        "url": "https://example.com/photo.jpg",
+        "content_type": "image/jpeg",
+        "size": len(image_bytes),
+    }
+    opened = await client.open_stream("https://example.com/photo.jpg", media_kind="image")
+    try:
+        body = b"".join([chunk async for chunk in opened.response.aiter_bytes()])
+    finally:
+        await opened.close()
+    assert body == image_bytes
+
+
+@pytest.mark.asyncio
+async def test_safe_http_keeps_image_and_video_content_types_separate() -> None:
+    with pytest.raises(AppError, match="非图片"):
+        SafeHttpClient._validate_stream_response(
+            200, {"content-type": "video/mp4"}, media_kind="image"
+        )
+    with pytest.raises(AppError, match="非视频"):
+        SafeHttpClient._validate_stream_response(
+            200, {"content-type": "image/jpeg"}, media_kind="video"
+        )
+
+
+@pytest.mark.asyncio
 async def test_expired_media_token_and_orphan_cleanup(tmp_path: Path) -> None:
     database = Database(f"sqlite:///{tmp_path / 'sessions.db'}")
     database.create_schema()

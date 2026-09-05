@@ -142,3 +142,27 @@ def test_server_renews_selected_source_when_other_source_expires(client, auth_he
     assert result["selected_source_id"] == "source-2"
     assert [item["source_id"] for item in result["sources"]] == ["source-2"]
     assert result["download_url"] == result["sources"][0]["download_url"]
+
+
+def test_selected_source_is_persisted_on_job_and_returned_after_reopen(client, auth_headers) -> None:
+    client.app.state.parse_jobs.parse_service = MultiSourceParseService(client)
+    response = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "multi_source_selection_01"},
+        json={"text": "https://example.com/video", "quality": "original"},
+    )
+    job_id = response.json()["job"]["job_id"]
+    wait_ready(client, job_id, auth_headers)
+
+    selected = client.patch(
+        f"/api/v1/parse/jobs/{job_id}/source",
+        headers=auth_headers,
+        json={"selected_source_id": "source-2"},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["job"]["result"]["selected_source_id"] == "source-2"
+
+    reopened = client.get(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
+    reopened_result = reopened.json()["job"]["result"]
+    assert reopened_result["selected_source_id"] == "source-2"
+    assert reopened_result["download_url"].endswith("/download")

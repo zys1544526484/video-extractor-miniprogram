@@ -37,4 +37,11 @@ test('mock parse job is idempotent and progresses to one complete result', async
   assert.equal(saved.media_available, true)
   assert.equal(saved.summary.quality_label, '540P')
   assert.equal(saved.result, undefined)
+
+  const selected = await mockApi.handle(`/parse/jobs/${created.job.job_id}/source`, {
+    method: 'PATCH',
+    data: { selected_source_id: 'source-2' }
+  })
+  assert.equal(selected.job.result.selected_source_id, 'source-2')
+  assert.equal(selected.job.result.download_url, '/assets/mock-video.mp4')
 })

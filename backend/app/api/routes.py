@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..errors import AppError, entitlement_required
-from ..schemas import AdCompleteRequest, ParseRequest, WechatAuthRequest
+from ..schemas import AdCompleteRequest, ParseRequest, ParseSourceSelectionRequest, WechatAuthRequest
 from ..services.auth_service import create_session_token, exchange_wechat_code, get_or_create_user
 from ..services.entitlement_service import (
     complete_rewarded_ad,
@@ -172,6 +172,21 @@ async def get_parse_job(
     return ok(request, job=job)
 
 
+@router.patch("/parse/jobs/{job_id}/source")
+async def select_parse_source(
+    job_id: str,
+    body: ParseSourceSelectionRequest,
+    request: Request,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    job = await request.app.state.parse_jobs.select_source(
+        job_id,
+        user_id=user_id,
+        source_id=body.selected_source_id,
+    )
+    return ok(request, job=job)
+
+
 @router.delete("/parse/jobs/{job_id}")
 async def cancel_parse_job(
     job_id: str,
@@ -203,6 +218,7 @@ async def remote_stream_response(request: Request, media: Any, *, download: bool
         media.upstream_url,
         headers=media.required_headers,
         range_header=range_header,
+        media_kind="image" if media.mime_type.startswith("image/") else "video",
     )
     response = opened.response
     declared_length = response.headers.get("content-length")

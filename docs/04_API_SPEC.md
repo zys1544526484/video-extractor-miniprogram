@@ -10,6 +10,7 @@
 - `POST /parse`：创建持久解析任务，要求认证和 `Idempotency-Key`，返回 HTTP 202。请求体为分享文案 `text` 与 `quality`；`quality` 只允许 `original`、`720p`、`540p`，默认 `original`。
 - `GET /parse/jobs`：返回当前用户最近 24 小时的任务与结果摘要，最多 50 条；列表不签发媒体 token，也不返回下载地址。
 - `GET /parse/jobs/{job_id}`：查询 `queued/processing/ready/failed/cancelled/expired` 状态、0–100 进度和当前阶段。`ready` 时返回媒体结果，`quality_label` 始终描述实际媒体。
+- `PATCH /parse/jobs/{job_id}/source`：认证后按 `job_id` 持久化 `selected_source_id`；只接受该任务当前返回的源，图片作品拒绝切换。之后重新查询任务会按已保存源返回顶层预览/下载地址。
 - `DELETE /parse/jobs/{job_id}`：取消未完成任务。任务和结果均绑定当前登录用户。
 - `GET /media/{token}/preview`
 - `GET /media/{token}/download`：短期能力链接，不要求小程序 `Authorization` 请求头，适合复制后独立打开；token 仍必须由服务端签发并映射到已验证用户的媒体会话，不能作为任意 URL 代理。`rewarded_ad` 模式在访问时检查该媒体会话所属用户的下载权益。

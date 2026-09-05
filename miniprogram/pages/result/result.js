@@ -72,7 +72,12 @@ Page({
   },
 
   loadResult(value) {
-    const result = normalizeResult(value)
+    const normalized = normalizeResult(value)
+    const preferredSourceId = normalized && normalized.job_id
+      ? storage.getSelectedSource(normalized.job_id)
+      : ''
+    const restored = restorePreferredSource(normalized, preferredSourceId)
+    const result = restored.result
     if (!result) {
       this.setData({ state: 'error' })
       wx.showModal({
@@ -83,6 +88,7 @@ Page({
       })
       return
     }
+    if (restored.fallback) this.notifySourceFallback(result)
     this.setData({
       result,
       state: 'ready',
@@ -116,7 +122,9 @@ Page({
 
   async ensureFreshResult() {
     const result = normalizeResult(this.data.result)
-    const preferredSourceId = result && result.selected_source_id
+    const preferredSourceId = result && (
+      storage.getSelectedSource(result.job_id) || result.selected_source_id
+    )
     const app = getApp()
     const serverNow = Date.now() + (app.globalData.serverOffsetMs || 0)
     if (result && !isTokenExpired(result, serverNow)) return result
@@ -133,7 +141,7 @@ Page({
         })
         const restored = restorePreferredSource(renewedRaw, preferredSourceId)
         const renewed = restored.result
-        if (restored.fallback) this.notifySourceFallback()
+        if (restored.fallback) this.notifySourceFallback(renewed)
         storage.setCurrentResult(renewed)
         this.loadResult(renewed)
         return renewed
@@ -148,13 +156,16 @@ Page({
     })
     const restored = restorePreferredSource(refreshedRaw, preferredSourceId)
     const refreshed = restored.result
-    if (restored.fallback) this.notifySourceFallback()
+    if (restored.fallback) this.notifySourceFallback(refreshed)
     storage.setCurrentResult(refreshed)
     this.loadResult(refreshed)
     return refreshed
   },
 
-  notifySourceFallback() {
+  notifySourceFallback(result) {
+    if (result && result.job_id && result.selected_source_id) {
+      storage.setSelectedSource(result.job_id, result.selected_source_id)
+    }
     wx.showModal({
       title: '视频源已过期',
       content: '原选择的视频源已过期，已切换到当前可用源。',
@@ -187,6 +198,10 @@ Page({
       return
     }
     storage.setCurrentResult(next)
+    if (next.job_id && next.selected_source_id) {
+      storage.setSelectedSource(next.job_id, next.selected_source_id)
+      api.selectParseSource(next.job_id, next.selected_source_id).catch(() => {})
+    }
     this.setData({
       result: next,
       sourceOptions: next.sources,
@@ -198,13 +213,22 @@ Page({
     })
   },
 
-  copyCurrentLink() {
-    const url = copyableDownloadUrl(this.data.result)
-    if (!url) {
-      wx.showToast({ title: '安全链接已失效，请重新提取', icon: 'none' })
-      return
+  async copyCurrentLink() {
+    if (this.copyInFlight) return
+    this.copyInFlight = true
+    try {
+      const result = await this.ensureFreshResult()
+      const url = copyableDownloadUrl(result)
+      if (!url) throw new Error('安全链接已失效，请重新提取')
+      await new Promise((resolve, reject) => {
+        wx.setClipboardData({ data: url, success: resolve, fail: reject })
+      })
+      wx.showToast({ title: '链接已复制', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: error.message || '安全链接刷新失败，请稍后重试', icon: 'none' })
+    } finally {
+      this.copyInFlight = false
     }
-    wx.setClipboardData({ data: url, success: () => wx.showToast({ title: '链接已复制', icon: 'success' }) })
   },
 
   copyTitle() {

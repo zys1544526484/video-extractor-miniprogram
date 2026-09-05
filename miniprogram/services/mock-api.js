@@ -180,6 +180,19 @@ async function handle(path, options = {}) {
   }
 
   const jobMatch = /^\/parse\/jobs\/([^/]+)$/.exec(path)
+  const sourceMatch = /^\/parse\/jobs\/([^/]+)\/source$/.exec(path)
+  if (sourceMatch && options.method === 'PATCH') {
+    const job = MOCK_JOBS.get(sourceMatch[1])
+    const selectedSourceId = options.data && options.data.selected_source_id
+    const source = job && job.result.sources.find((item) => item.source_id === selectedSourceId)
+    if (!source) {
+      const error = new Error('所选视频源已不可用')
+      error.code = 'SOURCE_NOT_FOUND'
+      throw error
+    }
+    job.result.selected_source_id = selectedSourceId
+    return { success: true, request_id: 'req_mock_source', job: mockJobView(job) }
+  }
   if (jobMatch && options.method === 'GET') {
     const job = MOCK_JOBS.get(jobMatch[1])
     if (!job) {

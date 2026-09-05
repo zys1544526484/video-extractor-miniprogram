@@ -147,7 +147,11 @@ class ParseService:
         partial = directory / "image.part"
         final = directory / "image.bin"
         try:
-            opened = await self.http.open_stream(image.url, headers=image.required_headers)
+            opened = await self.http.open_stream(
+                image.url,
+                headers=image.required_headers,
+                media_kind="image",
+            )
             try:
                 content_type = opened.response.headers.get("content-type", image.mime_type)
                 content_type = content_type.split(";", 1)[0].strip().lower()

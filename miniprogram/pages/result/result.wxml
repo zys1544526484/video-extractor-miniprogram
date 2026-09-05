@@ -43,6 +43,10 @@
     <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveCurrentVideo">{{saveButtonText}}</button>
   </block>
 
+  <block wx:elif="{{activeTab === 'video' && result.media_type === 'image'}}">
+    <view class="tab-empty"><text class="tab-empty-title">该作品没有视频</text><text>请切换到图片 Tab 查看可保存内容</text></view>
+  </block>
+
   <block wx:elif="{{activeTab === 'images'}}">
     <view class="image-list" wx:if="{{images.length}}">
       <view class="image-card" wx:for="{{images}}" wx:key="image_id">
@@ -79,4 +83,4 @@
   </view>
 </view>
 
-<view class="empty-state" wx:else><text>{{state === 'loading' ? '加载结果中…' : '结果已失效'}}</text></view>
+<view class="empty-state" wx:if="{{!result}}"><text>{{state === 'loading' ? '加载结果中…' : '结果已失效'}}</text></view>

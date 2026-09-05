@@ -54,7 +54,12 @@ class GenericParser(BaseParser):
         title: str = "公开网页图片",
         image_id: str = "image-1",
     ) -> ParserResultModel:
-        metadata = await context.http.probe_media(media_url)
+        probe_image = getattr(context.http, "probe_image", None)
+        metadata = await (
+            probe_image(media_url)
+            if probe_image is not None
+            else context.http.probe_media(media_url)
+        )
         content_type = str(metadata.get("content_type") or "image/jpeg").split(";", 1)[0].lower()
         if content_type == "image/jpg":
             content_type = "image/jpeg"

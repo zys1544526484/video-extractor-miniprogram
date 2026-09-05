@@ -32,3 +32,11 @@ test('parse retry draft can be consumed once', () => {
   assert.equal(storage.takeParseDraft().requested_quality, '540p')
   assert.equal(storage.takeParseDraft(), null)
 })
+
+test('selected source is persisted independently for each job', () => {
+  storage.setSelectedSource('job-a', 'source-2')
+  storage.setSelectedSource('job-b', 'source-1')
+  // Simulates A(source 2) -> open B -> reopen A.
+  assert.equal(storage.getSelectedSource('job-a'), 'source-2')
+  assert.equal(storage.getSelectedSource('job-b'), 'source-1')
+})

@@ -201,6 +201,39 @@ class ParseJobService:
                     running.cancel()
             return await self._public(job, user_id=user_id)
 
+    async def select_source(
+        self,
+        job_id: str,
+        *,
+        user_id: int,
+        source_id: str,
+    ) -> dict[str, Any]:
+        """Persist the user's source choice on the durable parse job."""
+        with self.database.session_factory() as session:
+            job = session.get(ParseJob, job_id)
+            if job is None or job.user_id != user_id:
+                raise AppError("JOB_NOT_FOUND", "提取任务不存在", status_code=404)
+            if job.status != "ready" or not job.result_json:
+                raise AppError("JOB_NOT_READY", "任务尚未完成，暂不能选择视频源", status_code=409)
+            result = json.loads(job.result_json)
+            if result.get("media_type") == "image":
+                raise AppError("SOURCE_NOT_FOUND", "图片作品没有可切换的视频源", status_code=400)
+            source = next(
+                (
+                    item
+                    for item in self._stored_sources(result)
+                    if item.get("source_id") == source_id
+                ),
+                None,
+            )
+            if source is None:
+                raise AppError("SOURCE_NOT_FOUND", "所选视频源已不可用", status_code=404)
+            result["selected_source_id"] = source_id
+            job.result_json = json.dumps(result, ensure_ascii=False)
+            job.updated_at = utc_now_naive()
+            session.commit()
+            return await self._public(job, user_id=user_id)
+
     async def cleanup(self) -> int:
         now = utc_now_naive()
         with self.database.session_factory() as session:

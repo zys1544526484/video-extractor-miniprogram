@@ -20,6 +20,8 @@ MEDIA_CONTENT_TYPES = {
     "application/vnd.apple.mpegurl",
     "application/x-mpegurl",
 }
+IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 class PinnedPublicResolver(AbstractResolver):
@@ -99,6 +101,7 @@ class SafeHttpClient:
         timeout_seconds: int,
         max_redirects: int,
         max_video_bytes: int,
+        max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
         resolver: Resolver = resolve_host,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -106,6 +109,7 @@ class SafeHttpClient:
         self.httpx_timeout = httpx.Timeout(timeout_seconds)
         self.max_redirects = max_redirects
         self.max_video_bytes = max_video_bytes
+        self.max_image_bytes = max_image_bytes
         self.resolver = resolver
         self.transport = transport
 
@@ -260,7 +264,27 @@ class SafeHttpClient:
             encoding = content_type.rsplit("charset=", 1)[-1].split(";", 1)[0].strip()
         return final_url, body.decode(encoding, errors="replace"), dict(headers)
 
-    async def probe_media(self, url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _declared_size(headers: Mapping[str, str]) -> int | None:
+        content_length = headers.get("content-length")
+        if content_length and content_length.isdigit():
+            return int(content_length)
+        content_range = headers.get("content-range", "")
+        if "/" in content_range:
+            total = content_range.rsplit("/", 1)[-1]
+            if total.isdigit():
+                return int(total)
+        return None
+
+    async def _probe_resource(
+        self,
+        url: str,
+        headers: dict[str, str] | None,
+        *,
+        allowed_content_types: set[str],
+        max_bytes: int,
+        kind_label: str,
+    ) -> dict[str, Any]:
         final_url, response_headers, status, _ = await self._request(
             "HEAD",
             url,
@@ -275,18 +299,42 @@ class SafeHttpClient:
                 read_limit=64 * 1024,
             )
         content_type = response_headers.get("content-type", "application/octet-stream").split(";", 1)[0]
-        content_length = response_headers.get("content-length")
-        size = int(content_length) if content_length and content_length.isdigit() else None
-        if size and size > self.max_video_bytes:
-            raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
-        if not (content_type.startswith("video/") or content_type in MEDIA_CONTENT_TYPES):
-            raise AppError("MEDIA_FORMAT_UNSUPPORTED", "目标资源不是受支持的视频格式")
+        size = self._declared_size(response_headers)
+        if size and size > max_bytes:
+            raise AppError("MEDIA_TOO_LARGE", f"源{kind_label}超过服务器可处理上限")
+        if kind_label == "图片":
+            valid_type = content_type in allowed_content_types
+        else:
+            valid_type = content_type.startswith("video/") or content_type in allowed_content_types
+        if not valid_type:
+            raise AppError("MEDIA_FORMAT_UNSUPPORTED", f"目标资源不是受支持的{kind_label}格式")
         return {"url": final_url, "content_type": content_type, "size": size}
+
+    async def probe_media(self, url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+        return await self._probe_resource(
+            url,
+            headers,
+            allowed_content_types=MEDIA_CONTENT_TYPES,
+            max_bytes=self.max_video_bytes,
+            kind_label="视频",
+        )
+
+    async def probe_image(self, url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+        """Probe a public image while applying the same SSRF and redirect checks."""
+        return await self._probe_resource(
+            url,
+            headers,
+            allowed_content_types=IMAGE_CONTENT_TYPES,
+            max_bytes=self.max_image_bytes,
+            kind_label="图片",
+        )
 
     async def _open_stream_httpx(
         self,
         url: str,
         request_headers: dict[str, str],
+        *,
+        media_kind: str,
     ) -> OpenedStream:
         current = url
         client = self._httpx_client()
@@ -302,7 +350,7 @@ class SafeHttpClient:
                         raise AppError("UPSTREAM_TIMEOUT", "上游重定向过多", retryable=True)
                     current = urljoin(current, location)
                     continue
-                self._validate_stream_response(response.status_code, response.headers)
+                self._validate_stream_response(response.status_code, response.headers, media_kind=media_kind)
 
                 async def close_httpx(open_response: httpx.Response = response) -> None:
                     await open_response.aclose()
@@ -316,17 +364,30 @@ class SafeHttpClient:
         raise AppError("DOWNLOAD_FAILED", "无法打开上游媒体", retryable=True)
 
     @staticmethod
-    def _validate_stream_response(status: int, headers: Mapping[str, str]) -> None:
+    def _validate_stream_response(
+        status: int,
+        headers: Mapping[str, str],
+        *,
+        media_kind: str = "video",
+    ) -> None:
         if status not in {200, 206}:
             raise AppError("DOWNLOAD_FAILED", "上游媒体暂时不可下载", retryable=status >= 500)
         content_type = headers.get("content-type", "application/octet-stream").split(";", 1)[0]
-        if not (content_type.startswith("video/") or content_type == "application/octet-stream"):
-            raise AppError("MEDIA_FORMAT_UNSUPPORTED", "上游返回了非视频内容")
+        if media_kind == "image":
+            valid_type = content_type in IMAGE_CONTENT_TYPES
+            label = "图片"
+        else:
+            valid_type = content_type.startswith("video/") or content_type == "application/octet-stream"
+            label = "视频"
+        if not valid_type:
+            raise AppError("MEDIA_FORMAT_UNSUPPORTED", f"上游返回了非{label}内容")
 
     async def _open_stream_aiohttp(
         self,
         url: str,
         request_headers: dict[str, str],
+        *,
+        media_kind: str,
     ) -> OpenedStream:
         current = url
         session = self._aiohttp_session()
@@ -341,7 +402,7 @@ class SafeHttpClient:
                         raise AppError("UPSTREAM_TIMEOUT", "上游重定向过多", retryable=True)
                     current = urljoin(current, location)
                     continue
-                self._validate_stream_response(response.status, response.headers)
+                self._validate_stream_response(response.status, response.headers, media_kind=media_kind)
                 adapter = AioHttpResponseAdapter(response)
 
                 async def close_aiohttp(open_response: AioHttpResponseAdapter = adapter) -> None:
@@ -364,10 +425,11 @@ class SafeHttpClient:
         *,
         headers: dict[str, str] | None = None,
         range_header: str | None = None,
+        media_kind: str = "video",
     ) -> OpenedStream:
         request_headers = dict(headers or {})
         if range_header:
             request_headers["Range"] = range_header
         if self.transport is not None:
-            return await self._open_stream_httpx(url, request_headers)
-        return await self._open_stream_aiohttp(url, request_headers)
+            return await self._open_stream_httpx(url, request_headers, media_kind=media_kind)
+        return await self._open_stream_aiohttp(url, request_headers, media_kind=media_kind)

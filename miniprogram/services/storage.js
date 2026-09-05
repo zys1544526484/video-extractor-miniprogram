@@ -4,6 +4,7 @@ const RESULT_KEY = 'video_extractor_current_result'
 const PARSE_JOB_KEY = 'video_extractor_parse_job'
 const PARSE_JOBS_KEY = 'video_extractor_parse_jobs'
 const PARSE_DRAFT_KEY = 'video_extractor_parse_draft'
+const SELECTED_SOURCES_KEY = 'video_extractor_selected_sources'
 
 function getToken() {
   return wx.getStorageSync(TOKEN_KEY) || ''
@@ -35,6 +36,21 @@ function getCurrentResult() {
 
 function clearCurrentResult() {
   wx.removeStorageSync(RESULT_KEY)
+}
+
+function getSelectedSource(jobId) {
+  if (!jobId) return ''
+  const stored = wx.getStorageSync(SELECTED_SOURCES_KEY)
+  const selected = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+  return selected[jobId] || ''
+}
+
+function setSelectedSource(jobId, sourceId) {
+  if (!jobId || !sourceId) return
+  const stored = wx.getStorageSync(SELECTED_SOURCES_KEY)
+  const selected = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+  selected[jobId] = sourceId
+  wx.setStorageSync(SELECTED_SOURCES_KEY, selected)
 }
 
 function setParseJob(job) {
@@ -107,6 +123,8 @@ module.exports = {
   setCurrentResult,
   getCurrentResult,
   clearCurrentResult,
+  getSelectedSource,
+  setSelectedSource,
   setParseJob,
   getParseJob,
   clearParseJob,

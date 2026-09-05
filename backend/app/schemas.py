@@ -15,6 +15,10 @@ class ParseRequest(BaseModel):
     quality: Literal["original", "720p", "540p"] = "original"
 
 
+class ParseSourceSelectionRequest(BaseModel):
+    selected_source_id: str = Field(min_length=1, max_length=64)
+
+
 class AdCompleteRequest(BaseModel):
     attempt_token: str = Field(min_length=32, max_length=128)
 

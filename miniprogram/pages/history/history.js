@@ -103,9 +103,9 @@ Page({
         return
       }
       const cached = storage.getCurrentResult()
-      const preferredSourceId = cached && cached.job_id === jobId
-        ? cached.selected_source_id
-        : ''
+      const preferredSourceId = storage.getSelectedSource(jobId) || (
+        cached && cached.job_id === jobId ? cached.selected_source_id : ''
+      )
       storage.setCurrentResult({
         ...response.job.result,
         job_id: jobId,
