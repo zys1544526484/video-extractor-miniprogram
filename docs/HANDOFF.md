@@ -27,6 +27,18 @@
 - 微信开发者工具验证：当前 CUA 状态没有微信开发者工具原生应用，工作区也未发现官方 DevTools CLI；因此本轮不能自动打开、操作或截图开发者工具，只能记录为 `NOT VERIFIED`，不得把静态校验当作截图/真机证据。
 - 未验证：真实五平台图片/视频样例、真实 HTTPS 合法域名、真实登录、真机预览/下载/相册权限和生产部署。
 
+### 当前请求：图片链路、源持久化与复制链接修正（2026-09-05）
+
+- 分支保持为 `codex/p1-reference-result-sources`，未新建分支、未创建或合并 PR。
+- `13343a2` 已推送：`SafeHttpClient` 增加独立 `probe_image` 与 `media_kind=image` 流式校验；Generic 直接图片和网页 `<img>` 均经真实 SafeHttpClient、SSRF、大小/MIME 检查后落盘，并通过预览/下载接口回归测试。视频链路仍只接受视频 MIME。
+- `PATCH /api/v1/parse/jobs/{job_id}/source` 将 `selected_source_id` 写入任务 `result_json`；前端同时按 job_id 保存本地选择，覆盖 A 选源2→打开 B→重开 A、任务轮询续签及历史重开。源失效时才回退并提示。
+- `copyCurrentLink` 复制前会按当前 job 和选中源刷新短期 Token；刷新或复制失败不会提示成功，复制内容仅为可独立打开的安全下载地址，不包含上游直链或长期 Token。
+- 结果页底部空状态改为 `!result`；纯图片作品的视频 Tab 显示“该作品没有视频”，图片 Tab 只展示解析器返回的真实图片，不使用视频封面冒充。
+- 媒体清理额外收紧为仅删除受支持媒体扩展名，避免 TEMP_DIR 与 SQLite 共用时误删数据库；回归测试确认数据库文件保留。
+- 本轮复跑结果：后端 pytest `110 passed`、Ruff PASS、compileall PASS；前端 `npm test` `43 passed`；`npm run validate:miniprogram` `79 files checked PASS`；合成生产校验 PASS；`git diff --check` PASS。
+- 微信开发者工具原生应用和官方 CLI 当前不可用，无法完成本轮首页/Tab/源切换/图片保存/标题复制/免费保存的截图或真机操作，记录为 `NOT VERIFIED`；静态校验不替代开发者工具与真机证据。
+- 独立清理修复随后以 `fdb55f4` 提交并推送；文档更新将在该提交之后另行提交。远程 CI 由分支 push 触发，当前未通过 GitHub 连接器读取 run 详情，不能写成 CI 已通过。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
 - 任务分支：`codex/p1-reference-result-sources`

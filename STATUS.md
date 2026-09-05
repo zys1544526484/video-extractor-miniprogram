@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-- P1 参考结果页与多媒体源：`IMPLEMENTED / LOCAL VERIFIED`。首页已移除画质预选；结果页提供视频/图片/标题 Tab、真实源列表切换、短期能力链接复制和图片保存；旧单源结果缓存兼容。源2刷新/历史重开会保持，只有服务端确认源已过期才回退并提示；视频封面不会自动进入作品图片列表，纯图片结果使用 `media_type=image`。
+- P1 参考结果页与多媒体源：`IMPLEMENTED / LOCAL VERIFIED`。首页已移除画质预选；结果页提供视频/图片/标题 Tab、真实源列表切换、短期能力链接复制和图片保存；旧单源结果缓存兼容。源2刷新/历史重开会保持，只有服务端确认源已过期才回退并提示；视频封面不会自动进入作品图片列表，纯图片结果使用 `media_type=image`。图片链路现已走独立 SafeHttpClient 探测/下载路径，数据库清理不会误删 TEMP_DIR 中的 SQLite 文件。
 
 - Phase 00 工程基线：`COMPLETE`。
 - Phase 01–03 微信端与 Mock 闭环：`COMPLETE / LOCAL VERIFIED`。
@@ -24,7 +24,8 @@
 - Alembic 空 SQLite 数据库升级到 `0003_parse_jobs_media_sessions`：本地 PASS；最新分支 push CI PASS。
 - Uvicorn 进程级 health/auth/entitlement/ad-complete：PASS。
 - 首版正式免费模式：`DOWNLOAD_ACCESS_MODE=free` 时登录用户可直接下载，前端隐藏广告与权益 Gate，生产配置不要求 adUnitId；广告模式代码保留但默认关闭。
-- 本轮结果来源修正：`/media/{token}/download` 是可独立打开的短期能力链接，不要求小程序 `Authorization` 请求头；`rewarded_ad` 仍在服务端按媒体会话所属用户检查权益。后端新增独立链接、源2续签/过期回退和 Generic 直接图片/画廊测试；本地后端 pytest 105 项、前端 Node 39 项均通过。
+- 本轮结果来源修正：`/media/{token}/download` 是可独立打开的短期能力链接，不要求小程序 `Authorization` 请求头；`rewarded_ad` 仍在服务端按媒体会话所属用户检查权益。后端新增独立链接、源2续签/过期回退和 Generic 直接图片/画廊测试；本轮最终后端 pytest 110 项、前端 Node 43 项均通过。
+- 本轮图片与源选择收尾复跑：真实 `SafeHttpClient` + 模拟网络响应覆盖图片直链、网页图片解析、落盘、预览和下载；`PATCH /parse/jobs/{job_id}/source` 与页面级 A/B/A、历史失效回退、过期复制刷新测试均通过。`npm run validate:miniprogram`（79 files）、合成 `npm run validate:production`、Ruff、compileall、`git diff --check` 均 PASS。
 - 持久解析任务：创建/轮询/取消、幂等、用户隔离、服务重启恢复、页面重开续查和 0–100 进度自动测试 PASS；任务与媒体会话存入 SQLite，媒体结果保留 24 小时。每次返回的 `result.expires_at` 是当前访问 Token 的实际过期时间，`media_expires_at` 独立表示媒体保留截止时间；结果页保存前按 Token 过期时间刷新，Token 失效不会延长媒体会话。
 - 媒体访问安全：`MEDIA_ACCESS_TOKEN_TTL_SECONDS` 默认 900 秒，媒体会话保留 24 小时并支持重新签发；应用请求日志掩码媒体 Token，Caddy access log 删除 URI/请求头；公开 URL 仅允许 HTTP 80 或 HTTPS 443。
 - production 数据库启动：不再依赖 `create_all`；启动前校验数据库存在且 Alembic 已到 head，迁移由部署命令负责。
