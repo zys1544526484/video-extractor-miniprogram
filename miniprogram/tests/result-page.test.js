@@ -156,3 +156,73 @@ test('result page exposes backend error code and reason after polling failure', 
     api.waitForParseJob = originalWait
   }
 })
+
+test('result page resumes one fresh poll after hide then immediate show', async () => {
+  const originalWait = api.waitForParseJob
+  let calls = 0
+  let resolveFirst
+  let firstShouldContinue
+  const oldResult = {
+    title: '旧轮询结果',
+    platform: 'generic',
+    media_type: 'video',
+    preview_url: 'https://api.example.com/api/v1/media/old/preview',
+    download_url: 'https://api.example.com/api/v1/media/old/download',
+    expires_at: new Date(Date.now() + 60000).toISOString(),
+    sources: [{
+      source_id: 'source-1',
+      preview_url: 'https://api.example.com/api/v1/media/old/preview',
+      download_url: 'https://api.example.com/api/v1/media/old/download'
+    }]
+  }
+  const resumedResult = {
+    ...oldResult,
+    title: '恢复后的结果',
+    preview_url: 'https://api.example.com/api/v1/media/new/preview',
+    download_url: 'https://api.example.com/api/v1/media/new/download',
+    sources: [{
+      source_id: 'source-1',
+      preview_url: 'https://api.example.com/api/v1/media/new/preview',
+      download_url: 'https://api.example.com/api/v1/media/new/download'
+    }]
+  }
+  api.waitForParseJob = (jobId, onProgress, options) => {
+    calls += 1
+    if (calls === 1) {
+      onProgress({ job_id: jobId, status: 'processing', progress: 36, stage: '解析公开页面' })
+      firstShouldContinue = options.shouldContinue
+      return new Promise((resolve) => { resolveFirst = resolve })
+    }
+    onProgress({ job_id: jobId, status: 'ready', progress: 100, stage: '处理完成' })
+    return Promise.resolve(resumedResult)
+  }
+  const context = {
+    ...pageDefinition,
+    data: { jobId: 'job-resume', state: 'loading', result: null },
+    pageVisible: true,
+    pollGeneration: 0,
+    setData(value) { this.data = { ...this.data, ...value } }
+  }
+  try {
+    const oldPoll = pageDefinition.startJobPolling.call(context, 'job-resume')
+    await Promise.resolve()
+    assert.equal(calls, 1)
+
+    pageDefinition.onHide.call(context)
+    pageDefinition.onShow.call(context)
+    assert.equal(firstShouldContinue(), false)
+    assert.equal(calls, 1)
+
+    resolveFirst(oldResult)
+    await oldPoll
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.equal(calls, 2)
+    assert.equal(context.data.state, 'ready')
+    assert.equal(context.data.result.title, '恢复后的结果')
+    assert.equal(context.data.result.download_url, resumedResult.download_url)
+  } finally {
+    api.waitForParseJob = originalWait
+  }
+})

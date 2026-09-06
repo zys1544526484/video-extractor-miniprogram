@@ -81,12 +81,13 @@ Page({
   onShow() {
     this.pageVisible = true
     if (this.data.jobId && (this.data.state === 'loading' || !this.data.result)) {
-      this.startJobPolling(this.data.jobId)
+      this.resumeJobPolling(this.data.jobId)
     }
   },
 
   onHide() {
     this.pageVisible = false
+    this.pollRestartRequested = false
     this.stopJobPolling()
   },
 
@@ -96,10 +97,27 @@ Page({
     if (this.adService) this.adService.destroy()
   },
 
+  resumeJobPolling(jobId) {
+    if (!jobId) return
+    if (this.pollInFlight) {
+      // The visible page needs a fresh generation, but the old request must
+      // finish first so only one polling loop is ever active.
+      this.pollRestartRequested = true
+      return
+    }
+    this.startJobPolling(jobId)
+  },
+
   stopJobPolling() {
     if (this.jobPollTimer) clearTimeout(this.jobPollTimer)
     this.jobPollTimer = null
     this.pollGeneration = (this.pollGeneration || 0) + 1
+  },
+
+  isCurrentJobPoll(jobId, generation) {
+    return this.pageVisible !== false &&
+      this.data.jobId === jobId &&
+      generation === (this.pollGeneration || 0)
   },
 
   updateJobProgress(job) {
@@ -127,7 +145,11 @@ Page({
   },
 
   async startJobPolling(jobId) {
-    if (!jobId || this.pollInFlight) return
+    if (!jobId) return
+    if (this.pollInFlight) {
+      this.pollRestartRequested = true
+      return
+    }
     this.pollInFlight = true
     this.pageVisible = this.pageVisible !== false
     const generation = this.pollGeneration || 0
@@ -144,12 +166,14 @@ Page({
       await auth.ensureAuth()
       const result = await api.waitForParseJob(
         jobId,
-        (job) => this.updateJobProgress(job),
+        (job) => {
+          if (this.isCurrentJobPoll(jobId, generation)) this.updateJobProgress(job)
+        },
         {
-          shouldContinue: () => this.pageVisible !== false && generation === (this.pollGeneration || 0)
+          shouldContinue: () => this.isCurrentJobPoll(jobId, generation)
         }
       )
-      if (!result || generation !== (this.pollGeneration || 0)) return
+      if (!result || !this.isCurrentJobPoll(jobId, generation)) return
       const job = this.lastJob || {}
       const normalized = normalizeResult({
         ...result,
@@ -169,10 +193,16 @@ Page({
       storage.setCurrentResult(normalized)
       this.loadResult(normalized)
     } catch (error) {
-      if (generation !== (this.pollGeneration || 0) || error.code === 'JOB_CANCELLED') return
+      if (!this.isCurrentJobPoll(jobId, generation) || error.code === 'JOB_CANCELLED') return
       this.showJobFailure(error, this.lastJob)
     } finally {
       this.pollInFlight = false
+      const shouldRestart = this.pollRestartRequested &&
+        this.pageVisible !== false &&
+        this.data.jobId === jobId &&
+        (this.data.state === 'loading' || !this.data.result)
+      this.pollRestartRequested = false
+      if (shouldRestart) this.startJobPolling(jobId)
     }
   },
 

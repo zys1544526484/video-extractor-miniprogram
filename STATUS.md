@@ -69,3 +69,9 @@
 - 本轮本地验证：后端 pytest `116 passed`（2 warnings）；Ruff PASS；`compileall` PASS；前端 Node `46 passed`；`npm run validate:miniprogram`（80 files）PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
 - 微信开发者工具、真机、真实 HTTPS 合法域名、生产微信登录、五平台真实公开样例和相册保存本轮仍为 `NOT VERIFIED`；当前环境未发现可操作的微信开发者工具原生应用或官方 CLI，静态校验不替代这些人工验收。
 - PR #5 已保持 Draft 且未合并；尝试通过 GitHub 连接器同步描述时返回 `403 Resource not accessible by integration`，描述更新需具备 PR 写权限的 GitHub 账号手动完成。
+
+## P1 轮询生命周期修正（2026-09-06）
+
+- 结果页在轮询中经历 `onHide` 后立即 `onShow` 时，会标记恢复请求并等待旧轮询退出；旧轮询的进度、成功和失败结果均按 generation 与 job_id 丢弃，退出后仅启动一个当前页面的全新轮询，避免页面永久停在 loading 或旧结果覆盖新结果。
+- 页面级 Node 回归覆盖“轮询等待 → hide → show → 旧结果返回 → 新轮询成功”，确认旧结果不会写入页面，且最终只由恢复轮询显示成功结果。
+- 本轮本地验证：后端 pytest `116 passed`（2 warnings）；前端 Node `47 passed`；Ruff、compileall、小程序校验（80 files）、合成生产配置校验和 `git diff --check` 全部 PASS。微信开发者工具和真机生命周期操作仍为 `NOT VERIFIED`。

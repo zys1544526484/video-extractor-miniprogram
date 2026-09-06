@@ -58,6 +58,15 @@
 - 人工验证仍未完成：当前环境没有可操作的微信开发者工具原生应用或官方 CLI，无法提供本轮截图；真实微信登录、合法 HTTPS 域名、五个平台公开样例、真机网络/相册保存和生产部署均继续标记 `NOT VERIFIED`。本轮未接入 SPAPI 或 media-parser。
 - PR #5 已确认仍为 Draft、目标为 `main`，当前 head 为 `84ec701d80a622e29d523f3390ba4aa4e7434d89`。完成 push 后尝试通过 GitHub 连接器更新描述，但 GitHub API 返回 `403 Resource not accessible by integration`；网页入口也处于未登录状态，因此描述尚未更新。保持 Draft，不合并，需具备 PR 写权限的 GitHub 账号手动更新。
 
+### 当前请求：P1 结果页 hide/show 轮询恢复（2026-09-06）
+
+- 分支保持为 `codex/p1-reference-result-sources`，PR #5 保持 Draft，不创建新分支、不合并。
+- 修复竞态：当结果页轮询中触发 `onHide` 后立即 `onShow`，`onShow` 不再因旧轮询仍在执行而丢弃恢复请求。页面记录恢复意图，旧 generation 退出后才启动一个新轮询循环。
+- 所有轮询回调、成功和失败处理均检查当前 `job_id`、页面可见性和 generation；旧轮询无法覆盖新轮询的结果。任意时刻只允许一个有效轮询循环。
+- 新增页面级 Node 回归：轮询等待期间依次 `onHide`、`onShow`，旧轮询随后返回旧结果；断言旧结果被忽略，第二次轮询启动并最终显示恢复后的结果。
+- 本轮验证：后端 pytest `116 passed`（2 warnings）；前端 Node `47 passed`；Ruff、compileall、`npm run validate:miniprogram`（80 files）、合成 `npm run validate:production` 和 `git diff --check` 均 PASS。
+- Browser 插件不可用，且当前环境没有可操作的微信开发者工具；因此本轮以页面级自动化测试验证生命周期，微信开发者工具/真机 hide/show 操作仍为 `NOT VERIFIED`。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
 - 任务分支：`codex/p1-reference-result-sources`
