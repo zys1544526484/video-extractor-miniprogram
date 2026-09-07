@@ -21,6 +21,7 @@
 - 本轮全量验证：后端 pytest `180 passed`（2 warnings）；Ruff、compileall、前端 `npm test` `49 passed`、`npm run validate:miniprogram` 与合成 `npm run validate:production`（各 80 files）以及 `git diff --check` 均通过。先前存在的三个 egg-info 未提交文件保持未暂存、未提交；本次文档 commit push 后再确认远程 CI。
 - 主播放器捕获修正已推送：`f94e021`。身份严格匹配后，adapter 读取可见、非广告/非推荐主播放器的 `currentSrc`、`src` 和 `source[src]`；blob 仅在启动该播放器之后有唯一 video/HLS 响应时作为候选，多候选明确拒绝。新增安全 `PlayerDiagnostics`，仅记录规范页面路径、作品 ID、video 计数/布尔来源状态、响应 MIME 与域名；不保存 URL、Cookie、签名、Token 或 storage state。`DOUYIN_SESSION_HEADLESS` 默认 `true`，人工本机 smoke 可临时设为 `false`。错误新增 `DOUYIN_SESSION_PLAYER_NOT_FOUND`，与 `DOUYIN_SESSION_MEDIA_NOT_FOUND` 分离；smoke 后续失败仍保留已解析 `work_id`。
 - 本机复跑的进程未继承外部 state 路径，故以 `DOUYIN_SESSION_CONFIG_INVALID` 结束，但安全输出已保留目标 ID `7678969660380843304`（921ms）。这不验证新播放器捕获是否能取得媒体；用户应在已配置运营者会话的本机终端执行可视 smoke。三个任务前已有 egg-info 修改继续未暂存、未提交。
+- 补充 adapter 级“没有可见主播放器”回归已推送：`b263904` 增加该测试，`de2b7ff` 修正测试替身的播放器挂载等待模拟。最新本地全量门禁复跑均通过；该两笔提交未改动业务安全边界，远程 CI 需以最新 HEAD 为准。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
