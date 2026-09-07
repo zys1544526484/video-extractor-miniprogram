@@ -19,6 +19,8 @@
 - 短链重定向修正已推送：`10cc625` 为 smoke 短链增加每跳 `SafeHttpClient` SSRF/DNS/IP 校验和抖音路由白名单；只接受 `v.douyin.com` 短链及 `douyin.com` `/video/{数字ID}`、`www.iesdouyin.com` `/share/video/{数字ID}`，在路径/ID 校验后删除正常查询参数并交给严格的 query-free Worker。重定向日志仅记录脱敏路由，不记录查询、Cookie、Token 或签名。主页、站外、私网、userinfo、异常端口和循环都有回归覆盖。
 - 真实短链本轮已安全规范到作品 ID `7678969660380843304`。完整 smoke 以临时 `DOUYIN_SESSION_ENABLED=true` 运行时，因本机没有配置仓库外 state 路径而返回 `DOUYIN_SESSION_CONFIG_INVALID`（516ms）；没有读取、打印或保存会话，且没有取得媒体地址。`c11e120` 把该配置错误收敛为稳定安全错误，防止 smoke CLI 输出 traceback。媒体地址、无 Cookie 1024-byte 读取、耗时与真机流程继续为 `NOT VERIFIED`。
 - 本轮全量验证：后端 pytest `180 passed`（2 warnings）；Ruff、compileall、前端 `npm test` `49 passed`、`npm run validate:miniprogram` 与合成 `npm run validate:production`（各 80 files）以及 `git diff --check` 均通过。先前存在的三个 egg-info 未提交文件保持未暂存、未提交；本次文档 commit push 后再确认远程 CI。
+- 主播放器捕获修正已推送：`f94e021`。身份严格匹配后，adapter 读取可见、非广告/非推荐主播放器的 `currentSrc`、`src` 和 `source[src]`；blob 仅在启动该播放器之后有唯一 video/HLS 响应时作为候选，多候选明确拒绝。新增安全 `PlayerDiagnostics`，仅记录规范页面路径、作品 ID、video 计数/布尔来源状态、响应 MIME 与域名；不保存 URL、Cookie、签名、Token 或 storage state。`DOUYIN_SESSION_HEADLESS` 默认 `true`，人工本机 smoke 可临时设为 `false`。错误新增 `DOUYIN_SESSION_PLAYER_NOT_FOUND`，与 `DOUYIN_SESSION_MEDIA_NOT_FOUND` 分离；smoke 后续失败仍保留已解析 `work_id`。
+- 本机复跑的进程未继承外部 state 路径，故以 `DOUYIN_SESSION_CONFIG_INVALID` 结束，但安全输出已保留目标 ID `7678969660380843304`（921ms）。这不验证新播放器捕获是否能取得媒体；用户应在已配置运营者会话的本机终端执行可视 smoke。三个任务前已有 egg-info 修改继续未暂存、未提交。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
