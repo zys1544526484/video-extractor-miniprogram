@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import Settings, load_settings
+from ..errors import AppError
 from .errors import login_incomplete, session_disabled, session_unavailable
 from .models import has_valid_douyin_cookie, sanitise_storage_state_path, validate_storage_state_path
 
@@ -48,7 +49,9 @@ async def bootstrap_manual_session(
         settings.douyin_storage_state_path,
         require_exists=False,
     )
-    factory = playwright_factory or _load_async_playwright
+    # The lazy loader returns Playwright's async_playwright factory; both
+    # levels must be invoked before entering the asynchronous context manager.
+    context_manager_factory = playwright_factory or _load_async_playwright()
     pause = wait_for_operator or (lambda: input("请在可视浏览器中手动登录后按 Enter 保存会话："))
     file_descriptor, temporary_name = tempfile.mkstemp(
         dir=state_path.parent,
@@ -59,7 +62,7 @@ async def bootstrap_manual_session(
     temporary_path = state_path.parent / Path(temporary_name).name
     try:
         try:
-            async with factory() as playwright:
+            async with context_manager_factory() as playwright:
                 browser = await playwright.chromium.launch(headless=False)
                 try:
                     context = await browser.new_context()
@@ -96,7 +99,11 @@ async def bootstrap_manual_session(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Start an operator-only Douyin session bootstrap.")
     parser.parse_args()
-    asyncio.run(bootstrap_manual_session(load_settings()))
+    try:
+        asyncio.run(bootstrap_manual_session(load_settings()))
+    except AppError as error:
+        print(f"{error.code}: {error.message}")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

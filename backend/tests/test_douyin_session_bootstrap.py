@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
+from app.douyin_session import bootstrap as bootstrap_module
 from app.douyin_session.bootstrap import bootstrap_manual_session
 from app.douyin_session.models import (
     has_valid_douyin_cookie,
@@ -120,6 +121,48 @@ async def test_manual_bootstrap_saves_external_state_without_logging_contents(tm
     assert settings.douyin_storage_state_path.exists()
     assert "cookies" not in caplog.text
     assert str(settings.douyin_storage_state_path.parent) not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_calls_lazy_loader_then_its_context_manager_factory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    def context_manager_factory() -> FakeManager:
+        calls.append("context-manager-factory")
+        return FakeManager()
+
+    def lazy_loader():
+        calls.append("lazy-loader")
+        return context_manager_factory
+
+    monkeypatch.setattr(bootstrap_module, "_load_async_playwright", lazy_loader)
+
+    await bootstrap_module.bootstrap_manual_session(
+        session_settings(tmp_path),
+        wait_for_operator=lambda: None,
+    )
+
+    assert calls == ["lazy-loader", "context-manager-factory"]
+
+
+def test_bootstrap_cli_prints_safe_app_error_without_traceback(monkeypatch, capsys) -> None:
+    async def fail(_settings: Settings) -> None:
+        raise AppError("DOUYIN_SESSION_LOGIN_INCOMPLETE", "请完成手动登录后再保存")
+
+    monkeypatch.setattr(bootstrap_module, "bootstrap_manual_session", fail)
+    monkeypatch.setattr(bootstrap_module, "load_settings", lambda: Settings(app_env="test"))
+    monkeypatch.setattr("sys.argv", ["bootstrap"])
+
+    with pytest.raises(SystemExit) as caught:
+        bootstrap_module.main()
+
+    output = capsys.readouterr().out
+    assert caught.value.code == 1
+    assert output == "DOUYIN_SESSION_LOGIN_INCOMPLETE: 请完成手动登录后再保存\n"
+    assert "Traceback" not in output
 
 
 def test_storage_state_rejects_repository_relative_or_invalid_files(tmp_path: Path) -> None:

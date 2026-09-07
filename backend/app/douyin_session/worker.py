@@ -121,9 +121,11 @@ class PlaywrightSessionAdapter:
         storage_state_path: str,
         timeout_seconds: int,
     ) -> CapturedMedia:
-        factory = self.playwright_factory or _load_async_playwright
+        # The lazy loader returns Playwright's async_playwright factory, not
+        # the async context manager itself.
+        context_manager_factory = self.playwright_factory or _load_async_playwright()
         try:
-            async with factory() as playwright:
+            async with context_manager_factory() as playwright:
                 browser = await playwright.chromium.launch(headless=True)
                 try:
                     context = await browser.new_context(storage_state=storage_state_path)

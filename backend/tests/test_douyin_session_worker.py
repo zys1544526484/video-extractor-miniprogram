@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from app.config import Settings
+from app.douyin_session import worker as worker_module
 from app.douyin_session.models import CapturedMedia, SessionWorkerResult
 from app.douyin_session.worker import DouyinSessionWorker, PlaywrightSessionAdapter
 from app.errors import AppError
@@ -350,6 +351,31 @@ class AdapterManager:
 
 def adapter_for(page: AdapterPage) -> PlaywrightSessionAdapter:
     return PlaywrightSessionAdapter(playwright_factory=lambda: AdapterManager(page))
+
+
+@pytest.mark.asyncio
+async def test_playwright_adapter_calls_lazy_loader_then_its_context_manager_factory(monkeypatch) -> None:
+    calls: list[str] = []
+    page = AdapterPage(current_src=MEDIA_URL)
+
+    def context_manager_factory() -> AdapterManager:
+        calls.append("context-manager-factory")
+        return AdapterManager(page)
+
+    def lazy_loader():
+        calls.append("lazy-loader")
+        return context_manager_factory
+
+    monkeypatch.setattr(worker_module, "_load_async_playwright", lazy_loader)
+    captured = await PlaywrightSessionAdapter().capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == MEDIA_URL
+    assert calls == ["lazy-loader", "context-manager-factory"]
 
 
 @pytest.mark.asyncio
