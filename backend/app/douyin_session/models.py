@@ -140,12 +140,30 @@ def normalise_douyin_redirect_target(url: str) -> tuple[str, str] | None:
 
 
 @dataclass(frozen=True)
+class PlayerDiagnostics:
+    """Log-safe player facts. This model deliberately contains no URLs."""
+
+    page_route: str
+    target_id: str
+    video_count: int
+    visible_video_count: int
+    has_current_src: bool
+    has_src: bool
+    has_source_child: bool
+    has_blob_url: bool
+    media_response_count: int
+    media_content_types: tuple[str, ...]
+    media_domains: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CapturedMedia:
     """Internal browser capture; never serialise or log its URL."""
 
     target_id: str | None
     media_url: str | None
     state: str = "ok"
+    diagnostics: PlayerDiagnostics | None = None
 
 
 @dataclass(frozen=True)

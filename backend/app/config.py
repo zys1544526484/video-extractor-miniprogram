@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     douyin_storage_state_path: Path | None = None
     douyin_session_timeout_seconds: int = 30
     douyin_session_max_concurrency: int = 1
+    douyin_session_headless: bool = True
     media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 86400
     media_access_token_ttl_seconds: int = 900

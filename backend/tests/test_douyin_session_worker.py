@@ -9,7 +9,7 @@ import pytest
 
 from app.config import Settings
 from app.douyin_session import worker as worker_module
-from app.douyin_session.models import CapturedMedia, SessionWorkerResult
+from app.douyin_session.models import CapturedMedia, PlayerDiagnostics, SessionWorkerResult
 from app.douyin_session.worker import DouyinSessionWorker, PlaywrightSessionAdapter
 from app.errors import AppError
 from app.services.safe_http import SafeHttpClient
@@ -120,6 +120,31 @@ async def test_session_worker_stops_for_expired_or_risk_state(
         settings=session_settings(tmp_path),
         http=safe_http(video_handler),
         browser=FakeBrowser(CapturedMedia(target_id=None, media_url=None, state=state)),
+    )
+
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+
+    assert caught.value.code == expected_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state", "expected_code"),
+    [
+        ("player_missing", "DOUYIN_SESSION_PLAYER_NOT_FOUND"),
+        ("media_missing", "DOUYIN_SESSION_MEDIA_NOT_FOUND"),
+    ],
+)
+async def test_session_worker_keeps_distinct_player_capture_failures(
+    tmp_path: Path,
+    state: str,
+    expected_code: str,
+) -> None:
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(video_handler),
+        browser=FakeBrowser(CapturedMedia(target_id=WORK_ID, media_url=None, state=state)),
     )
 
     with pytest.raises(AppError) as caught:
@@ -250,10 +275,16 @@ class AdapterRequest:
 
 
 class AdapterResponse:
-    def __init__(self, url: str, content_type: str = "video/mp4") -> None:
+    def __init__(
+        self,
+        url: str,
+        content_type: str = "video/mp4",
+        resource_type: str = "media",
+    ) -> None:
         self.url = url
         self.headers = {"content-type": content_type}
         self.request = AdapterRequest()
+        self.request.resource_type = resource_type
 
 
 class AdapterRiskLocator:
@@ -272,17 +303,25 @@ class AdapterPage:
         *,
         final_url: str = TARGET_URL,
         current_src: str = "",
+        src: str = "",
+        source_urls: list[str] | None = None,
         delayed_src: str = "",
         document: str = "<html></html>",
         risk_visible: bool = False,
         responses: list[AdapterResponse] | None = None,
+        play_responses: list[AdapterResponse] | None = None,
+        visible: bool = True,
     ) -> None:
         self.url = final_url
         self.current_src = current_src
+        self.src = src
+        self.source_urls = source_urls or []
         self.delayed_src = delayed_src
         self.document = document
         self.risk_visible = risk_visible
         self.responses = responses or []
+        self.play_responses = play_responses or []
+        self.visible = visible
         self.callbacks: list = []
         self.waited = False
 
@@ -305,12 +344,33 @@ class AdapterPage:
         self.waited = True
         if self.delayed_src:
             self.current_src = self.delayed_src
-        if not self.current_src:
+        if "currentSrc || video.src" in _script and not (
+            self.current_src or self.src or self.source_urls
+        ):
             timeout_error = type("TimeoutError", (Exception,), {})
             raise timeout_error()
 
-    async def evaluate(self, _script: str) -> str:
-        return self.current_src
+    async def evaluate(self, script: str):
+        if "scrollIntoView" in script:
+            for response in self.play_responses:
+                for callback in self.callbacks:
+                    callback(response)
+            return True
+        if "source_urls" in script:
+            primary = None
+            if self.visible:
+                primary = {
+                    "visible": True,
+                    "current_src": self.current_src,
+                    "src": self.src,
+                    "source_urls": self.source_urls,
+                }
+            return {
+                "video_count": 1 if self.visible else 0,
+                "visible_video_count": 1 if self.visible else 0,
+                "primary": primary,
+            }
+        return ""
 
     async def content(self) -> str:
         return self.document
@@ -344,7 +404,7 @@ class AdapterChromium:
         self.page = page
 
     async def launch(self, *, headless: bool) -> AdapterBrowser:
-        assert headless is True
+        self.page.headless = headless
         return AdapterBrowser(self.page)
 
 
@@ -427,6 +487,72 @@ async def test_playwright_adapter_waits_for_delayed_primary_current_src() -> Non
 
 
 @pytest.mark.asyncio
+async def test_playwright_adapter_reads_primary_video_src_and_source_child() -> None:
+    src_url = "https://cdn.example.com/from-src.mp4"
+    source_url = "https://cdn.example.com/from-source.m3u8"
+    from_src = await adapter_for(AdapterPage(src=src_url)).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+    from_source = await adapter_for(AdapterPage(source_urls=[source_url])).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert from_src.media_url == src_url
+    assert from_source.media_url == source_url
+
+
+@pytest.mark.asyncio
+async def test_playwright_adapter_uses_single_post_playback_response_for_blob_player() -> None:
+    network_url = "https://cdn.example.com/blob-backed.mp4?signature=hidden"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        play_responses=[
+            AdapterResponse(network_url, "application/vnd.apple.mpegurl", resource_type="fetch")
+        ],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == network_url
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.has_blob_url is True
+    assert captured.diagnostics.media_domains == ("cdn.example.com",)
+    assert captured.diagnostics.media_content_types == ("application/vnd.apple.mpegurl",)
+
+
+@pytest.mark.asyncio
+async def test_playwright_adapter_rejects_multiple_blob_network_candidates_as_ambiguous() -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        play_responses=[
+            AdapterResponse("https://ads.example.com/ad.mp4"),
+            AdapterResponse("https://cdn.example.com/recommendation.mp4"),
+        ],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.media_url is None
+
+
+@pytest.mark.asyncio
 async def test_playwright_adapter_does_not_select_ad_or_recommendation_network_media() -> None:
     primary_url = "https://cdn.example.com/target.mp4"
     page = AdapterPage(
@@ -445,6 +571,49 @@ async def test_playwright_adapter_does_not_select_ad_or_recommendation_network_m
     )
 
     assert captured.media_url == primary_url
+
+
+@pytest.mark.asyncio
+async def test_playwright_adapter_can_run_visible_for_manual_smoke() -> None:
+    page = AdapterPage(current_src=MEDIA_URL)
+    await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        headless=False,
+    )
+
+    assert page.headless is False
+
+
+@pytest.mark.asyncio
+async def test_session_worker_logs_only_safe_player_diagnostics(tmp_path: Path, caplog) -> None:
+    diagnostics = PlayerDiagnostics(
+        page_route=TARGET_URL,
+        target_id=WORK_ID,
+        video_count=2,
+        visible_video_count=1,
+        has_current_src=True,
+        has_src=False,
+        has_source_child=False,
+        has_blob_url=False,
+        media_response_count=1,
+        media_content_types=("video/mp4",),
+        media_domains=("cdn.example.com",),
+    )
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(video_handler),
+        browser=FakeBrowser(CapturedMedia(WORK_ID, MEDIA_URL, diagnostics=diagnostics)),
+    )
+
+    await worker.inspect(TARGET_URL)
+
+    assert "cdn.example.com" in caplog.text
+    assert "signed-path" not in caplog.text
+    assert "signature" not in caplog.text
+    assert "secret-session-cookie" not in caplog.text
 
 
 @pytest.mark.asyncio

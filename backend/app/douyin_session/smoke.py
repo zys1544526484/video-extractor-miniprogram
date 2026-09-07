@@ -106,6 +106,7 @@ async def run_smoke(
 ) -> SmokeOutput:
     started = time.monotonic()
     client = http or build_safe_http(settings)
+    work_id: str | None = None
     try:
         target_url, work_id = await resolve_smoke_target(url, client)
         result = await (worker or DouyinSessionWorker(settings=settings, http=client)).inspect(target_url)
@@ -121,7 +122,7 @@ async def run_smoke(
         return SmokeOutput(
             outcome="failure",
             error_code=error.code,
-            work_id=None,
+            work_id=work_id,
             media_domain=None,
             bytes_read=None,
             elapsed_ms=int((time.monotonic() - started) * 1000),

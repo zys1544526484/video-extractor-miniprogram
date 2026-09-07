@@ -18,11 +18,18 @@ from .errors import (
     session_disabled,
     session_expired,
     session_media_not_found,
+    session_player_not_found,
     session_timeout,
     session_unavailable,
     target_mismatch,
 )
-from .models import CapturedMedia, SessionWorkerResult, target_id_from_url, validate_storage_state_path
+from .models import (
+    CapturedMedia,
+    PlayerDiagnostics,
+    SessionWorkerResult,
+    target_id_from_url,
+    validate_storage_state_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,27 +38,64 @@ RISK_COMPONENT_SELECTOR = (
     '[data-e2e*="captcha"], [data-e2e*="verify"], [data-e2e*="risk"], '
     'iframe[src*="captcha"], iframe[src*="verify"], [role="dialog"][data-captcha]'
 )
-PRIMARY_VIDEO_READY_SCRIPT = """
+HLS_CONTENT_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
+PRIMARY_VIDEO_MOUNTED_SCRIPT = """
 () => Array.from(document.querySelectorAll('video')).some((video) => {
   const rect = video.getBoundingClientRect();
   const hidden = getComputedStyle(video).visibility === 'hidden'
     || getComputedStyle(video).display === 'none';
-  const ad = video.closest('[data-e2e*="ad"], [class*="advert"], [class*="ad-"]');
-  return !hidden && !ad && rect.width > 120 && rect.height > 120 && Boolean(video.currentSrc || video.src);
+  const excluded = video.closest(
+    '[data-e2e*="ad"], [class*="advert"], [class*="ad-"], '
+    + '[data-e2e*="recommend"], [class*="recommend"], [class*="related"]'
+  );
+  return !hidden && !excluded && rect.width > 120 && rect.height > 120;
 })
 """
-PRIMARY_VIDEO_URL_SCRIPT = """
+PRIMARY_VIDEO_SNAPSHOT_SCRIPT = """
 () => Array.from(document.querySelectorAll('video'))
-  .filter((video) => {
+  .map((video) => {
     const rect = video.getBoundingClientRect();
     const style = getComputedStyle(video);
-    const ad = video.closest('[data-e2e*="ad"], [class*="advert"], [class*="ad-"]');
-    return !ad && style.visibility !== 'hidden' && style.display !== 'none'
+    const excluded = video.closest(
+      '[data-e2e*="ad"], [class*="advert"], [class*="ad-"], '
+      + '[data-e2e*="recommend"], [class*="recommend"], [class*="related"]'
+    );
+    const visible = !excluded && style.visibility !== 'hidden' && style.display !== 'none'
       && rect.width > 120 && rect.height > 120;
+    const sources = Array.from(video.querySelectorAll('source[src]')).map((source) => source.src || '');
+    return {
+      visible,
+      current_src: video.currentSrc || '',
+      src: video.src || '',
+      source_urls: sources,
+    };
   })
-  .sort((left, right) => (right.clientWidth * right.clientHeight) - (left.clientWidth * left.clientHeight))
-  .map((video) => video.currentSrc || video.src || '')
-  .find(Boolean) || ''
+  .reduce((result, video) => {
+    result.video_count += 1;
+    if (video.visible) result.visible_video_count += 1;
+    if (video.visible && result.primary === null) result.primary = video;
+    return result;
+  }, { video_count: 0, visible_video_count: 0, primary: null })
+"""
+PRIMARY_VIDEO_START_SCRIPT = """
+() => {
+  const video = Array.from(document.querySelectorAll('video')).find((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+    const style = getComputedStyle(candidate);
+    const excluded = candidate.closest(
+      '[data-e2e*="ad"], [class*="advert"], [class*="ad-"], '
+      + '[data-e2e*="recommend"], [class*="recommend"], [class*="related"]'
+    );
+    return !excluded && style.visibility !== 'hidden' && style.display !== 'none'
+      && rect.width > 120 && rect.height > 120;
+  });
+  if (!video) return false;
+  video.scrollIntoView({ block: 'center', inline: 'nearest' });
+  video.muted = true;
+  const result = video.play();
+  if (result && typeof result.catch === 'function') result.catch(() => {});
+  return true;
+}
 """
 PUBLIC_MEDIA_HEADERS = {
     "Origin": "https://www.douyin.com",
@@ -68,6 +112,7 @@ class SessionBrowserAdapter(Protocol):
         target_id: str,
         storage_state_path: str,
         timeout_seconds: int,
+        headless: bool,
     ) -> CapturedMedia: ...
 
 
@@ -86,6 +131,27 @@ def _same_resource(left: str, right: str) -> bool:
     )
 
 
+def _safe_media_domain(url: str) -> str | None:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    return parsed.hostname.lower()
+
+
+def _is_media_response(content_type: str, resource_type: str) -> bool:
+    mime = content_type.split(";", 1)[0].strip().lower()
+    return resource_type in {"media", "xhr", "fetch"} and (
+        mime.startswith("video/") or mime in HLS_CONTENT_TYPES
+    )
+
+
+def _first_public_url(values: list[str]) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.startswith(("https://", "http://")):
+            return value
+    return None
+
+
 class PlaywrightSessionAdapter:
     """Minimal browser adapter; it intentionally contains no stealth behavior."""
 
@@ -102,17 +168,40 @@ class PlaywrightSessionAdapter:
             return False
 
     @staticmethod
-    async def _wait_for_primary_video_url(page: Any, timeout_seconds: int) -> str | None:
+    async def _wait_for_primary_player(page: Any, timeout_seconds: int) -> bool:
         try:
-            await page.wait_for_function(PRIMARY_VIDEO_READY_SCRIPT, timeout=timeout_seconds * 1000)
-            candidate = await page.evaluate(PRIMARY_VIDEO_URL_SCRIPT)
+            await page.wait_for_function(PRIMARY_VIDEO_MOUNTED_SCRIPT, timeout=timeout_seconds * 1000)
         except Exception as error:
             if error.__class__.__name__ == "TimeoutError":
-                return None
+                return False
             raise
-        if isinstance(candidate, str) and candidate.startswith(("https://", "http://")):
-            return candidate
-        return None
+        return True
+
+    @staticmethod
+    async def _player_snapshot(page: Any) -> dict[str, Any]:
+        snapshot = await page.evaluate(PRIMARY_VIDEO_SNAPSHOT_SCRIPT)
+        if not isinstance(snapshot, dict):
+            return {"video_count": 0, "visible_video_count": 0, "primary": None}
+        return snapshot
+
+    @staticmethod
+    def _snapshot_urls(snapshot: dict[str, Any]) -> tuple[list[str], bool, bool, bool, bool]:
+        primary = snapshot.get("primary")
+        if not isinstance(primary, dict):
+            return [], False, False, False, False
+        current_src = primary.get("current_src")
+        src = primary.get("src")
+        source_urls = primary.get("source_urls")
+        urls = [value for value in [current_src, src] if isinstance(value, str) and value]
+        if isinstance(source_urls, list):
+            urls.extend(value for value in source_urls if isinstance(value, str) and value)
+        return (
+            urls,
+            bool(current_src),
+            bool(src),
+            bool(source_urls),
+            any(value.startswith("blob:") for value in urls),
+        )
 
     async def capture(
         self,
@@ -121,30 +210,33 @@ class PlaywrightSessionAdapter:
         target_id: str,
         storage_state_path: str,
         timeout_seconds: int,
+        headless: bool = True,
     ) -> CapturedMedia:
         # The lazy loader returns Playwright's async_playwright factory, not
         # the async context manager itself.
         context_manager_factory = self.playwright_factory or _load_async_playwright()
         try:
             async with context_manager_factory() as playwright:
-                browser = await playwright.chromium.launch(headless=True)
+                browser = await playwright.chromium.launch(headless=headless)
                 try:
                     context = await browser.new_context(storage_state=storage_state_path)
                     try:
                         page = await context.new_page()
-                        network_media_urls: list[str] = []
+                        playback_media: list[tuple[str, str]] = []
+                        capture_playback_responses = False
 
                         def observe_response(response: Any) -> None:
                             request = response.request
                             content_type = response.headers.get("content-type", "").lower()
-                            # Network responses are only candidates. They must later match
-                            # the active main player or structured media for this exact page.
+                            # Only collect media responses after the verified primary player
+                            # has been started.  Preloads, ads and recommendation responses
+                            # are intentionally excluded.
                             if (
-                                request.resource_type == "media"
-                                and content_type.startswith("video/")
-                                and response.url not in network_media_urls
+                                capture_playback_responses
+                                and _is_media_response(content_type, request.resource_type)
+                                and response.url not in [candidate[0] for candidate in playback_media]
                             ):
-                                network_media_urls.append(response.url)
+                                playback_media.append((response.url, content_type.split(";", 1)[0].lower()))
 
                         page.on("response", observe_response)
                         await page.goto(
@@ -158,21 +250,83 @@ class PlaywrightSessionAdapter:
                             return CapturedMedia(target_id=None, media_url=None, state="expired")
                         if target_id_from_url(page.url) != target_id:
                             return CapturedMedia(target_id=None, media_url=None, state="mismatch")
-                        primary_media_url = await self._wait_for_primary_video_url(page, timeout_seconds)
+                        if not await self._wait_for_primary_player(page, timeout_seconds):
+                            return CapturedMedia(target_id=target_id, media_url=None, state="player_missing")
+                        before_start = await self._player_snapshot(page)
+                        capture_playback_responses = True
+                        await page.evaluate(PRIMARY_VIDEO_START_SCRIPT)
+                        try:
+                            await page.wait_for_function(
+                                """() => Array.from(document.querySelectorAll('video')).some(
+                                    (video) => Boolean(video.currentSrc || video.src
+                                        || video.querySelector('source[src]'))
+                                )""",
+                                timeout=timeout_seconds * 1000,
+                            )
+                        except Exception as error:
+                            if error.__class__.__name__ != "TimeoutError":
+                                raise
+                        snapshot = await self._player_snapshot(page)
+                        (
+                            direct_urls,
+                            has_current_src,
+                            has_src,
+                            has_source_child,
+                            has_blob_url,
+                        ) = self._snapshot_urls(snapshot)
+                        # The final route is exact; only then can public structured
+                        # metadata from this page be associated with the target work.
                         # The final route is exact; only then can public structured
                         # metadata from this page be associated with the target work.
                         from ..parsers.douyin import DouyinParser
 
                         document = await page.content()
                         _title, media_urls, _covers = DouyinParser._structured_metadata(document)
-                        media_url = primary_media_url or (media_urls[0] if media_urls else None)
-                        if media_url is not None and not any(
-                            _same_resource(media_url, candidate) for candidate in network_media_urls
-                        ):
-                            # Direct player/structured address is still allowed; network
-                            # entries never replace it merely because they are video MIME.
-                            network_media_urls.clear()
-                        return CapturedMedia(target_id=target_id, media_url=media_url)
+                        direct_media_url = _first_public_url(direct_urls)
+                        structured_media_url = _first_public_url(media_urls)
+                        network_urls = [candidate[0] for candidate in playback_media]
+                        media_url = direct_media_url or structured_media_url
+                        if media_url is None and has_blob_url and len(network_urls) == 1:
+                            # A blob player has no directly probeable URL.  A single response
+                            # produced only after starting the verified primary player is a
+                            # bounded candidate; multiple responses stay unresolved to avoid
+                            # choosing ads or recommendations.
+                            media_url = network_urls[0]
+                        domains = tuple(
+                            sorted(
+                                {
+                                    domain
+                                    for url, _mime in playback_media
+                                    if (domain := _safe_media_domain(url))
+                                }
+                            )
+                        )
+                        diagnostics = PlayerDiagnostics(
+                            page_route=f"https://www.douyin.com/video/{target_id}",
+                            target_id=target_id,
+                            video_count=int(
+                                snapshot.get("video_count", before_start.get("video_count", 0))
+                            ),
+                            visible_video_count=int(
+                                snapshot.get(
+                                    "visible_video_count",
+                                    before_start.get("visible_video_count", 0),
+                                )
+                            ),
+                            has_current_src=has_current_src,
+                            has_src=has_src,
+                            has_source_child=has_source_child,
+                            has_blob_url=has_blob_url,
+                            media_response_count=len(playback_media),
+                            media_content_types=tuple(sorted({mime for _url, mime in playback_media})),
+                            media_domains=domains,
+                        )
+                        return CapturedMedia(
+                            target_id=target_id,
+                            media_url=media_url,
+                            state="ok" if media_url else "media_missing",
+                            diagnostics=diagnostics,
+                        )
                     finally:
                         await context.close()
                 finally:
@@ -221,13 +375,36 @@ class DouyinSessionWorker:
                         target_id=target_id,
                         storage_state_path=str(state_path),
                         timeout_seconds=self.settings.douyin_session_timeout_seconds,
+                        headless=self.settings.douyin_session_headless,
                     )
             except TimeoutError as error:
                 raise session_timeout() from error
+            if capture.diagnostics is not None:
+                diagnostics = capture.diagnostics
+                logger.info(
+                    "douyin_session_player target_id=%s page=%s videos=%d visible=%d "
+                    "current_src=%s src=%s source_child=%s blob=%s media_responses=%d "
+                    "content_types=%s media_domains=%s",
+                    diagnostics.target_id,
+                    diagnostics.page_route,
+                    diagnostics.video_count,
+                    diagnostics.visible_video_count,
+                    diagnostics.has_current_src,
+                    diagnostics.has_src,
+                    diagnostics.has_source_child,
+                    diagnostics.has_blob_url,
+                    diagnostics.media_response_count,
+                    ",".join(diagnostics.media_content_types) or "none",
+                    ",".join(diagnostics.media_domains) or "none",
+                )
             if capture.state == "expired":
                 raise session_expired()
             if capture.state == "risk":
                 raise risk_controlled()
+            if capture.state == "player_missing":
+                raise session_player_not_found()
+            if capture.state == "media_missing":
+                raise session_media_not_found()
             if capture.state != "ok" or capture.target_id != target_id:
                 raise target_mismatch()
             if not capture.media_url:

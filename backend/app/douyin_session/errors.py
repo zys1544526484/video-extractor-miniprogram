@@ -59,3 +59,12 @@ def session_media_not_found() -> AppError:
         status_code=502,
         retryable=True,
     )
+
+
+def session_player_not_found() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_PLAYER_NOT_FOUND",
+        "目标抖音作品未找到可用主播放器",
+        status_code=502,
+        retryable=True,
+    )

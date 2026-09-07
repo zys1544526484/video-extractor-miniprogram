@@ -216,6 +216,25 @@ async def test_smoke_invalid_final_url_uses_stable_error() -> None:
     assert output.work_id is None
 
 
+@pytest.mark.asyncio
+async def test_smoke_keeps_resolved_work_id_when_session_media_capture_fails() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="<html></html>")
+
+    output = await run_smoke(
+        Settings(app_env="test", douyin_session_enabled=True),
+        CANONICAL_URL,
+        http=safe_http(handler),
+        worker=FakeWorker(
+            AppError("DOUYIN_SESSION_MEDIA_NOT_FOUND", "主播放器没有可验证媒体")
+        ),  # type: ignore[arg-type]
+    )
+
+    assert output.outcome == "failure"
+    assert output.error_code == "DOUYIN_SESSION_MEDIA_NOT_FOUND"
+    assert output.work_id == WORK_ID
+
+
 def test_smoke_output_schema_has_no_url_or_path_fields() -> None:
     assert set(SmokeOutput.__annotations__) == {
         "outcome",
