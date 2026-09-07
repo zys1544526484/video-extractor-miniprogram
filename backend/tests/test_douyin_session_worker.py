@@ -632,6 +632,21 @@ async def test_playwright_adapter_rejects_mismatched_page_before_media_capture()
 
 
 @pytest.mark.asyncio
+async def test_playwright_adapter_marks_missing_primary_player_separately() -> None:
+    page = AdapterPage(visible=False)
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "player_missing"
+    assert captured.target_id == WORK_ID
+
+
+@pytest.mark.asyncio
 async def test_playwright_adapter_ignores_hidden_captcha_text_but_stops_for_visible_risk() -> None:
     hidden = AdapterPage(
         current_src=MEDIA_URL,
