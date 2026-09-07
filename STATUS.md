@@ -19,7 +19,7 @@
 
 ## 本地验证结果
 
-- P3 审查修正验证：后端 pytest `168 passed`（2 warnings）；Ruff、`compileall`、`git diff --check` 通过；前端 Node `49 passed`、小程序静态及合成 production 配置校验（各 80 files）通过。新增 smoke CLI 仅从 `DOUYIN_SMOKE_URL` 读取链接，输出只含结果、错误码、作品 ID、媒体域名、读取字节数与耗时。当前主机未安装 Docker CLI，Docker build 为 `NOT VERIFIED`；本轮未运行真实 Playwright 浏览器、不持有运营者会话，也未对真实抖音媒体发起 session smoke。
+- P3 真实启动修复验证：lazy Playwright loader 返回的 `async_playwright` 工厂现在会被二阶段调用后才进入异步上下文，bootstrap 与 Worker 的无注入路径均有回归覆盖；bootstrap CLI 仅输出 `AppError` 错误码和中文安全提示，不输出 traceback。后端 pytest `171 passed`（2 warnings）；Ruff、`compileall`、`git diff --check` 通过；前端 Node `49 passed`、小程序静态及合成 production 配置校验（各 80 files）通过。当前主机未安装 Docker CLI，Docker build 为 `NOT VERIFIED`；本轮未运行真实 Playwright 浏览器、不持有运营者会话，也未对真实抖音媒体发起 session smoke。
 
 - 前端 Node 单测：本地 `npm test` 32 passed、0 failed；GitHub 最新分支 push CI 为 32 passed、0 failed。
 - 小程序 JSON、路由、资源引用、JS 语法：本地工作区 76 files checked；GitHub 干净环境 74 files checked，均通过。本地多出的 `miniprogram/project.config.json` 与 `miniprogram/project.private.config.json` 是 `.gitignore` 忽略的本地配置，不提交。

@@ -14,6 +14,8 @@
 - 本轮自动验证：后端 pytest `154 passed`（2 warnings）、Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`，小程序静态与合成 production 配置校验（80 files）PASS。Docker CLI 在本机不可用。当前没有运行手动登录或真实会话 smoke，真实媒体地址、无 Cookie 1024-byte 读取、实际耗时和真机流程均为 `NOT VERIFIED`；不要将 PoC 代码描述为抖音下载成功。
 - 审查修正已推送：`4869df2`（严格目标页后的主播放器等待、可见风控判断、原子 bootstrap 与安全请求头）、`9a64995`（环境变量驱动且输出脱敏的 smoke CLI）、`6a39fb2`（路径/查询签名日志脱敏回归）。Playwright 适配器级 fake-browser 测试覆盖 CDN URL 无作品 ID、延迟 `currentSrc`、广告/推荐网络候选不替代主播放器、页面目标不一致、隐藏 captcha 文本和可见风控组件。
 - 当前复跑：后端 pytest `168 passed`（2 warnings）；Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`；小程序静态及合成 production 校验均为 80 files PASS。Docker CLI 仍不可用；不执行真实登录或 smoke，等待远程 CI 与后续人工会话验证。
+- 真实启动阻塞修复：`077c2df` 将 lazy loader 的两阶段调用收敛为“loader → `async_playwright` factory → async context manager”，既保留注入式 factory，也修复未注入真实路径的 `TypeError`。bootstrap 和 `PlaywrightSessionAdapter` 均有无注入回归；bootstrap 临时 state 失败清理与旧会话保留测试继续通过。CLI 捕获 `AppError` 后只输出稳定错误码和中文提示、退出码 1，不向普通用户显示 traceback 或会话数据。
+- 本轮全量验证：后端 pytest `171 passed`（2 warnings）；Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`；小程序静态及合成 production 校验均为 80 files PASS。`backend/wechat_video_extractor_backend.egg-info/` 的三个未提交变更在任务开始前已存在且不属于本次工作，未被暂存或提交。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
