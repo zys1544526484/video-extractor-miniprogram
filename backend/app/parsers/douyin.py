@@ -19,26 +19,12 @@ DOUYIN_WORK_PATH_PATTERN = re.compile(
     r"/(?P<kind>video|note)/(?P<work_id>\d{8,})(?:[/?#]|$)",
     re.IGNORECASE,
 )
-DOUYIN_EMBEDDED_ID_PATTERN = re.compile(
-    r'["\'](?:aweme_id|awemeId|item_id|itemId)["\']\s*[:=]\s*["\']?(\d{8,})',
-    re.IGNORECASE,
-)
 TITLE_PATTERNS = (
     re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](?P<value>[^"\']+)', re.IGNORECASE),
     re.compile(r'<meta[^>]+content=["\'](?P<value>[^"\']+)["\'][^>]+property=["\']og:title', re.IGNORECASE),
 )
 VIDEO_MEDIA_FIELDS = ("play_addr", "play_addr_h264", "download_addr")
 COVER_FIELDS = ("origin_cover", "dynamic_cover", "static_cover", "cover", "poster")
-PUBLIC_RESTRICTION_MARKERS = (
-    "仅好友可见",
-    "私密作品",
-    "该作品为私密",
-    "需要登录后查看",
-    "登录后查看",
-    "friends only",
-    "this video is private",
-    "login required",
-)
 HYDRATION_JSON_START_PATTERN = re.compile(r"(?:^|[=(:,;])\s*(?P<json>[{\[])")
 JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\(\s*(?P<json>\"(?:\\.|[^\"\\])*\")\s*\)")
 logger = logging.getLogger(__name__)
@@ -85,6 +71,21 @@ class _ScriptCollector(HTMLParser):
             self._current = None
 
 
+class _DocumentMetadataCollector(HTMLParser):
+    """Collect only canonical/og:url attributes, never arbitrary page text."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key.lower(): value or "" for key, value in attrs}
+        if tag.lower() == "meta" and values.get("property", "").lower() == "og:url":
+            self.urls.append(values.get("content", ""))
+        if tag.lower() == "link" and "canonical" in values.get("rel", "").lower().split():
+            self.urls.append(values.get("href", ""))
+
+
 class DouyinParser(BaseParser):
     """Small, Cookie-free parser for publicly embedded Douyin work metadata.
 
@@ -103,24 +104,29 @@ class DouyinParser(BaseParser):
 
     @staticmethod
     def _work_reference_from_url(url: str) -> tuple[str, str] | None:
-        match = DOUYIN_WORK_PATH_PATTERN.search(url)
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if host != "douyin.com" and not host.endswith(".douyin.com"):
+            return None
+        match = DOUYIN_WORK_PATH_PATTERN.fullmatch(parsed.path.rstrip("/") + "/")
         if match is None:
             return None
         return match.group("kind").lower(), match.group("work_id")
 
     @staticmethod
-    def _work_id_from_html(document: str) -> str | None:
-        match = DOUYIN_EMBEDDED_ID_PATTERN.search(document)
-        return match.group(1) if match else None
+    def _canonical_video_reference(document: str) -> tuple[str, str] | None:
+        collector = _DocumentMetadataCollector()
+        collector.feed(document)
+        collector.close()
+        for candidate in collector.urls:
+            reference = DouyinParser._work_reference_from_url(html.unescape(candidate).strip())
+            if reference is not None:
+                return reference
+        return None
 
     @staticmethod
     def _unsupported_note() -> AppError:
         return AppError("PLATFORM_UNSUPPORTED", "抖音图文作品暂不支持视频提取")
-
-    @staticmethod
-    def _has_explicit_public_restriction(document: str) -> bool:
-        lowered = document.lower()
-        return any(marker in lowered for marker in PUBLIC_RESTRICTION_MARKERS)
 
     @staticmethod
     def _first_meta_title(document: str) -> str:
@@ -237,9 +243,6 @@ class DouyinParser(BaseParser):
         document: str,
         work_id: str,
     ) -> ParserResultModel:
-        if self._has_explicit_public_restriction(document):
-            raise AppError("CONTENT_RESTRICTED", "该内容不可公开访问")
-
         structured_title, media_urls, cover_urls = self._structured_metadata(document)
         if not media_urls:
             raise self._resolve_failed()
@@ -298,11 +301,15 @@ class DouyinParser(BaseParser):
         reference = self._work_reference_from_url(final_url)
         if reference and reference[0] == "note":
             raise self._unsupported_note()
-        work_id = (reference[1] if reference else None) or self._work_id_from_html(document)
+        if reference is None:
+            reference = self._canonical_video_reference(document)
+        if reference and reference[0] == "note":
+            raise self._unsupported_note()
+        work_id = reference[1] if reference else None
         if not work_id:
             raise self._resolve_failed()
         canonical_url = f"https://www.douyin.com/video/{work_id}"
-        if not reference or reference[1] != work_id:
+        if self._work_reference_from_url(final_url) != reference:
             _canonical_final, document, _headers = await context.http.get_text(canonical_url)
         result = self._result_from_document(document=document, work_id=work_id)
         for source in result.sources:

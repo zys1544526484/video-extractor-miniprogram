@@ -216,20 +216,77 @@ async def test_short_link_that_lands_on_homepage_returns_retryable_resolve_failu
 
 
 @pytest.mark.asyncio
-async def test_explicit_private_work_is_content_restricted_without_fallback(settings) -> None:
+async def test_description_login_words_do_not_mark_valid_public_media_private(settings) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             headers={"content-type": "text/html"},
-            text=public_document(private=True),
+            text=public_document(private=True).replace("该作品为私密内容", "登录后查看：作品描述"),
         )
 
     fallback = Fallback()
-    with pytest.raises(AppError) as caught:
-        await DouyinParser(fallback).parse(CANONICAL_URL, context(settings, safe_http(handler)))
+    result = await DouyinParser(fallback).parse(CANONICAL_URL, context(settings, safe_http(handler)))
 
-    assert caught.value.code == "CONTENT_RESTRICTED"
+    assert result.sources[0].upstream_media_url == "https://cdn.example.com/public.mp4"
     assert fallback.calls == []
+
+
+@pytest.mark.asyncio
+async def test_homepage_recommendation_aweme_id_is_not_the_requested_work(settings) -> None:
+    homepage = f'''<html><head><title>首页</title></head><body>
+    <script type="application/json">{{"aweme_id":"{WORK_ID}","video":{{"play_addr":{{"url_list":["https://cdn.example.com/recommended.mp4"]}}}}}}</script>
+    </body></html>'''
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=homepage)
+
+    fallback = Fallback()
+    with pytest.raises(AppError) as caught:
+        await DouyinParser(fallback).parse(
+            "https://v.douyin.com/redirected-home/",
+            context(settings, safe_http(handler)),
+        )
+
+    assert caught.value.code == "DOUYIN_RESOLVE_FAILED"
+    assert len(fallback.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_strict_canonical_og_url_can_identify_the_target_video(settings) -> None:
+    homepage = f'''<html><head><meta property="og:url" content="{CANONICAL_URL}?share=1"></head>
+    <body><script type="application/json">{{"video":{{"play_addr":{{"url_list":["https://cdn.example.com/canonical.mp4"]}}}}}}</script></body></html>'''
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "v.douyin.com":
+            return httpx.Response(200, headers={"content-type": "text/html"}, text=homepage)
+        assert str(request.url).split("?", 1)[0] == CANONICAL_URL
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=public_document())
+
+    result = await DouyinParser(Fallback()).parse(
+        "https://v.douyin.com/canonical-target/",
+        context(settings, safe_http(handler)),
+    )
+
+    assert result.canonical_url == CANONICAL_URL
+    assert result.sources[0].upstream_media_url == "https://cdn.example.com/public.mp4"
+
+
+@pytest.mark.asyncio
+async def test_non_douyin_or_non_video_canonical_url_is_not_trusted(settings) -> None:
+    document = '''<html><head>
+    <link rel="canonical" href="https://attacker.example.com/video/7123456789012345678">
+    </head><body><script type="application/json">{"video":{"play_addr":{"url_list":["https://cdn.example.com/not-target.mp4"]}}}</script></body></html>'''
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=document)
+
+    with pytest.raises(AppError) as caught:
+        await DouyinParser(Fallback()).parse(
+            "https://v.douyin.com/bad-canonical/",
+            context(settings, safe_http(handler)),
+        )
+
+    assert caught.value.code == "DOUYIN_RESOLVE_FAILED"
 
 
 @pytest.mark.asyncio
