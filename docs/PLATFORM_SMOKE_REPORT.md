@@ -6,6 +6,8 @@
 
 2026-09-07 使用用户此前提供的公开抖音短链，以临时环境变量 `DOUYIN_SMOKE_URL` 执行独立 PoC smoke。SafeHttpClient 将短链安全跳转到路径 `/video/7678631238139268402`；匿名公开 HTML 未提供可安全代理的媒体地址，yt-dlp 短时回退也未提供有效公开来源。总耗时 2717ms，结果为 `DOUYIN_RESOLVE_FAILED`（retryable）。没有提交或导入 Cookie、签名参数、账号会话，也没有把链接写入自动测试。
 
+审查修正后再次 smoke：解析器不再扫描字段附近的 URL，而只读取 script 内结构化 JSON、JSON-LD 或 hydration JSON 的白名单视频字段。该匿名页面有 2 个 script、21 个可解码 JSON/hydration 值，但未发现 `video.play_addr`、`video.play_addr_h264`、`video.download_addr` 或 `video.bit_rate[*].play_addr`。因此本次没有取得媒体地址，3234ms 后仍正确返回 `DOUYIN_RESOLVE_FAILED`（retryable），不能描述为解析成功。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。

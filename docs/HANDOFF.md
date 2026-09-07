@@ -13,6 +13,14 @@
 - 实际 smoke 使用临时 `DOUYIN_SMOKE_URL`（未写入测试）。用户此前的短链最终安全页面路径为 `/video/7678631238139268402`，耗时 2717ms，匿名公开页面未提供可安全代理的媒体地址，因此结果为 `DOUYIN_RESOLVE_FAILED`。抖音真实预览/下载/保存仍为 `NOT VERIFIED`。
 - 自动测试覆盖短链、正常作品链接、跳首页、明确私密、恶意跳转、公开媒体地址 SSRF、超时、Registry 隔离、日志查询脱敏、任务/历史和结果页错误展示。后续须复跑全量门禁并检查远程 CI；不可将本次 smoke 失败写成平台通过。
 
+### P2 审查修正：结构化抖音媒体字段（2026-09-07）
+
+- 分支保持 `codex/p2-douyin-parser-poc`；未创建分支、PR，未切换或修改 `main`，不使用 force push。
+- 删除不安全的 URL 正则/邻近字段启发式。解析器只读取 script 中可解码的 JSON、JSON-LD 或 hydration JSON，并仅从 `video.play_addr.url_list`、`video.play_addr_h264.url_list`、`video.download_addr.url_list`、`video.bit_rate[*].play_addr.url_list` 提取媒体地址。任意标题、描述、评论及其他文本中的 URL 都不会被当作媒体来源。
+- 解码后的地址仍须通过 `SafeHttpClient.validate_url`。新增 JSON escaped slash、Unicode escaped slash、HTML entity、描述伪造地址、正确字段、`/note/`、SSRF 等回归；既有超时和日志脱敏测试保持。
+- `/note/{id}` 返回 `PLATFORM_UNSUPPORTED` 和“抖音图文作品暂不支持视频提取”，不再改写为视频 URL，也不调用 yt-dlp。
+- 真实短链复测：安全到达 `/video/7678631238139268402`；匿名页面有 2 个 script、21 个可解码 JSON/hydration 值，未提供任何白名单公开视频字段。没有取得媒体地址；耗时 3234ms，`DOUYIN_RESOLVE_FAILED`（可重试）。真实抖音媒体解析、预览、下载和相册保存仍为 `NOT VERIFIED`。
+
 ### 当前审计/实施交接（2026-09-05）
 
 - 最新 `main`：`b006c3f7bcf00d369d22c7e99ab2f738764ea84f`

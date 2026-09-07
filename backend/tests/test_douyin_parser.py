@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 import httpx
@@ -24,6 +25,13 @@ def public_document(*, media_url: str = "https://cdn.example.com/public.mp4", pr
     <body>{restriction}<script>window.__DATA__ = {{"aweme_id":"{WORK_ID}","desc":"公开作品标题",
     "video":{{"play_addr":{{"url_list":["{media_url}"]}}}},
     "cover":{{"url_list":["https://cdn.example.com/cover.jpg"]}}}};</script></body></html>'''
+
+
+def structured_document(media_field: str, *, description: str = "公开作品标题") -> str:
+    """Build a public hydration script; media_field is intentionally raw JSON."""
+    return f'''<!doctype html><html><head><meta property="og:title" content="公开作品标题"></head>
+    <body><script id="RENDER_DATA" type="application/json">{{"aweme_id":"{WORK_ID}",
+    "desc":{json.dumps(description, ensure_ascii=False)},"video":{{{media_field}}}}}</script></body></html>'''
 
 
 async def public_resolver(host: str) -> list[str]:
@@ -90,6 +98,79 @@ async def test_direct_work_url_uses_public_html_without_yt_dlp(settings) -> None
 
     assert result.canonical_url == CANONICAL_URL
     assert result.sources[0].source_id == "source-1"
+    assert fallback.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("media_field", "expected_url"),
+    [
+        (
+            r'"play_addr":{"url_list":["https:\/\/cdn.example.com\/escaped.mp4"]}',
+            "https://cdn.example.com/escaped.mp4",
+        ),
+        (
+            r'"play_addr_h264":{"url_list":["https:\u002F\u002Fcdn.example.com\u002Funicode.mp4"]}',
+            "https://cdn.example.com/unicode.mp4",
+        ),
+        (
+            '"download_addr":{"url_list":["https://cdn.example.com/entity.mp4?x=1&amp;y=2"]}',
+            "https://cdn.example.com/entity.mp4?x=1&y=2",
+        ),
+        (
+            '"bit_rate":[{"play_addr":{"url_list":["https://cdn.example.com/bit-rate.mp4"]}}]',
+            "https://cdn.example.com/bit-rate.mp4",
+        ),
+    ],
+)
+async def test_structured_public_media_fields_decode_real_url_encodings(
+    settings,
+    media_field: str,
+    expected_url: str,
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text=structured_document(media_field),
+        )
+
+    result = await DouyinParser(Fallback()).parse(CANONICAL_URL, context(settings, safe_http(handler)))
+
+    assert result.sources[0].upstream_media_url == expected_url
+
+
+@pytest.mark.asyncio
+async def test_description_text_cannot_smuggle_a_media_url(settings) -> None:
+    forged = structured_document(
+        '"cover":{"url_list":["https://cdn.example.com/cover.jpg"]}',
+        description="play_addr https://attacker.example.com/not-media.mp4",
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=forged)
+
+    fallback = Fallback()
+    with pytest.raises(AppError) as caught:
+        await DouyinParser(fallback).parse(CANONICAL_URL, context(settings, safe_http(handler)))
+
+    assert caught.value.code == "DOUYIN_RESOLVE_FAILED"
+    assert len(fallback.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_note_url_is_not_rewritten_to_video_or_parsed_as_video(settings) -> None:
+    note_url = f"https://www.douyin.com/note/{WORK_ID}"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("a direct /note/ URL must not fetch video metadata")
+
+    fallback = Fallback()
+    with pytest.raises(AppError) as caught:
+        await DouyinParser(fallback).parse(note_url, context(settings, safe_http(handler)))
+
+    assert caught.value.code == "PLATFORM_UNSUPPORTED"
+    assert caught.value.message == "抖音图文作品暂不支持视频提取"
     assert fallback.calls == []
 
 

@@ -84,3 +84,10 @@
 - 仅使用 `SafeHttpClient` 执行初始 URL、每一跳重定向、公开页面及解析出的媒体/封面地址校验；不提交 Cookie、不调用签名隐藏接口、不模拟登录或绕过平台限制。短链丢失作品 ID、跳首页或 yt-dlp `Unsupported URL` 返回 `DOUYIN_RESOLVE_FAILED`（可重试）；只有公开页面或 yt-dlp 明确证明私密、删除、仅好友或必须登录时才返回 `CONTENT_RESTRICTED`。
 - 公开 HTML 能提供作品 ID、标题、封面和公开媒体地址时，解析器只返回内部 `ParserResultModel` 来源，仍由既有媒体探测、短期 token、用户归属和代理链路处理；解析阶段不会预下载视频。
 - 实际 smoke：使用临时 `DOUYIN_SMOKE_URL`（不写入测试夹具）测试用户此前提供的公开短链。最终安全页面路径为 `/video/7678631238139268402`，耗时 `2717ms`，未在匿名页面发现可用公开媒体地址，结果 `DOUYIN_RESOLVE_FAILED`。真实预览、下载、真机保存均继续为 `NOT VERIFIED`。
+
+### P2 审查修正（2026-09-07）
+
+- 已移除 URL 正则与“字段名附近 URL”启发式。现在只解析 script 内可解码的 JSON、JSON-LD 或 hydration JSON，并仅沿 `video.play_addr.url_list`、`video.play_addr_h264.url_list`、`video.download_addr.url_list`、`video.bit_rate[*].play_addr.url_list` 等明确路径取媒体地址；标题、描述、评论或其他任意文本中的 URL 不会成为媒体来源。
+- 正常 URL、JSON escaped slash、Unicode escaped slash 和 HTML entity 地址均在结构化 JSON 解码后再执行 `SafeHttpClient.validate_url`；恶意重定向、媒体地址 SSRF、超时和日志查询脱敏继续由回归覆盖。
+- `/note/{id}` 现在明确返回“抖音图文作品暂不支持视频提取”，既不改写为 `/video/{id}`，也不会请求视频元数据或回退 yt-dlp。
+- 复测用户此前短链：匿名页面安全到达 `/video/7678631238139268402`，发现 2 个 script、21 个可解码 JSON/hydration 值，但没有白名单视频字段；因此无法取得公开视频媒体地址，`3234ms` 后返回 `DOUYIN_RESOLVE_FAILED`。抖音真实预览、下载与保存仍为 `NOT VERIFIED`。

@@ -6,7 +6,8 @@ import json
 import logging
 import re
 import time
-from typing import TYPE_CHECKING
+from html.parser import HTMLParser
+from typing import Any
 from urllib.parse import urlsplit
 
 from ..errors import AppError
@@ -14,23 +15,20 @@ from ..schemas import ParserResultModel, ParserSourceModel
 from .base import BaseParser, ParseContext
 from .yt_dlp_adapter import YtDlpAdapter
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-
-DOUYIN_WORK_ID_PATTERN = re.compile(r"/(?:video|note)/(\d{8,})(?:[/?#]|$)", re.IGNORECASE)
+DOUYIN_WORK_PATH_PATTERN = re.compile(
+    r"/(?P<kind>video|note)/(?P<work_id>\d{8,})(?:[/?#]|$)",
+    re.IGNORECASE,
+)
 DOUYIN_EMBEDDED_ID_PATTERN = re.compile(
     r'["\'](?:aweme_id|awemeId|item_id|itemId)["\']\s*[:=]\s*["\']?(\d{8,})',
     re.IGNORECASE,
 )
-JSON_STRING_PATTERN = r'(?P<value>(?:\\.|[^"\\])*)'
 TITLE_PATTERNS = (
-    re.compile(rf'["\']desc["\']\s*:\s*["\']{JSON_STRING_PATTERN}["\']', re.IGNORECASE),
     re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](?P<value>[^"\']+)', re.IGNORECASE),
     re.compile(r'<meta[^>]+content=["\'](?P<value>[^"\']+)["\'][^>]+property=["\']og:title', re.IGNORECASE),
 )
-PUBLIC_MEDIA_KEYS = ("play_addr", "playaddr", "play_url", "playurl", "download_addr", "downloadaddr")
-PUBLIC_COVER_KEYS = ("origin_cover", "dynamic_cover", "static_cover", "cover", "poster")
+VIDEO_MEDIA_FIELDS = ("play_addr", "play_addr_h264", "download_addr")
+COVER_FIELDS = ("origin_cover", "dynamic_cover", "static_cover", "cover", "poster")
 PUBLIC_RESTRICTION_MARKERS = (
     "仅好友可见",
     "私密作品",
@@ -41,19 +39,50 @@ PUBLIC_RESTRICTION_MARKERS = (
     "this video is private",
     "login required",
 )
-URL_PATTERN = re.compile(r"https?:(?:\\/|\\u002[fF]|/)[^\"'\\<>\s]+", re.IGNORECASE)
+HYDRATION_JSON_START_PATTERN = re.compile(r"(?:^|[=(:,;])\s*(?P<json>[{\[])")
+JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\(\s*(?P<json>\"(?:\\.|[^\"\\])*\")\s*\)")
 logger = logging.getLogger(__name__)
 
 
-def _decode_json_string(value: str) -> str:
-    try:
-        return json.loads(f'"{value}"')
-    except json.JSONDecodeError:
-        return html.unescape(value).replace("\\/", "/").replace("\\u002F", "/")
-
-
 def _normalise_public_url(value: str) -> str:
-    return html.unescape(value).replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+    """Decode representations that are valid inside public JSON or HTML."""
+    decoded = html.unescape(value)
+    try:
+        # JSON decoding handles both escaped slashes and unicode slash escapes.
+        decoded = json.loads(json.dumps(decoded))
+    except (TypeError, ValueError):
+        pass
+    return decoded.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+
+
+class _ScriptCollector(HTMLParser):
+    """Collect script bodies without treating arbitrary page text as JSON."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.scripts: list[tuple[dict[str, str], list[str]]] = []
+        self._current: tuple[dict[str, str], list[str]] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "script":
+            self._current = ({key.lower(): value or "" for key, value in attrs}, [])
+
+    def handle_data(self, data: str) -> None:
+        if self._current is not None:
+            self._current[1].append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._current is not None:
+            self._current[1].append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._current is not None:
+            self._current[1].append(f"&#{name};")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "script" and self._current is not None:
+            self.scripts.append(self._current)
+            self._current = None
 
 
 class DouyinParser(BaseParser):
@@ -73,9 +102,11 @@ class DouyinParser(BaseParser):
         return host == "douyin.com" or host.endswith(".douyin.com")
 
     @staticmethod
-    def _work_id_from_url(url: str) -> str | None:
-        match = DOUYIN_WORK_ID_PATTERN.search(url)
-        return match.group(1) if match else None
+    def _work_reference_from_url(url: str) -> tuple[str, str] | None:
+        match = DOUYIN_WORK_PATH_PATTERN.search(url)
+        if match is None:
+            return None
+        return match.group("kind").lower(), match.group("work_id")
 
     @staticmethod
     def _work_id_from_html(document: str) -> str | None:
@@ -83,56 +114,137 @@ class DouyinParser(BaseParser):
         return match.group(1) if match else None
 
     @staticmethod
+    def _unsupported_note() -> AppError:
+        return AppError("PLATFORM_UNSUPPORTED", "抖音图文作品暂不支持视频提取")
+
+    @staticmethod
     def _has_explicit_public_restriction(document: str) -> bool:
         lowered = document.lower()
         return any(marker in lowered for marker in PUBLIC_RESTRICTION_MARKERS)
 
     @staticmethod
-    def _first_title(document: str) -> str:
+    def _first_meta_title(document: str) -> str:
         for pattern in TITLE_PATTERNS:
             match = pattern.search(document)
             if match:
-                value = _decode_json_string(match.group("value")).strip()
+                value = html.unescape(match.group("value")).strip()
                 if value:
                     return value[:200]
         return "抖音公开视频"
 
     @staticmethod
-    def _public_urls(document: str, keys: Iterable[str]) -> list[str]:
-        matches: list[str] = []
-        lowered = document.lower()
-        for found in URL_PATTERN.finditer(document):
-            # Only use an address occurring in a clearly labelled public media
-            # field.  Do not treat arbitrary tracking/image/script URLs as a
-            # downloadable asset.
-            window = lowered[max(0, found.start() - 320):found.end() + 96]
-            if not any(key in window for key in keys):
+    def _script_json_values(document: str) -> list[dict[str, Any] | list[Any]]:
+        collector = _ScriptCollector()
+        collector.feed(document)
+        collector.close()
+        decoder = json.JSONDecoder()
+        values: list[dict[str, Any] | list[Any]] = []
+        for attributes, parts in collector.scripts:
+            script = html.unescape("".join(parts)).strip()
+            if not script:
                 continue
-            candidate = _normalise_public_url(found.group(0)).rstrip("\\,;)")
-            if candidate not in matches:
-                matches.append(candidate)
-        return matches
+            candidates: list[str] = [script]
+            if attributes.get("type", "").lower() in {"application/json", "application/ld+json"}:
+                candidates.append(script)
+            for match in JSON_PARSE_PATTERN.finditer(script):
+                try:
+                    embedded = json.loads(match.group("json"))
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(embedded, str):
+                    candidates.append(embedded)
+            for match in HYDRATION_JSON_START_PATTERN.finditer(script):
+                candidates.append(script[match.start("json"):])
+            seen: set[str] = set()
+            for candidate in candidates[:65]:
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                try:
+                    value, _ = decoder.raw_decode(candidate.lstrip())
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, (dict, list)):
+                    values.append(value)
+        return values
+
+    @staticmethod
+    def _walk_dicts(value: object) -> list[dict[str, Any]]:
+        stack = [value]
+        found: list[dict[str, Any]] = []
+        while stack and len(found) < 10_000:
+            current = stack.pop()
+            if isinstance(current, dict):
+                found.append(current)
+                stack.extend(current.values())
+            elif isinstance(current, list):
+                stack.extend(current)
+        return found
+
+    @staticmethod
+    def _urls_in_address(value: object) -> list[str]:
+        if not isinstance(value, dict):
+            return []
+        candidates = value.get("url_list") or value.get("urlList") or value.get("url")
+        values = candidates if isinstance(candidates, list) else [candidates]
+        urls: list[str] = []
+        for candidate in values:
+            if not isinstance(candidate, str):
+                continue
+            decoded = _normalise_public_url(candidate).strip()
+            if decoded.startswith(("http://", "https://")) and decoded not in urls:
+                urls.append(decoded)
+        return urls
+
+    @classmethod
+    def _structured_metadata(cls, document: str) -> tuple[str, list[str], list[str]]:
+        """Read only explicit public media paths from parsed JSON values."""
+        title = ""
+        media_urls: list[str] = []
+        cover_urls: list[str] = []
+        for payload in cls._script_json_values(document):
+            for node in cls._walk_dicts(payload):
+                if not title and isinstance(node.get("desc"), str):
+                    title = str(node["desc"]).strip()[:200]
+                video = node.get("video")
+                if not isinstance(video, dict):
+                    continue
+                for field in VIDEO_MEDIA_FIELDS:
+                    for url in cls._urls_in_address(video.get(field)):
+                        if url not in media_urls:
+                            media_urls.append(url)
+                bit_rates = video.get("bit_rate") or video.get("bitRate")
+                if isinstance(bit_rates, list):
+                    for bit_rate in bit_rates:
+                        if not isinstance(bit_rate, dict):
+                            continue
+                        for url in cls._urls_in_address(bit_rate.get("play_addr")):
+                            if url not in media_urls:
+                                media_urls.append(url)
+                for field in COVER_FIELDS:
+                    for url in cls._urls_in_address(video.get(field)):
+                        if url not in cover_urls:
+                            cover_urls.append(url)
+                for field in COVER_FIELDS:
+                    for url in cls._urls_in_address(node.get(field)):
+                        if url not in cover_urls:
+                            cover_urls.append(url)
+        return title, media_urls, cover_urls
 
     def _result_from_document(
         self,
         *,
         document: str,
         work_id: str,
-        context: ParseContext,
     ) -> ParserResultModel:
         if self._has_explicit_public_restriction(document):
             raise AppError("CONTENT_RESTRICTED", "该内容不可公开访问")
 
-        media_urls = self._public_urls(document, PUBLIC_MEDIA_KEYS)
+        structured_title, media_urls, cover_urls = self._structured_metadata(document)
         if not media_urls:
             raise self._resolve_failed()
         media_url = media_urls[0]
-        # Validate parser-produced addresses now, before ParseService starts a
-        # media probe or session.  This keeps a malicious public page from
-        # smuggling a private target through the parser.
-        # The call is awaited by parse() because SafeHttpClient is async.
-        title = self._first_title(document)
-        cover_urls = self._public_urls(document, PUBLIC_COVER_KEYS)
+        title = structured_title or self._first_meta_title(document)
         canonical_url = f"https://www.douyin.com/video/{work_id}"
         source = ParserSourceModel(
             source_id="source-1",
@@ -183,13 +295,16 @@ class DouyinParser(BaseParser):
     ) -> ParserResultModel:
         final_url, document, _headers = await context.http.get_text(url)
         resolved["url"] = final_url
-        work_id = self._work_id_from_url(final_url) or self._work_id_from_html(document)
+        reference = self._work_reference_from_url(final_url)
+        if reference and reference[0] == "note":
+            raise self._unsupported_note()
+        work_id = (reference[1] if reference else None) or self._work_id_from_html(document)
         if not work_id:
             raise self._resolve_failed()
         canonical_url = f"https://www.douyin.com/video/{work_id}"
-        if self._work_id_from_url(final_url) != work_id:
+        if not reference or reference[1] != work_id:
             _canonical_final, document, _headers = await context.http.get_text(canonical_url)
-        result = self._result_from_document(document=document, work_id=work_id, context=context)
+        result = self._result_from_document(document=document, work_id=work_id)
         for source in result.sources:
             if source.upstream_media_url:
                 await context.http.validate_url(source.upstream_media_url)
@@ -199,6 +314,9 @@ class DouyinParser(BaseParser):
 
     async def parse(self, url: str, context: ParseContext) -> ParserResultModel:
         await context.http.validate_url(url)
+        input_reference = self._work_reference_from_url(url)
+        if input_reference and input_reference[0] == "note":
+            raise self._unsupported_note()
         started = time.monotonic()
         total_budget = min(
             context.settings.parse_timeout_seconds,
@@ -219,7 +337,7 @@ class DouyinParser(BaseParser):
             )
             raise AppError("PARSE_TIMEOUT", "抖音公开页面解析超时，请稍后重试", retryable=True) from error
         except AppError as error:
-            if error.code in {"CONTENT_RESTRICTED", "URL_INVALID"}:
+            if error.code in {"CONTENT_RESTRICTED", "PLATFORM_UNSUPPORTED", "URL_INVALID"}:
                 self._log_outcome(
                     outcome="failed",
                     started=started,
