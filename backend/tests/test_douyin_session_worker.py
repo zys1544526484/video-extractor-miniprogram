@@ -342,6 +342,9 @@ class AdapterPage:
     async def wait_for_function(self, _script: str, **kwargs: int) -> None:
         assert kwargs["timeout"] > 0
         self.waited = True
+        if "rect.width > 120" in _script and not self.visible:
+            timeout_error = type("TimeoutError", (Exception,), {})
+            raise timeout_error()
         if self.delayed_src:
             self.current_src = self.delayed_src
         if "currentSrc || video.src" in _script and not (
