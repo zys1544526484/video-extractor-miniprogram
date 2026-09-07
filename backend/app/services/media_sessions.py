@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
 import shutil
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from time import time
+from urllib.parse import urlsplit
 
 from sqlalchemy import delete, select
 
@@ -20,6 +22,25 @@ def utc_now_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+ALLOWED_MEDIA_TYPES = {
+    "video/mp4",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+
+def normalize_media_type(value: str | None) -> str:
+    media_type = (value or "video/mp4").split(";", 1)[0].strip().lower()
+    if media_type == "video/*":
+        media_type = "video/mp4"
+    if media_type in {"image/jpg", "image/pjpeg"}:
+        media_type = "image/jpeg"
+    if media_type not in ALLOWED_MEDIA_TYPES:
+        raise AppError("MEDIA_FORMAT_UNSUPPORTED", "媒体格式暂不支持")
+    return media_type
+
+
 @dataclass
 class MediaSession:
     token: str
@@ -27,8 +48,8 @@ class MediaSession:
     user_id: int
     platform: str
     title: str
-    upstream_url: None
-    temporary_file: Path
+    upstream_url: str | None
+    temporary_file: Path | None
     required_headers: dict[str, str]
     mime_type: str
     size_bytes: int | None
@@ -75,23 +96,36 @@ class MediaSessionStore:
         token: str,
         access_token_expires_at: datetime,
     ) -> MediaSession:
-        temporary_file = (self.temp_root / record.file_path).resolve()
-        try:
-            temporary_file.relative_to(self.temp_root)
-        except ValueError as error:
-            raise AppError("MEDIA_SESSION_EXPIRED", "结果已失效，请重新提取", status_code=410) from error
-        if not temporary_file.is_file():
+        temporary_file: Path | None = None
+        if record.file_path:
+            temporary_file = (self.temp_root / record.file_path).resolve()
+            try:
+                temporary_file.relative_to(self.temp_root)
+            except ValueError as error:
+                raise AppError(
+                    "MEDIA_SESSION_EXPIRED", "结果已失效，请重新提取", status_code=410
+                ) from error
+            if not temporary_file.is_file():
+                raise AppError("MEDIA_SESSION_EXPIRED", "结果文件已清理，请重新提取", status_code=410)
+        upstream_url = record.upstream_url
+        if temporary_file is None and not upstream_url:
             raise AppError("MEDIA_SESSION_EXPIRED", "结果文件已清理，请重新提取", status_code=410)
+        try:
+            required_headers = json.loads(record.required_headers_json or "{}")
+        except (TypeError, json.JSONDecodeError) as error:
+            raise AppError("MEDIA_SESSION_EXPIRED", "结果已失效，请重新提取", status_code=410) from error
+        if not isinstance(required_headers, dict):
+            raise AppError("MEDIA_SESSION_EXPIRED", "结果已失效，请重新提取", status_code=410)
         return MediaSession(
             token=token,
             session_id=record.session_id,
             user_id=record.user_id,
             platform=record.platform,
             title=record.title,
-            upstream_url=None,
+            upstream_url=upstream_url,
             temporary_file=temporary_file,
-            required_headers={},
-            mime_type="video/mp4",
+            required_headers={str(key): str(value) for key, value in required_headers.items()},
+            mime_type=normalize_media_type(record.mime_type),
             size_bytes=record.size_bytes,
             access_token_expires_at=access_token_expires_at.replace(tzinfo=UTC),
             expires_at=record.expires_at.replace(tzinfo=UTC),
@@ -109,9 +143,27 @@ class MediaSessionStore:
         mime_type: str,
         size_bytes: int | None,
     ) -> MediaSession:
-        if upstream_url or not temporary_file:
-            raise AppError("PARSE_FAILED", "媒体必须先安全落盘")
-        relative_file = await asyncio.to_thread(self._relative_file, temporary_file)
+        if bool(upstream_url) == bool(temporary_file):
+            raise AppError("PARSE_FAILED", "媒体来源必须是本地文件或已验证远程地址")
+        normalized_mime = normalize_media_type(mime_type)
+        relative_file = (
+            await asyncio.to_thread(self._relative_file, temporary_file)
+            if temporary_file
+            else None
+        )
+        if upstream_url:
+            parsed = urlsplit(upstream_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise AppError("URL_INVALID", "远程媒体地址无效")
+            if parsed.username or parsed.password or parsed.fragment:
+                raise AppError("URL_INVALID", "远程媒体地址无效")
+        clean_headers = {
+            str(key): str(value)
+            for key, value in (required_headers or {}).items()
+            if str(key).lower() in {"user-agent", "referer", "origin", "accept", "accept-language"}
+            and "\r" not in str(value)
+            and "\n" not in str(value)
+        }
         now = utc_now_naive()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
         token_expires_at = self._token_expires_at(expires_at, now)
@@ -125,7 +177,9 @@ class MediaSessionStore:
                     platform=platform,
                     title=title,
                     file_path=relative_file,
-                    mime_type="video/mp4",
+                    upstream_url=upstream_url,
+                    required_headers_json=json.dumps(clean_headers, ensure_ascii=False),
+                    mime_type=normalized_mime,
                     size_bytes=size_bytes,
                     created_at=now,
                     expires_at=expires_at,
@@ -204,6 +258,18 @@ class MediaSessionStore:
         else:
             shutil.rmtree(parent, ignore_errors=True)
 
+    @staticmethod
+    def _is_media_file(path: Path) -> bool:
+        """Return whether a root-level file is safe for orphan cleanup.
+
+        ``TEMP_DIR`` can be colocated with SQLite in development.  Cleanup must
+        never treat database files (or other operator-managed files) as media.
+        Media sessions are constrained to the formats accepted by
+        ``normalize_media_type``.
+        """
+
+        return path.suffix.lower() in {".mp4", ".jpg", ".jpeg", ".png", ".webp"}
+
     async def cleanup(self) -> int:
         now = utc_now_naive()
         expired_files: list[str] = []
@@ -214,11 +280,15 @@ class MediaSessionStore:
                 expired = list(
                     session.scalars(select(MediaSessionRecord).where(MediaSessionRecord.expires_at <= now))
                 )
-                expired_files = [item.file_path for item in expired]
+                expired_files = [item.file_path for item in expired if item.file_path]
                 for item in expired:
                     session.delete(item)
                 active = list(session.scalars(select(MediaSessionRecord)))
-                active_directories = {(self.temp_root / item.file_path).resolve().parent for item in active}
+                active_directories = {
+                    (self.temp_root / item.file_path).resolve().parent
+                    for item in active
+                    if item.file_path
+                }
                 session.commit()
         for relative_file in expired_files:
             await asyncio.to_thread(self._remove_relative_file, relative_file)
@@ -236,7 +306,9 @@ class MediaSessionStore:
                 if modified <= cutoff:
                     if child.is_dir():
                         shutil.rmtree(child, ignore_errors=True)
-                    else:
+                    elif self._is_media_file(child):
                         child.unlink(missing_ok=True)
+                    else:
+                        continue
                     orphaned += 1
         return len(expired_files) + orphaned

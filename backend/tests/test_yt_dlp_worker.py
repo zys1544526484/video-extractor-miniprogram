@@ -74,6 +74,42 @@ def test_client_codec_filter_accepts_h264_and_hevc_but_not_av1() -> None:
     assert YtDlpAdapter._compatible_video_codec({"vcodec": "av01.0.08M.08"}) is None
 
 
+def test_progressive_source_selector_returns_distinct_real_mp4_sources() -> None:
+    info = {
+        "formats": [
+            {
+                "format_id": "1080",
+                "protocol": "https",
+                "ext": "mp4",
+                "url": "https://media.example/1080.mp4",
+                "vcodec": "avc1.640032",
+                "acodec": "mp4a.40.2",
+                "height": 1080,
+                "filesize": 120,
+                "tbr": 100,
+            },
+            {
+                "format_id": "720",
+                "protocol": "https",
+                "ext": "mp4",
+                "url": "https://media.example/720.mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "mp4a.40.2",
+                "height": 720,
+                "filesize": 80,
+                "tbr": 70,
+            },
+        ]
+    }
+
+    selected = YtDlpAdapter._select_progressive_sources(info, "original", 200)
+
+    assert [item["url"] for item in selected] == [
+        "https://media.example/1080.mp4",
+        "https://media.example/720.mp4",
+    ]
+
+
 def test_bilibili_selector_uses_best_size_bounded_h264_pair() -> None:
     info = {
         "formats": [

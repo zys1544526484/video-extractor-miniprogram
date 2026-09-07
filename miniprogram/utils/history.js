@@ -33,13 +33,17 @@ function historyJobView(job) {
     cancelled: '已取消',
     expired: '文件已过期'
   }
+  const error = value.error || {}
+  const failureDetail = error.code
+    ? `${error.code}：${error.message || '暂时无法完成提取'}`
+    : (value.status === 'failed' ? (value.stage || '暂时无法完成提取') : '')
   return {
     ...value,
     active,
     ready,
     platform_label: platformLabel(value.platform),
     title: summary.title || (active ? '正在准备视频' : '视频记录'),
-    detail: [summary.quality_label, formatBytes(summary.size_bytes)].filter(Boolean).join(' · '),
+    detail: failureDetail || [summary.quality_label, formatBytes(summary.size_bytes)].filter(Boolean).join(' · '),
     status_label: statusMap[value.status] || '状态未知',
     action_label: ready ? '打开结果' : (active ? '刷新进度' : '再次提取'),
     created_label: shortDate(value.created_at)

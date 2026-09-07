@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..errors import AppError, entitlement_required
-from ..schemas import AdCompleteRequest, ParseRequest, WechatAuthRequest
+from ..schemas import AdCompleteRequest, ParseRequest, ParseSourceSelectionRequest, WechatAuthRequest
 from ..services.auth_service import create_session_token, exchange_wechat_code, get_or_create_user
 from ..services.entitlement_service import (
     complete_rewarded_ad,
@@ -27,11 +27,16 @@ def ok(request: Request, **payload: Any) -> dict[str, Any]:
     return {"success": True, "request_id": request.state.request_id, **payload}
 
 
-def safe_filename(platform: str, title: str) -> str:
+def safe_filename(platform: str, title: str, mime_type: str = "video/mp4") -> str:
     raw = f"{platform}_{title}".replace("\r", " ").replace("\n", " ")
     clean = re.sub(r"[^A-Za-z0-9_-]+", "_", raw).strip("_.")
     digest = sha256(raw.encode("utf-8")).hexdigest()[:8]
-    return f"{(clean or 'video')[:72]}_{digest}.mp4"
+    extension = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }.get((mime_type or "").split(";", 1)[0].lower(), ".mp4")
+    return f"{(clean or 'video')[:72]}_{digest}{extension}"
 
 
 def effective_entitlement(request: Request, user_id: int) -> dict[str, object]:
@@ -167,6 +172,21 @@ async def get_parse_job(
     return ok(request, job=job)
 
 
+@router.patch("/parse/jobs/{job_id}/source")
+async def select_parse_source(
+    job_id: str,
+    body: ParseSourceSelectionRequest,
+    request: Request,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    job = await request.app.state.parse_jobs.select_source(
+        job_id,
+        user_id=user_id,
+        source_id=body.selected_source_id,
+    )
+    return ok(request, job=job)
+
+
 @router.delete("/parse/jobs/{job_id}")
 async def cancel_parse_job(
     job_id: str,
@@ -177,10 +197,16 @@ async def cancel_parse_job(
     return ok(request, job=job)
 
 
-def local_file_response(file: Path, *, download: bool, filename: str) -> FileResponse:
+def local_file_response(
+    file: Path,
+    *,
+    download: bool,
+    filename: str,
+    media_type: str = "video/mp4",
+) -> FileResponse:
     return FileResponse(
         file,
-        media_type="video/mp4",
+        media_type=media_type,
         filename=filename if download else None,
         content_disposition_type="attachment" if download else "inline",
     )
@@ -192,6 +218,7 @@ async def remote_stream_response(request: Request, media: Any, *, download: bool
         media.upstream_url,
         headers=media.required_headers,
         range_header=range_header,
+        media_kind="image" if media.mime_type.startswith("image/") else "video",
     )
     response = opened.response
     declared_length = response.headers.get("content-length")
@@ -217,7 +244,7 @@ async def remote_stream_response(request: Request, media: Any, *, download: bool
         if value:
             headers[name] = value
     if download:
-        filename = safe_filename(media.platform, media.title)
+        filename = safe_filename(media.platform, media.title, media.mime_type)
         headers["content-disposition"] = f'attachment; filename="{filename}"'
     return StreamingResponse(
         iterator(),
@@ -234,24 +261,32 @@ async def preview_media(token: str, request: Request):
         return local_file_response(
             media.temporary_file,
             download=False,
-            filename=safe_filename(media.platform, media.title),
+            filename=safe_filename(media.platform, media.title, media.mime_type),
+            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=False)
 
 
 @router.get("/media/{token}/download")
-async def download_media(token: str, request: Request, user_id: int = Depends(current_user_id)):
+async def download_media(token: str, request: Request):
+    """Serve a short-lived capability URL without requiring a mini-program header.
+
+    The token is still looked up against a server-side media session, so it cannot
+    be used as an arbitrary upstream proxy URL.  In rewarded mode the entitlement
+    is evaluated for the media session owner rather than for an Authorization
+    header, which keeps copied links independently usable while preserving the
+    download gate at the time of access.
+    """
     media = await request.app.state.media_sessions.get(token)
-    if media.user_id != user_id:
-        raise AppError("AUTH_REQUIRED", "该下载链接不属于当前用户", status_code=403)
     if request.app.state.settings.download_access_mode == "rewarded_ad":
-        current = effective_entitlement(request, user_id)
+        current = effective_entitlement(request, media.user_id)
         if not current["can_download"]:
             raise entitlement_required()
     if media.temporary_file:
         return local_file_response(
             media.temporary_file,
             download=True,
-            filename=safe_filename(media.platform, media.title),
+            filename=safe_filename(media.platform, media.title, media.mime_type),
+            media_type=media.mime_type,
         )
     return await remote_stream_response(request, media, download=True)

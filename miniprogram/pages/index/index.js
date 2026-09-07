@@ -7,7 +7,6 @@ const { normalizeShareText, hasHttpUrl } = require('../../utils/input')
 const { entitlementView } = require('../../utils/time')
 const { HOME_TRANSITIONS, createStateMachine } = require('../../utils/state-machine')
 const { presentApiError } = require('../../utils/api-error')
-const { QUALITY_OPTIONS, normalizeRequestedQuality } = require('../../utils/quality')
 const { createOperationKey } = require('../../utils/idempotency')
 const { platformLabel } = require('../../utils/history')
 
@@ -30,8 +29,6 @@ Page({
     showBannerAd: false,
     mockMode: false,
     accessMode: 'free',
-    qualityOptions: QUALITY_OPTIONS,
-    selectedQuality: 'original',
     parseProgress: 0,
     parseStage: '',
     activeJobs: [],
@@ -98,7 +95,6 @@ Page({
     this.setData({
       inputText,
       charCount: inputText.length,
-      selectedQuality: normalizeRequestedQuality(draft.requested_quality)
     })
   },
 
@@ -135,12 +131,6 @@ Page({
     }
   },
 
-  selectQuality(event) {
-    if (this.data.busy) return
-    const selectedQuality = normalizeRequestedQuality(event.currentTarget.dataset.value)
-    this.setData({ selectedQuality })
-  },
-
   async startParse() {
     if (this.data.busy) return
     if (this.data.atJobLimit) {
@@ -163,14 +153,14 @@ Page({
       this.setState('parsing')
       const created = await api.createParse(
         inputText,
-        this.data.selectedQuality,
+        'original',
         createOperationKey('parse')
       )
       const jobId = created.job.job_id
       storage.setParseJob({
         job_id: jobId,
         source_text: inputText,
-        requested_quality: this.data.selectedQuality,
+        requested_quality: 'original',
         platform: created.job.platform,
         status: created.job.status,
         progress: created.job.progress || 0,
@@ -178,8 +168,9 @@ Page({
       })
       this.setData({ inputText: '', charCount: 0, parseProgress: 0, parseStage: '' })
       this.setState('idle')
-      await this.refreshActiveJobs()
-      wx.showToast({ title: '已加入提取任务', icon: 'success' })
+      wx.navigateTo({
+        url: `/pages/result/result?job_id=${encodeURIComponent(jobId)}`
+      })
     } catch (error) {
       this.setState('error')
       const presented = presentApiError(error)

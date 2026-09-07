@@ -1,56 +1,102 @@
-<view class="page-shell result-page" wx:if="{{result}}" >
+<view class="page-shell result-page" wx:if="{{result}}">
   <view class="ad-region" wx:if="{{showBannerAd}}">
-    <ad
-      wx:if="{{bannerAdUnitId}}"
-      unit-id="{{bannerAdUnitId}}"
-      ad-type="banner"
-      ad-intervals="30"
-      binderror="onBannerAdError"
-    />
+    <ad wx:if="{{bannerAdUnitId}}" unit-id="{{bannerAdUnitId}}" ad-type="banner" ad-intervals="30" binderror="onBannerAdError" />
     <view class="dev-ad" wx:else><text>开发预览广告位 · 配置真实 adUnitId 后展示</text></view>
   </view>
 
-  <view class="success-line">
-    <view class="success-icon">✓</view>
-    <text>提取完成</text>
+  <view class="success-line"><view class="success-icon">✓</view><text>提取完成</text></view>
+
+  <view class="result-tabs">
+    <view class="result-tab {{activeTab === 'video' ? 'result-tab-active' : ''}}" data-tab="video" bindtap="switchTab">视频</view>
+    <view class="result-tab {{activeTab === 'images' ? 'result-tab-active' : ''}}" data-tab="images" bindtap="switchTab">图片</view>
+    <view class="result-tab {{activeTab === 'title' ? 'result-tab-active' : ''}}" data-tab="title" bindtap="switchTab">标题</view>
   </view>
 
-  <video
-    class="video-preview"
-    src="{{result.preview_url}}"
-    controls="true"
-    object-fit="cover"
-    enable-progress-gesture="true"
-    show-center-play-btn="true"
-    aria-label="视频预览"
-  />
-
-  <view class="media-heading">
-    <text class="platform-label">{{result.platform}}</text>
-    <view class="media-copy">
-      <text class="media-title">{{result.title}}</text>
-      <text class="media-info">{{infoText}}</text>
+  <block wx:if="{{activeTab === 'video' && result.media_type !== 'image'}}">
+    <video class="video-preview" src="{{result.preview_url}}" controls="true" object-fit="cover" enable-progress-gesture="true" show-center-play-btn="true" aria-label="视频预览" />
+    <view class="media-heading">
+      <text class="platform-label">{{result.platform}}</text>
+      <view class="media-copy">
+        <text class="media-title">{{result.title}}</text>
+        <view class="media-meta-line">
+          <text class="media-info">{{result.quality_label || '清晰度未知'}}</text>
+          <text class="media-size">{{selectedSourceSizeLabel}}</text>
+          <view class="source-compact-button" wx:if="{{sourceOptions.length > 1}}" bindtap="openSourceSheet">
+            <text>{{selectedSourceLabel}}</text><text class="source-compact-arrow">⌄</text>
+          </view>
+        </view>
+      </view>
     </view>
-  </view>
+    <view class="notice-card">
+      <view class="notice-row"><text class="notice-symbol">✓</text><text>请确认你有权保存该内容</text></view>
+      <view class="notice-row {{result.notice ? '' : 'notice-row-last'}}"><text class="notice-symbol">i</text><text>{{watermarkText}}</text></view>
+      <view class="notice-row notice-row-last" wx:if="{{result.notice}}"><text class="notice-symbol">i</text><text>{{result.notice}}</text></view>
+    </view>
+    <view class="link-actions">
+      <button class="link-button" bindtap="copyCurrentLink">复制当前下载链接</button>
+      <button class="link-button" bindtap="copyAll">复制全部</button>
+    </view>
+    <view class="progress-block" wx:if="{{state === 'downloading' || state === 'saving' || state === 'success'}}">
+      <view class="progress-label"><text>{{state === 'saving' ? '正在写入相册' : '下载进度'}}</text><text>{{progress}}%</text></view>
+      <progress class="progress-native" percent="{{progress}}" stroke-width="4" activeColor="#07C160" backgroundColor="#E4E5E7" active="true" />
+    </view>
+    <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveCurrentVideo">{{saveButtonText}}</button>
+  </block>
 
-  <view class="notice-card">
-    <view class="notice-row"><text class="notice-symbol">✓</text><text>请确认你有权保存该内容</text></view>
-    <view class="notice-row {{result.notice ? '' : 'notice-row-last'}}"><text class="notice-symbol">i</text><text>{{watermarkText}}</text></view>
-    <view class="notice-row notice-row-last" wx:if="{{result.notice}}"><text class="notice-symbol">i</text><text>{{result.notice}}</text></view>
-  </view>
+  <block wx:elif="{{activeTab === 'video' && result.media_type === 'image'}}">
+    <view class="tab-empty"><text class="tab-empty-title">该作品没有视频</text><text>请切换到图片 Tab 查看可保存内容</text></view>
+  </block>
 
-  <view class="progress-block" wx:if="{{state === 'downloading' || state === 'saving' || state === 'success'}}">
-    <view class="progress-label"><text>{{state === 'saving' ? '正在写入相册' : '下载进度'}}</text><text>{{progress}}%</text></view>
-    <view class="progress-track"><view class="progress-value" style="width: {{progress}}%;"></view></view>
-  </view>
+  <block wx:elif="{{activeTab === 'images'}}">
+    <view class="image-list" wx:if="{{images.length}}">
+      <view class="image-card" wx:for="{{images}}" wx:key="image_id">
+        <image class="result-image" src="{{item.preview_url}}" mode="widthFix" lazy-load="true" />
+        <view class="image-footer"><text>{{item.alt || '解析图片'}}</text><button class="image-save-button" loading="{{savingImageId === item.image_id}}" data-id="{{item.image_id}}" bindtap="saveImage">保存图片</button></view>
+      </view>
+    </view>
+    <view class="tab-empty" wx:else><text class="tab-empty-title">暂无图片</text><text>该作品没有可安全保存的解析图片</text></view>
+  </block>
 
-  <button class="primary-button save-button" disabled="{{unlocking || state === 'loading' || state === 'downloading' || state === 'saving'}}" bindtap="saveVideo">{{saveButtonText}}</button>
+  <block wx:else>
+    <view class="title-card">
+      <text class="title-card-label">作品标题</text>
+      <text class="title-card-title">{{result.title || '未命名作品'}}</text>
+      <text class="title-card-label share-label">分享文案</text>
+      <text class="share-text">{{result.share_text || '暂无分享文案'}}</text>
+      <view class="title-actions"><button class="secondary-button" bindtap="copyTitle">复制标题</button><button class="primary-button" bindtap="copyAll">复制全部</button></view>
+    </view>
+  </block>
+
   <button class="secondary-button retry-button" bindtap="extractAgain">重新提取</button>
-
   <text class="expiry-hint">结果默认保留 24 小时，可从提取记录再次打开</text>
   <text class="mock-hint" wx:if="{{mockMode}}">当前为开发 Mock，只演示下载流程，不会写入系统相册</text>
 </view>
 
-<view class="empty-state" wx:else>
-  <text>{{state === 'loading' ? '加载结果中…' : '结果已失效'}}</text>
+<view class="source-sheet-mask" wx:if="{{sourceSheetVisible}}" catchtap="closeSourceSheet">
+  <view class="source-sheet" catchtap="noop">
+    <view class="sheet-header"><text>选择视频源</text><text class="sheet-close" bindtap="closeSourceSheet">关闭</text></view>
+    <view class="source-option {{item.source_id === selectedSourceId ? 'source-option-selected' : ''}}" wx:for="{{sourceOptions}}" wx:key="source_id" data-id="{{item.source_id}}" bindtap="selectSource">
+      <view class="source-option-number">{{item.label}}</view>
+      <view class="source-option-copy"><text>{{item.quality_label || '清晰度未知'}}</text><text>{{item.size_label || '大小未知'}}</text></view>
+      <text class="source-option-check">{{item.source_id === selectedSourceId ? '当前选择' : '选择'}}</text>
+    </view>
+  </view>
 </view>
+
+<view class="result-status-page" wx:if="{{!result && state === 'loading'}}">
+  <view class="result-status-spinner">⏳</view>
+  <text class="result-status-title">正在提取</text>
+  <text class="result-status-stage">{{parseStage || '正在等待任务处理'}}</text>
+  <view class="result-status-progress"><progress class="progress-native" percent="{{progress}}" stroke-width="4" activeColor="#07C160" backgroundColor="#E4E5E7" active="true" /><text>{{progress}}%</text></view>
+  <text class="result-status-hint">你可以离开页面，任务会在后台继续</text>
+</view>
+
+<view class="result-status-page result-error-page" wx:elif="{{!result && state === 'error'}}">
+  <view class="result-status-spinner result-error-icon">!</view>
+  <text class="result-status-title">提取失败</text>
+  <text class="result-error-code">错误码：{{parseErrorCode || 'PARSE_FAILED'}}</text>
+  <text class="result-status-stage">{{parseErrorMessage || '暂时无法完成提取'}}</text>
+  <button class="primary-button result-retry-button" bindtap="extractAgain">重新提取</button>
+</view>
+
+<view class="empty-state" wx:if="{{!result && state !== 'loading' && state !== 'error'}}"><text>结果已失效</text></view>

@@ -85,6 +85,12 @@ module.exports = {
   parseJob(jobId) {
     return request(`/parse/jobs/${jobId}`, { method: 'GET' })
   },
+  selectParseSource(jobId, selectedSourceId) {
+    return request(`/parse/jobs/${jobId}/source`, {
+      method: 'PATCH',
+      data: { selected_source_id: selectedSourceId }
+    })
+  },
   listParseJobs(limit = 20) {
     return request(`/parse/jobs?limit=${Math.max(1, Math.min(Number(limit) || 20, 50))}`, { method: 'GET' })
   },

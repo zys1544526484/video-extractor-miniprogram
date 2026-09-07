@@ -4,10 +4,73 @@
 
 ## 当前基线
 
+### 当前审计/实施交接（2026-09-05）
+
+- 最新 `main`：`b006c3f7bcf00d369d22c7e99ab2f738764ea84f`
+- PR #2：已合并到 `main`（本分支从该 SHA 创建）
+- 当前任务分支：`codex/p1-reference-result-sources`
+- 当前任务：按参考录屏重构结果页与数据契约；不是继续改动鉴权、SSRF、后台任务或广告规则。
+- 已完成：首页移除画质预选；结果页视频/图片/标题 Tab；多源安全 token、源切换同步、图片保存、标题/分享文案复制；后端旧单源缓存兼容。
+- 验证：前端 `npm test` 36 passed、`npm run validate:miniprogram` PASS；后端 pytest 100 passed、ruff PASS、compileall PASS；`git diff --check` PASS。
+- 未验证：微信开发者工具本轮未自动化截图；真实域名、真实五平台样例、真机相册保存仍为 `NOT VERIFIED`。
+- Draft PR：连接器调用 GitHub API 返回 `403 Resource not accessible by integration`，未创建成功；请使用有 Pull Request 写权限的 GitHub 账号打开 compare/new-PR 链接创建 Draft PR，不要直接合并。
+- 收尾修正：源编号改为按返回列表位置生成，兼容非 `source-N` 的后端源 ID；`npm test` 36 passed，`npm run validate:miniprogram` PASS，已随 commit `45f7c785840f498eed27f1f207d5e422cfad70fb` 推送。
+
+### 当前请求：参考结果页修正（2026-09-05）
+
+- 当前分支保持为 `codex/p1-reference-result-sources`，不新建分支、不创建 PR。
+- 本轮已推送 commits：`a4fd0b4`（媒体能力链接与图片结果）、`9f6c78f`（显式画廊图片测试）、`f3a8fd8`（源2保持、结果页布局与文档）。
+- 下载链接现在是服务端签发的短期媒体能力地址；`/media/{token}/download` 可在没有小程序 `Authorization` 请求头的情况下独立打开，仍受媒体会话 token、过期时间和 `rewarded_ad` 权益检查保护。
+- 结果页刷新或从历史记录重开时保留本地选择的源2；只有服务端不再返回该源（已真实过期/失效）才切换到可用源并提示。视频清晰度、大小和源按钮已收敛到同一行，源列表从底部弹出。
+- 图片数据只来自解析器明确提供的公开图片；视频封面不再自动变成图片项。Generic 支持直接图片和显式画廊图片；纯图片作品使用 `media_type=image`，没有安全图片时显示空状态。
+- 本轮新增/更新后端和前端回归测试；本地后端 pytest 105 项、Ruff、compileall，前端 `npm test` 39 项、`npm run validate:miniprogram` 与 `git diff --check` 均通过。
+- 微信开发者工具验证：当前 CUA 状态没有微信开发者工具原生应用，工作区也未发现官方 DevTools CLI；因此本轮不能自动打开、操作或截图开发者工具，只能记录为 `NOT VERIFIED`，不得把静态校验当作截图/真机证据。
+- 未验证：真实五平台图片/视频样例、真实 HTTPS 合法域名、真实登录、真机预览/下载/相册权限和生产部署。
+
+### 当前请求：图片链路、源持久化与复制链接修正（2026-09-05）
+
+- 分支保持为 `codex/p1-reference-result-sources`，未新建分支、未创建或合并 PR。
+- `13343a2` 已推送：`SafeHttpClient` 增加独立 `probe_image` 与 `media_kind=image` 流式校验；Generic 直接图片和网页 `<img>` 均经真实 SafeHttpClient、SSRF、大小/MIME 检查后落盘，并通过预览/下载接口回归测试。视频链路仍只接受视频 MIME。
+- `PATCH /api/v1/parse/jobs/{job_id}/source` 将 `selected_source_id` 写入任务 `result_json`；前端同时按 job_id 保存本地选择，覆盖 A 选源2→打开 B→重开 A、任务轮询续签及历史重开。源失效时才回退并提示。
+- `copyCurrentLink` 复制前会按当前 job 和选中源刷新短期 Token；刷新或复制失败不会提示成功，复制内容仅为可独立打开的安全下载地址，不包含上游直链或长期 Token。
+- 结果页底部空状态改为 `!result`；纯图片作品的视频 Tab 显示“该作品没有视频”，图片 Tab 只展示解析器返回的真实图片，不使用视频封面冒充。
+- 媒体清理额外收紧为仅删除受支持媒体扩展名，避免 TEMP_DIR 与 SQLite 共用时误删数据库；回归测试确认数据库文件保留。
+- 本轮复跑结果：后端 pytest `110 passed`、Ruff PASS、compileall PASS；前端 `npm test` `43 passed`；`npm run validate:miniprogram` `79 files checked PASS`；合成生产校验 PASS；`git diff --check` PASS。
+- 微信开发者工具原生应用和官方 CLI 当前不可用，无法完成本轮首页/Tab/源切换/图片保存/标题复制/免费保存的截图或真机操作，记录为 `NOT VERIFIED`；静态校验不替代开发者工具与真机证据。
+- 独立清理修复随后以 `fdb55f4` 提交并推送；文档更新将在该提交之后另行提交。远程 CI 由分支 push 触发，当前未通过 GitHub 连接器读取 run 详情，不能写成 CI 已通过。
+
+### Issue #3：P1 结果页单图语义与视觉验收（2026-09-05）
+
+- Issue #3 要求已执行：Generic 解析器现在区分“仅 og:image 封面”和“显式 img/JSON-LD 图片”。纯图片页即使显式图片与 `og:image` 相同也会返回真实图片；视频页重复封面不会进入作品图片列表。
+- `DIRECT_IMAGE_EXTENSIONS` 已移除 `.gif`，与 SafeHttpClient 和媒体会话当前只接受 JPEG、PNG、WebP 的安全格式保持一致；新增 GIF 不进入图片链路的回归测试。
+- 新增真实 SafeHttpClient + 模拟网络响应的端到端单图页面测试，覆盖 HTML 解析、图片探测、落盘、短期预览和下载；解析器单测覆盖显式封面、JSON-LD 图片、视频重复封面与 GIF 边界。
+- 平台状态明确保持：抖音、小红书、快手、微博、Bilibili 的图文解析均为 `NOT VERIFIED`。已有 Bilibili 视频样例只证明公开视频链路，不代表图文解析通过。
+- 本次实现提交为 `cfbeb76`，已推送到原分支；尚未合并，按 Issue 要求后续仅创建 Draft PR，不标记 ready。
+- 交付门禁：后端 pytest `113 passed`（2 warnings）、Ruff PASS、compileall PASS；前端 Node `43 passed`；小程序校验 `79 files checked PASS`；合成生产校验 PASS；`git diff --check` PASS。
+
+### 当前请求：P1 任务跳转、轮询与快速媒体路径收尾（2026-09-05）
+
+- 当前分支保持为 `codex/p1-reference-result-sources`，不新建分支、不合并 PR。当前基线仍为 main `b006c3f7bcf00d369d22c7e99ab2f738764ea84f`；PR #2 已合并；PR #5 保持 Draft、目标为 `main`。
+- 首页在 `POST /parse` 成功创建任务后立即跳转 `pages/result/result?job_id=...`。结果页自动轮询任务状态，显示进度/阶段；ready 后加载视频、图片、标题、真实来源和画质；failed 后显示后端错误码、中文原因和“重新提取”。历史记录使用同一错误明细，不再只显示“提取失败”。
+- `result.wxml` 的下载/解析进度条已改用微信原生 `progress`，不再使用动态宽度 style，消除开发者工具 CSS 检查错误来源。
+- 新增远程媒体会话字段和迁移 `backend/alembic/versions/0004_remote_media_sessions.py`。对于已通过 SafeHttpClient 元数据探测、SSRF 检查、MIME/大小限制的 HTTPS MP4，解析阶段不读取完整媒体体；仅在预览/保存请求时使用短期媒体 Token 代理传输。非 HTTPS、非 MP4、降档或探测不完整的源继续走现有分块下载/ffprobe/处理回退路径。旧本地文件会话保持兼容，媒体清理规则未放宽。
+- 本轮测试：后端 pytest `116 passed`（2 warnings）；Ruff PASS；compileall PASS；前端 Node `46 passed`；`npm run validate:miniprogram` `80 files checked` PASS；合成 `npm run validate:production` PASS；`git diff --check` PASS。
+- 人工验证仍未完成：当前环境没有可操作的微信开发者工具原生应用或官方 CLI，无法提供本轮截图；真实微信登录、合法 HTTPS 域名、五个平台公开样例、真机网络/相册保存和生产部署均继续标记 `NOT VERIFIED`。本轮未接入 SPAPI 或 media-parser。
+- PR #5 已确认仍为 Draft、目标为 `main`，当前 head 为 `84ec701d80a622e29d523f3390ba4aa4e7434d89`。完成 push 后尝试通过 GitHub 连接器更新描述，但 GitHub API 返回 `403 Resource not accessible by integration`；网页入口也处于未登录状态，因此描述尚未更新。保持 Draft，不合并，需具备 PR 写权限的 GitHub 账号手动更新。
+
+### 当前请求：P1 结果页 hide/show 轮询恢复（2026-09-06）
+
+- 分支保持为 `codex/p1-reference-result-sources`，PR #5 保持 Draft，不创建新分支、不合并。
+- 修复竞态：当结果页轮询中触发 `onHide` 后立即 `onShow`，`onShow` 不再因旧轮询仍在执行而丢弃恢复请求。页面记录恢复意图，旧 generation 退出后才启动一个新轮询循环。
+- 所有轮询回调、成功和失败处理均检查当前 `job_id`、页面可见性和 generation；旧轮询无法覆盖新轮询的结果。任意时刻只允许一个有效轮询循环。
+- 新增页面级 Node 回归：轮询等待期间依次 `onHide`、`onShow`，旧轮询随后返回旧结果；断言旧结果被忽略，第二次轮询启动并最终显示恢复后的结果。
+- 本轮验证：后端 pytest `116 passed`（2 warnings）；前端 Node `47 passed`；Ruff、compileall、`npm run validate:miniprogram`（80 files）、合成 `npm run validate:production` 和 `git diff --check` 均 PASS。
+- Browser 插件不可用，且当前环境没有可操作的微信开发者工具；因此本轮以页面级自动化测试验证生命周期，微信开发者工具/真机 hide/show 操作仍为 `NOT VERIFIED`。
+
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`
 - 目标基线：`main`
-- 任务分支：`codex/p0-security-production-gates`
-- `main` 已推送的基线 commit：`519da08d9873ecf099816d18d99b2c4908d68fef`
+- 任务分支：`codex/p1-reference-result-sources`
+- `main` 已推送的基线 commit：`b006c3f7bcf00d369d22c7e99ab2f738764ea84f`
 - 小程序安全检查点：`42334a8bc2a9478bd6926789157494cec23f6d66`
 - Draft PR：当前分支尚未创建（历史 PR #1 属于已合并的 bootstrap 分支）
 - 当前 P0 修复状态：`AUTOMATED_GATES_PASS_EXTERNAL_NOT_VERIFIED`；Token 时间语义、生产配置校验和 Caddy CI 门禁已完成自动化检查，真实部署与真机仍待验证。

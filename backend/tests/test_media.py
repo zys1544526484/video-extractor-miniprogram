@@ -61,6 +61,10 @@ def test_preview_is_capability_url_but_download_needs_entitlement(
     assert "\r" not in disposition and "\n" not in disposition
     assert "attachment" in disposition
 
+    copied_link = client.get(f"/api/v1/media/{token}/download")
+    assert copied_link.status_code == 200
+    assert copied_link.content == downloaded.content
+
 
 def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, str]) -> None:
     token, _ = create_local_media(client, auth_headers)
@@ -73,7 +77,7 @@ def test_range_and_tampered_token(client: TestClient, auth_headers: dict[str, st
     assert missing.json()["error"]["code"] == "MEDIA_SESSION_EXPIRED"
 
 
-def test_free_mode_download_requires_owner_but_not_entitlement(
+def test_free_mode_download_link_is_independent_of_authorization(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     client.app.state.settings.download_access_mode = "free"
@@ -82,7 +86,9 @@ def test_free_mode_download_requires_owner_but_not_entitlement(
     unauthenticated = client.get(f"/api/v1/media/{token}/download")
     downloaded = client.get(f"/api/v1/media/{token}/download", headers=auth_headers)
 
-    assert unauthenticated.status_code == 401
+    # A copied capability URL must work when opened outside the mini program;
+    # the short-lived random token still binds it to a server media session.
+    assert unauthenticated.status_code == 200
     assert downloaded.status_code == 200
     assert downloaded.content.startswith(b"0123456789")
     assert downloaded.headers["content-type"].startswith("video/mp4")
@@ -105,3 +111,58 @@ def test_media_token_survives_store_restart(
 
     assert restored.user_id == user_id
     assert restored.temporary_file.read_bytes().startswith(b"0123456789")
+
+
+def test_image_media_uses_image_content_type_and_filename(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    user_id = decode_auth_token(token, client.app.state.settings.app_token_secret.get_secret_value())
+    directory = client.app.state.settings.temp_dir / "image-session"
+    directory.mkdir(parents=True, exist_ok=True)
+    file = directory / "cover.jpg"
+    file.write_bytes(b"fake-jpeg")
+    media = asyncio.run(
+        client.app.state.media_sessions.create(
+            user_id=user_id,
+            platform="测试平台",
+            title="封面",
+            upstream_url=None,
+            temporary_file=str(file),
+            required_headers={},
+            mime_type="image/jpeg",
+            size_bytes=file.stat().st_size,
+        )
+    )
+    client.app.state.settings.download_access_mode = "free"
+    response = client.get(f"/api/v1/media/{media.token}/download", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.headers["content-disposition"].endswith(".jpg\"")
+
+
+def test_remote_media_session_keeps_validated_source_for_on_demand_streaming(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    user_id = decode_auth_token(token, client.app.state.settings.app_token_secret.get_secret_value())
+    media = asyncio.run(
+        client.app.state.media_sessions.create(
+            user_id=user_id,
+            platform="测试平台",
+            title="远程视频",
+            upstream_url="https://cdn.example/video.mp4",
+            temporary_file=None,
+            required_headers={
+                "Referer": "https://example.com/watch",
+                "X-Unsafe": "discarded",
+            },
+            mime_type="video/mp4",
+            size_bytes=123,
+        )
+    )
+
+    restored = asyncio.run(client.app.state.media_sessions.get(media.token))
+    assert restored.temporary_file is None
+    assert restored.upstream_url == "https://cdn.example/video.mp4"
+    assert restored.required_headers == {"Referer": "https://example.com/watch"}
