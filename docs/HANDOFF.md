@@ -4,6 +4,12 @@
 
 ## 当前基线
 
+### 当前请求：P3 运营者服务器专用抖音会话 PoC（2026-09-07）
+
+- 分支：`codex/p3-douyin-session-poc`，从已核对的 P2 HEAD `9275b0a11658dc2ccf788acfbb7a8a6b44b585ac` 创建；不修改 `main`、不使用 force push、不创建或合并 PR。
+- 用户已明确授权**运营者手动登录的服务器专用会话**，但未授权用户 Cookie、自动登录、验证码/滑块/设备验证/风控处理、私密或受限内容访问。该路线默认关闭且不接入当前生产解析流程。
+- 详细边界见 `docs/ADR/0001-douyin-server-session-poc.md`。会话文件必须存放在仓库外，且 `.gitignore` 增加了 storage-state 防护；任何测试和交付不得写入真实会话、账号或媒体签名地址。
+
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
 - 任务分支：`codex/p2-douyin-parser-poc`；开始基线已核对为 `af3f2bc452a317675f67c25b0d099b53b8a9d60d`，工作区干净。本轮未切换或修改 `main`，不使用 force push，不合并。

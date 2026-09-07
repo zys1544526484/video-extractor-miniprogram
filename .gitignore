@@ -15,6 +15,9 @@ backend/.env.*
 miniprogram/config/env.local.js
 miniprogram/project.config.json
 miniprogram/project.private.config.json
+*.storage-state.json
+*douyin*session*.json
+backend/douyin_session_state/
 node_modules/
 tmp/
 .DS_Store
