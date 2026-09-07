@@ -40,6 +40,21 @@ QUALITY_LABELS = {
 }
 
 
+EXPLICIT_CONTENT_RESTRICTION_MARKERS = (
+    "private video",
+    "this video is private",
+    "friends only",
+    "only available to friends",
+    "login required",
+    "sign in to view",
+    "must be logged in",
+    "members only",
+    "has been removed",
+    "has been deleted",
+    "video is deleted",
+)
+
+
 def reject_live_streams(info: dict[str, Any], *, incomplete: bool) -> str | None:
     if not incomplete and info.get("is_live"):
         return "live streams are not supported"
@@ -49,6 +64,26 @@ def reject_live_streams(info: dict[str, Any], *, incomplete: bool) -> str | None
 class YtDlpAdapter:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+
+    @staticmethod
+    def classify_download_error(platform: str, message: str) -> AppError:
+        """Map only explicit upstream access facts to a restricted-content error.
+
+        Generic mentions of cookies or availability often indicate an extractor
+        compatibility failure, not proof that the work is private.  In
+        particular, a Douyin short URL that lost its work ID must remain
+        retryable instead of being presented as a private work.
+        """
+        normalized = message.lower()
+        if any(marker in normalized for marker in EXPLICIT_CONTENT_RESTRICTION_MARKERS):
+            return AppError("CONTENT_RESTRICTED", "该内容不可公开访问")
+        if platform == "douyin" and "unsupported url" in normalized:
+            return AppError(
+                "DOUYIN_RESOLVE_FAILED",
+                "抖音短链接未能解析到具体作品，请稍后重试",
+                retryable=True,
+            )
+        return AppError("PLATFORM_CHANGED", "当前平台解析异常，请稍后再试", retryable=True)
 
     @staticmethod
     def _first_entry(info: dict[str, Any]) -> dict[str, Any]:
@@ -341,10 +376,7 @@ class YtDlpAdapter:
         except DownloadError as error:
             if temp_dir is not None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            message = str(error).lower()
-            if any(word in message for word in ("private", "login", "cookie", "member", "unavailable")):
-                raise AppError("CONTENT_RESTRICTED", "该内容不可公开访问") from error
-            raise AppError("PLATFORM_CHANGED", "当前平台解析异常，请稍后再试", retryable=True) from error
+            raise self.classify_download_error(platform, str(error)) from error
         except Exception as error:
             if temp_dir is not None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -526,6 +558,7 @@ class YtDlpAdapter:
             detail = message.get("error") or {}
             allowed_codes = {
                 "CONTENT_RESTRICTED",
+                "DOUYIN_RESOLVE_FAILED",
                 "MEDIA_FORMAT_UNSUPPORTED",
                 "MEDIA_TOO_LARGE",
                 "PARSE_FAILED",

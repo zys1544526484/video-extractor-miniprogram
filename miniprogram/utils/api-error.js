@@ -6,6 +6,12 @@ const PLATFORM_LIMIT_CODES = new Set([
 ])
 
 function presentApiError(error = {}) {
+  if (error.code === 'DOUYIN_RESOLVE_FAILED') {
+    return {
+      title: '抖音链接解析失败',
+      message: error.message || '抖音短链接未能解析到具体作品，请稍后重试'
+    }
+  }
   if (PLATFORM_LIMIT_CODES.has(error.code)) {
     return {
       title: '当前平台暂时受限',

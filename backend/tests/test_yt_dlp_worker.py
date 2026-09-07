@@ -291,6 +291,28 @@ def test_bilibili_selector_rejects_when_compatible_pair_is_too_large() -> None:
     assert caught.value.code == "MEDIA_TOO_LARGE"
 
 
+@pytest.mark.parametrize(
+    ("platform", "message", "expected_code", "expected_retryable"),
+    [
+        ("douyin", "ERROR: Unsupported URL: https://www.douyin.com/", "DOUYIN_RESOLVE_FAILED", True),
+        ("douyin", "ERROR: fresh cookies are required", "PLATFORM_CHANGED", True),
+        ("weibo", "ERROR: Video unavailable", "PLATFORM_CHANGED", True),
+        ("douyin", "ERROR: This video is private", "CONTENT_RESTRICTED", False),
+        ("douyin", "ERROR: video has been deleted", "CONTENT_RESTRICTED", False),
+    ],
+)
+def test_download_error_classification_requires_explicit_access_fact(
+    platform: str,
+    message: str,
+    expected_code: str,
+    expected_retryable: bool,
+) -> None:
+    error = YtDlpAdapter.classify_download_error(platform, message)
+
+    assert error.code == expected_code
+    assert error.retryable is expected_retryable
+
+
 @pytest.mark.asyncio
 async def test_adapter_worker_blocks_loopback_without_connecting(settings, monkeypatch) -> None:
     async def forbidden_asyncio_subprocess(*args, **kwargs):

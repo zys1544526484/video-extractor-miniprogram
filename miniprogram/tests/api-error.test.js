@@ -15,6 +15,17 @@ test('ordinary API errors retain the stable user message', () => {
   assert.deepEqual(result, { title: '提取失败', message: '未识别到有效链接' })
 })
 
+test('douyin short-link resolution failure keeps its actionable backend message', () => {
+  const result = presentApiError({
+    code: 'DOUYIN_RESOLVE_FAILED',
+    message: '抖音短链接未能解析到具体作品，请稍后重试'
+  })
+  assert.deepEqual(result, {
+    title: '抖音链接解析失败',
+    message: '抖音短链接未能解析到具体作品，请稍后重试'
+  })
+})
+
 test('oversized selected quality asks the user to choose a lower tier', () => {
   const result = presentApiError({
     code: 'MEDIA_TOO_LARGE',
