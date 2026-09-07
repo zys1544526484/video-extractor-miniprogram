@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .douyin_session.models import validate_storage_state_path
+
 PLACEHOLDER_PATTERN = re.compile(
     r"example\.(?:com|net|org)|replace|placeholder|change[-_]?me|your[-_]?",
     re.IGNORECASE,
@@ -39,6 +41,10 @@ class Settings(BaseSettings):
     parse_timeout_seconds: int = 1800
     douyin_metadata_timeout_seconds: int = 8
     douyin_yt_dlp_fallback_timeout_seconds: int = 4
+    douyin_session_enabled: bool = False
+    douyin_storage_state_path: Path | None = None
+    douyin_session_timeout_seconds: int = 30
+    douyin_session_max_concurrency: int = 1
     media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 86400
     media_access_token_ttl_seconds: int = 900
@@ -74,6 +80,10 @@ class Settings(BaseSettings):
             raise ValueError("DOUYIN_METADATA_TIMEOUT_SECONDS 必须在 1..30 秒范围内")
         if not 1 <= self.douyin_yt_dlp_fallback_timeout_seconds <= 15:
             raise ValueError("DOUYIN_YT_DLP_FALLBACK_TIMEOUT_SECONDS 必须在 1..15 秒范围内")
+        if not 1 <= self.douyin_session_timeout_seconds <= 120:
+            raise ValueError("DOUYIN_SESSION_TIMEOUT_SECONDS 必须在 1..120 秒范围内")
+        if self.douyin_session_max_concurrency != 1:
+            raise ValueError("DOUYIN_SESSION_MAX_CONCURRENCY 当前必须为 1")
         if not 1 <= self.global_parse_concurrency <= 8:
             raise ValueError("GLOBAL_PARSE_CONCURRENCY 必须在 1..8 范围内")
         if not 1 <= self.parse_worker_concurrency <= 8:
@@ -145,6 +155,12 @@ class Settings(BaseSettings):
                 raise ValueError("生产 APP_TOKEN_SECRET 必须是至少 32 位的非占位高熵随机值")
             if self.ad_attempt_min_seconds < 3:
                 raise ValueError("生产 AD_ATTEMPT_MIN_SECONDS 不得低于 3 秒")
+            if self.douyin_session_enabled:
+                validate_storage_state_path(
+                    self.douyin_storage_state_path,
+                    require_exists=True,
+                    require_private_permissions=True,
+                )
         return self
 
 

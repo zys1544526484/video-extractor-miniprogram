@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+douyin-session = [
+  "playwright>=1.56,<2"
+]
 dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=1,<2",
