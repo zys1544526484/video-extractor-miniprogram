@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import logging
 import re
 import time
 from typing import TYPE_CHECKING
@@ -41,6 +42,7 @@ PUBLIC_RESTRICTION_MARKERS = (
     "login required",
 )
 URL_PATTERN = re.compile(r"https?:(?:\\/|\\u002[fF]|/)[^\"'\\<>\s]+", re.IGNORECASE)
+logger = logging.getLogger(__name__)
 
 
 def _decode_json_string(value: str) -> str:
@@ -158,8 +160,29 @@ class DouyinParser(BaseParser):
             retryable=True,
         )
 
-    async def _parse_public_document(self, url: str, context: ParseContext) -> ParserResultModel:
+    @staticmethod
+    def _safe_log_url(url: str) -> str:
+        parsed = urlsplit(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+    @staticmethod
+    def _log_outcome(*, outcome: str, started: float, final_url: str, error_code: str = "") -> None:
+        logger.info(
+            "douyin_public_parse outcome=%s error_code=%s elapsed_ms=%d final_url=%s",
+            outcome,
+            error_code or "NONE",
+            int((time.monotonic() - started) * 1000),
+            DouyinParser._safe_log_url(final_url),
+        )
+
+    async def _parse_public_document(
+        self,
+        url: str,
+        context: ParseContext,
+        resolved: dict[str, str],
+    ) -> ParserResultModel:
         final_url, document, _headers = await context.http.get_text(url)
+        resolved["url"] = final_url
         work_id = self._work_id_from_url(final_url) or self._work_id_from_html(document)
         if not work_id:
             raise self._resolve_failed()
@@ -181,13 +204,28 @@ class DouyinParser(BaseParser):
             context.settings.parse_timeout_seconds,
             context.settings.douyin_metadata_timeout_seconds,
         )
+        resolved = {"url": url}
         try:
             async with asyncio.timeout(total_budget):
-                return await self._parse_public_document(url, context)
+                result = await self._parse_public_document(url, context, resolved)
+                self._log_outcome(outcome="success", started=started, final_url=resolved["url"])
+                return result
         except TimeoutError as error:
+            self._log_outcome(
+                outcome="failed",
+                started=started,
+                final_url=resolved["url"],
+                error_code="PARSE_TIMEOUT",
+            )
             raise AppError("PARSE_TIMEOUT", "抖音公开页面解析超时，请稍后重试", retryable=True) from error
         except AppError as error:
             if error.code in {"CONTENT_RESTRICTED", "URL_INVALID"}:
+                self._log_outcome(
+                    outcome="failed",
+                    started=started,
+                    final_url=resolved["url"],
+                    error_code=error.code,
+                )
                 raise
             public_error = error
 
@@ -199,22 +237,54 @@ class DouyinParser(BaseParser):
         )
         if fallback_timeout < 1:
             if public_error.code == "UPSTREAM_TIMEOUT":
+                self._log_outcome(
+                    outcome="failed",
+                    started=started,
+                    final_url=resolved["url"],
+                    error_code="PARSE_TIMEOUT",
+                )
                 raise AppError("PARSE_TIMEOUT", "抖音公开页面解析超时，请稍后重试", retryable=True)
+            self._log_outcome(
+                outcome="failed",
+                started=started,
+                final_url=resolved["url"],
+                error_code="DOUYIN_RESOLVE_FAILED",
+            )
             raise self._resolve_failed() from public_error
         try:
-            return await self.fallback.extract(
+            result = await self.fallback.extract(
                 url,
                 "douyin",
                 requested_quality=context.requested_quality,
                 timeout_seconds=fallback_timeout,
             )
+            self._log_outcome(outcome="fallback_success", started=started, final_url=resolved["url"])
+            return result
         except AppError as fallback_error:
             if fallback_error.code == "CONTENT_RESTRICTED":
+                self._log_outcome(
+                    outcome="failed",
+                    started=started,
+                    final_url=resolved["url"],
+                    error_code=fallback_error.code,
+                )
                 raise
             if fallback_error.code == "PARSE_TIMEOUT":
+                self._log_outcome(
+                    outcome="failed",
+                    started=started,
+                    final_url=resolved["url"],
+                    error_code="PARSE_TIMEOUT",
+                )
                 raise AppError(
                     "PARSE_TIMEOUT",
                     "抖音公开页面解析超时，请稍后重试",
                     retryable=True,
                 ) from fallback_error
+            self._log_outcome(
+                outcome="failed",
+                started=started,
+                final_url=resolved["url"],
+                error_code="DOUYIN_RESOLVE_FAILED",
+            )
             raise self._resolve_failed() from fallback_error

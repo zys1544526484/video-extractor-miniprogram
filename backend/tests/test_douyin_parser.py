@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -90,6 +91,28 @@ async def test_direct_work_url_uses_public_html_without_yt_dlp(settings) -> None
     assert result.canonical_url == CANONICAL_URL
     assert result.sources[0].source_id == "source-1"
     assert fallback.calls == []
+
+
+@pytest.mark.asyncio
+async def test_parse_log_records_sanitised_final_url_and_elapsed_time(settings, caplog) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=public_document())
+
+    caplog.set_level(logging.INFO, logger="app.parsers.douyin")
+    await DouyinParser(Fallback()).parse(
+        f"{CANONICAL_URL}?sensitive_query=never-log-this",
+        context(settings, safe_http(handler)),
+    )
+
+    message = next(
+        record.getMessage()
+        for record in caplog.records
+        if "douyin_public_parse" in record.getMessage()
+    )
+    assert "outcome=success" in message
+    assert "elapsed_ms=" in message
+    assert CANONICAL_URL in message
+    assert "sensitive_query" not in message
 
 
 @pytest.mark.asyncio
