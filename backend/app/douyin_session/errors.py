@@ -7,6 +7,10 @@ def session_disabled() -> AppError:
     return AppError("DOUYIN_SESSION_DISABLED", "抖音专用会话功能未启用", status_code=503)
 
 
+def session_config_invalid() -> AppError:
+    return AppError("DOUYIN_SESSION_CONFIG_INVALID", "抖音专用会话配置无效或未完成", status_code=503)
+
+
 def session_expired() -> AppError:
     return AppError("DOUYIN_SESSION_EXPIRED", "抖音专用会话已失效，请由运营者重新手动登录", status_code=503)
 

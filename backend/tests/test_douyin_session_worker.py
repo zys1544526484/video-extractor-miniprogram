@@ -168,6 +168,21 @@ async def test_session_worker_rejects_invalid_target_and_ssrf_media(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_session_worker_maps_missing_state_configuration_to_safe_error(tmp_path: Path, caplog) -> None:
+    worker = DouyinSessionWorker(
+        settings=Settings(app_env="test", douyin_session_enabled=True),
+        http=safe_http(video_handler),
+        browser=FakeBrowser(CapturedMedia(target_id=WORK_ID, media_url=MEDIA_URL)),
+    )
+
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+
+    assert caught.value.code == "DOUYIN_SESSION_CONFIG_INVALID"
+    assert "DOUYIN_STORAGE_STATE_PATH" not in caplog.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("headers", "expected_code"),
     [

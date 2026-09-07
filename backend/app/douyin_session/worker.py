@@ -14,6 +14,7 @@ from .bootstrap import _load_async_playwright
 from .errors import (
     risk_controlled,
     session_bound_media,
+    session_config_invalid,
     session_disabled,
     session_expired,
     session_media_not_found,
@@ -203,10 +204,14 @@ class DouyinSessionWorker:
         target_id = target_id_from_url(target_url)
         if target_id is None:
             raise AppError("URL_INVALID", "抖音专用会话只接受已确认的作品链接")
-        state_path = validate_storage_state_path(
-            self.settings.douyin_storage_state_path,
-            require_exists=True,
-        )
+        try:
+            state_path = validate_storage_state_path(
+                self.settings.douyin_storage_state_path,
+                require_exists=True,
+            )
+        except ValueError as error:
+            logger.warning("douyin_session_worker outcome=config_invalid")
+            raise session_config_invalid() from error
         started = time.monotonic()
         async with self._semaphore:
             try:
