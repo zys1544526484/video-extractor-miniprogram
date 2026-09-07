@@ -63,7 +63,15 @@ def validate_storage_state_path(
 def target_id_from_url(url: str) -> str | None:
     """Accept exactly a public www.douyin.com /video/{numeric-id} URL."""
     parsed = urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname != "www.douyin.com":
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "www.douyin.com"
+        or parsed.username
+        or parsed.password
+        or parsed.port is not None
+        or parsed.query
+        or parsed.fragment
+    ):
         return None
     parts = [part for part in parsed.path.split("/") if part]
     if len(parts) != 2 or parts[0] != "video" or not parts[1].isdigit():
