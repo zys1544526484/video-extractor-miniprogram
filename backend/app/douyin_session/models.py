@@ -105,6 +105,40 @@ def target_id_from_url(url: str) -> str | None:
     return parts[1]
 
 
+def normalise_douyin_redirect_target(url: str) -> tuple[str, str] | None:
+    """Safely convert a validated public redirect target into a canonical URL.
+
+    This deliberately accepts query parameters only while resolving an external
+    short link.  The session worker continues to require the exact, query-free
+    canonical URL returned here.
+    """
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return None
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username
+        or parsed.password
+        or port is not None
+    ):
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    work_id: str | None = None
+    if hostname in {"douyin.com", "www.douyin.com"}:
+        if len(parts) == 2 and parts[0] == "video" and parts[1].isdigit():
+            work_id = parts[1]
+    elif hostname == "www.iesdouyin.com":
+        if len(parts) == 3 and parts[:2] == ["share", "video"] and parts[2].isdigit():
+            work_id = parts[2]
+    if work_id is None:
+        return None
+    return f"https://www.douyin.com/video/{work_id}", work_id
+
+
 @dataclass(frozen=True)
 class CapturedMedia:
     """Internal browser capture; never serialise or log its URL."""

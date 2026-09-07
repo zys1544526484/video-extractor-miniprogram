@@ -164,11 +164,17 @@ class SafeHttpClient:
         headers: dict[str, str] | None,
         read_limit: int,
         allowed_error_statuses: set[int],
+        redirect_validator: Callable[[str], None] | None = None,
+        redirect_chain: list[str] | None = None,
     ) -> tuple[str, Mapping[str, str], int, bytes]:
         current = url
+        if redirect_chain is not None:
+            redirect_chain.append(current)
         async with self._httpx_client() as client:
             for redirect_count in range(self.max_redirects + 1):
                 await self.validate_url(current)
+                if redirect_validator is not None:
+                    redirect_validator(current)
                 try:
                     async with client.stream(method, current, headers=headers) as response:
                         if response.status_code in REDIRECT_STATUSES:
@@ -176,6 +182,8 @@ class SafeHttpClient:
                             if not location or redirect_count >= self.max_redirects:
                                 raise AppError("UPSTREAM_TIMEOUT", "上游重定向过多", retryable=True)
                             current = urljoin(current, location)
+                            if redirect_chain is not None:
+                                redirect_chain.append(current)
                             continue
                         self._raise_for_status(response.status_code, allowed_error_statuses)
                         body = bytearray()
@@ -199,11 +207,17 @@ class SafeHttpClient:
         headers: dict[str, str] | None,
         read_limit: int,
         allowed_error_statuses: set[int],
+        redirect_validator: Callable[[str], None] | None = None,
+        redirect_chain: list[str] | None = None,
     ) -> tuple[str, Mapping[str, str], int, bytes]:
         current = url
+        if redirect_chain is not None:
+            redirect_chain.append(current)
         async with self._aiohttp_session() as session:
             for redirect_count in range(self.max_redirects + 1):
                 await self.validate_url(current)
+                if redirect_validator is not None:
+                    redirect_validator(current)
                 try:
                     async with session.request(
                         method,
@@ -216,6 +230,8 @@ class SafeHttpClient:
                             if not location or redirect_count >= self.max_redirects:
                                 raise AppError("UPSTREAM_TIMEOUT", "上游重定向过多", retryable=True)
                             current = urljoin(current, location)
+                            if redirect_chain is not None:
+                                redirect_chain.append(current)
                             continue
                         self._raise_for_status(response.status, allowed_error_statuses)
                         body = bytearray()
@@ -239,11 +255,15 @@ class SafeHttpClient:
         headers: dict[str, str] | None = None,
         read_limit: int = 0,
         allowed_error_statuses: set[int] | None = None,
+        redirect_validator: Callable[[str], None] | None = None,
+        redirect_chain: list[str] | None = None,
     ) -> tuple[str, Mapping[str, str], int, bytes]:
         arguments = {
             "headers": headers,
             "read_limit": read_limit,
             "allowed_error_statuses": allowed_error_statuses or set(),
+            "redirect_validator": redirect_validator,
+            "redirect_chain": redirect_chain,
         }
         if self.transport is not None:
             return await self._request_httpx(method, url, **arguments)
@@ -263,6 +283,29 @@ class SafeHttpClient:
         if "charset=" in content_type:
             encoding = content_type.rsplit("charset=", 1)[-1].split(";", 1)[0].strip()
         return final_url, body.decode(encoding, errors="replace"), dict(headers)
+
+    async def resolve_redirect_chain(
+        self,
+        url: str,
+        *,
+        max_bytes: int = 256 * 1024,
+        redirect_validator: Callable[[str], None] | None = None,
+    ) -> tuple[str, list[str]]:
+        """Resolve a bounded redirect chain while validating every hop.
+
+        Callers can provide a narrow, platform-specific validator in addition to
+        the existing SSRF validation.  The returned URLs are for internal
+        inspection only and must be redacted before logging.
+        """
+        redirect_chain: list[str] = []
+        final_url, _headers, _status, _body = await self._request(
+            "GET",
+            url,
+            read_limit=max_bytes,
+            redirect_validator=redirect_validator,
+            redirect_chain=redirect_chain,
+        )
+        return final_url, redirect_chain
 
     @staticmethod
     def _declared_size(headers: Mapping[str, str]) -> int | None:
