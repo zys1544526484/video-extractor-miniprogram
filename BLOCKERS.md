@@ -15,6 +15,6 @@
 
 当前首版为正式免费模式，广告资格和 adUnitId 不再阻塞上线。备案域名、真实微信凭证、服务器、五平台样例和真机仍属于外部 Gate，不能用 Mock 或自动测试代替。
 
-P3 专用会话 PoC 也不消除抖音发布阻塞：尚未由运营者在仓库外路径完成手动登录，当前环境未验证 Playwright 可视浏览器，也没有取得目标作品媒体地址或完成无 Cookie 的 1024-byte 复验。若启用生产 PoC，`DOUYIN_STORAGE_STATE_PATH` 必须是仓库外、存在、JSON 格式有效且权限安全的文件；会话失效、验证码或风控必须停止而不是规避。该 PoC 尚未接入生产解析流程。
+P3 专用会话 PoC 也不消除抖音发布阻塞：尚未由运营者在仓库外路径完成手动登录，当前环境未验证 Playwright 可视浏览器，也没有取得目标作品媒体地址或完成无 Cookie 的 1024-byte 复验。若启用生产 PoC，`DOUYIN_STORAGE_STATE_PATH` 必须是仓库外、存在、JSON 格式有效且权限安全的文件；bootstrap 必须先发现非空 `douyin.com` Cookie，失败时保留旧文件且不生成新会话。会话失效、可见验证码/风控或仅会话可下载媒体必须停止而不是规避。该 PoC 尚未接入生产解析流程。
 
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。

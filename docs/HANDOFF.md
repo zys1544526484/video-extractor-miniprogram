@@ -12,6 +12,8 @@
 - 已推送独立提交：`930df41`（范围授权与 ADR）、`f2a435c`（P2 目标身份收紧）、`c7c35cd`（可选 bootstrap 与配置）、`dddf9b1`（隔离 Worker PoC）、`6863277`（安全边界测试）。Playwright 为额外可选依赖，正常 API、CI 与 Docker 默认不会安装浏览器；所有 import 均延迟到明确 CLI/Worker 调用。
 - Worker 只接受无查询串的 `https://www.douyin.com/video/{数字ID}`；先确认页面目标 ID，随后才用无 Cookie `SafeHttpClient` 探测/Range 读取候选视频。结果模型和日志不包含 Cookie、storage state、完整签名媒体 URL 或查询串。登录失效、风险页、目标不一致、session-bound 媒体和超时使用稳定错误停止。
 - 本轮自动验证：后端 pytest `154 passed`（2 warnings）、Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`，小程序静态与合成 production 配置校验（80 files）PASS。Docker CLI 在本机不可用。当前没有运行手动登录或真实会话 smoke，真实媒体地址、无 Cookie 1024-byte 读取、实际耗时和真机流程均为 `NOT VERIFIED`；不要将 PoC 代码描述为抖音下载成功。
+- 审查修正已推送：`4869df2`（严格目标页后的主播放器等待、可见风控判断、原子 bootstrap 与安全请求头）、`9a64995`（环境变量驱动且输出脱敏的 smoke CLI）、`6a39fb2`（路径/查询签名日志脱敏回归）。Playwright 适配器级 fake-browser 测试覆盖 CDN URL 无作品 ID、延迟 `currentSrc`、广告/推荐网络候选不替代主播放器、页面目标不一致、隐藏 captcha 文本和可见风控组件。
+- 当前复跑：后端 pytest `168 passed`（2 warnings）；Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`；小程序静态及合成 production 校验均为 80 files PASS。Docker CLI 仍不可用；不执行真实登录或 smoke，等待远程 CI 与后续人工会话验证。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 

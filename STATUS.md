@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-- P3 抖音运营者服务器专用会话 PoC：`IMPLEMENTED / NOT VERIFIED`。默认 `DOUYIN_SESSION_ENABLED=false`，不接入现有 API 或小程序流程。可选 bootstrap 仅在可视浏览器中等待运营者手动登录，并把 Playwright storage state 保存至仓库外路径；Worker 只接受精确的公开 `/video/{数字ID}`，用无 Cookie 的 `SafeHttpClient` 复验媒体首 1024 字节。当前环境没有完成手动登录，也没有真实会话或真实媒体地址；因此没有把抖音下载标记为成功。登录失效、验证码/风控、目标不一致、仅会话可访问媒体、SSRF、非视频、超限和超时均有自动回归覆盖。
+- P3 抖音运营者服务器专用会话 PoC：`IMPLEMENTED / NOT VERIFIED`。默认 `DOUYIN_SESSION_ENABLED=false`，不接入现有 API 或小程序流程。可选 bootstrap 仅在可视浏览器中等待运营者手动登录，先验证非空 `douyin.com` Cookie，再以临时文件原子替换仓库外 storage state；登录不完整不会创建或覆盖会话。Worker 先确认最终页面严格等于目标 `/video/{数字ID}`，有界等待可见主播放器的 `currentSrc/src`，再以结构化数据辅助；网络媒体仅作 MIME 合格的候选，不能替代主播放器来源。媒体复验只发送 Referer、Origin、User-Agent、Accept，绝不发送 Cookie/Authorization/Token，日志只保留 `https://媒体域名`。当前未手动登录、未取得真实媒体地址，未完成无 Cookie 1024-byte 读取；不能把抖音下载写为成功。
 
 - P2 抖音公开内容解析 PoC：`IMPLEMENTED / PARTIAL LOCAL VERIFIED`。抖音现在使用独立的 `DouyinParser`，仅消费匿名公开跳转和 HTML 中的作品 ID/公开元数据；公开 HTML 未提供具体作品或安全媒体地址时返回可重试 `DOUYIN_RESOLVE_FAILED`，不再因 `cookie`、`unavailable` 或 `Unsupported URL` 宽泛文本误标为私密。用户此前的短链 smoke 已安全解析到作品页但未取得公开媒体地址，约 2.7 秒返回该错误，因此抖音真实下载仍为 `NOT VERIFIED`。
 
@@ -19,7 +19,7 @@
 
 ## 本地验证结果
 
-- P3 本轮自动验证：后端 pytest `154 passed`（2 warnings）；Ruff、`compileall`、`git diff --check` 通过；前端 Node `49 passed`、小程序静态及合成 production 配置校验（各 80 files）通过。当前主机未安装 Docker CLI，Docker build 为 `NOT VERIFIED`；本轮未运行真实 Playwright 浏览器、不持有运营者会话，也未对真实抖音媒体发起 session smoke。
+- P3 审查修正验证：后端 pytest `168 passed`（2 warnings）；Ruff、`compileall`、`git diff --check` 通过；前端 Node `49 passed`、小程序静态及合成 production 配置校验（各 80 files）通过。新增 smoke CLI 仅从 `DOUYIN_SMOKE_URL` 读取链接，输出只含结果、错误码、作品 ID、媒体域名、读取字节数与耗时。当前主机未安装 Docker CLI，Docker build 为 `NOT VERIFIED`；本轮未运行真实 Playwright 浏览器、不持有运营者会话，也未对真实抖音媒体发起 session smoke。
 
 - 前端 Node 单测：本地 `npm test` 32 passed、0 failed；GitHub 最新分支 push CI 为 32 passed、0 failed。
 - 小程序 JSON、路由、资源引用、JS 语法：本地工作区 76 files checked；GitHub 干净环境 74 files checked，均通过。本地多出的 `miniprogram/project.config.json` 与 `miniprogram/project.private.config.json` 是 `.gitignore` 忽略的本地配置，不提交。
