@@ -60,6 +60,32 @@ def validate_storage_state_path(
     return resolved
 
 
+def has_valid_douyin_cookie(value: Path | str) -> bool:
+    """Check login completeness without returning any Cookie data."""
+    try:
+        payload = json.loads(Path(value).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    if not isinstance(cookies, list):
+        return False
+    for cookie in cookies:
+        if not isinstance(cookie, dict):
+            continue
+        domain = str(cookie.get("domain", "")).lower().lstrip(".")
+        name = cookie.get("name")
+        value = cookie.get("value")
+        if (
+            (domain == "douyin.com" or domain.endswith(".douyin.com"))
+            and isinstance(name, str)
+            and bool(name.strip())
+            and isinstance(value, str)
+            and bool(value.strip())
+        ):
+            return True
+    return False
+
+
 def target_id_from_url(url: str) -> str | None:
     """Accept exactly a public www.douyin.com /video/{numeric-id} URL."""
     parsed = urlsplit(url)

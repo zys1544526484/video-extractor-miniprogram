@@ -4,13 +4,15 @@ import argparse
 import asyncio
 import logging
 import os
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..config import Settings, load_settings
-from .errors import session_disabled, session_unavailable
-from .models import sanitise_storage_state_path, validate_storage_state_path
+from .errors import login_incomplete, session_disabled, session_unavailable
+from .models import has_valid_douyin_cookie, sanitise_storage_state_path, validate_storage_state_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,31 +50,44 @@ async def bootstrap_manual_session(
     )
     factory = playwright_factory or _load_async_playwright
     pause = wait_for_operator or (lambda: input("请在可视浏览器中手动登录后按 Enter 保存会话："))
-    try:
-        async with factory() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
-            try:
-                context = await browser.new_context()
-                try:
-                    page = await context.new_page()
-                    await page.goto("https://www.douyin.com/", wait_until="domcontentloaded")
-                    pause()
-                    await context.storage_state(path=str(state_path))
-                finally:
-                    await context.close()
-            finally:
-                await browser.close()
-    except Exception as error:
-        if getattr(error, "code", None):
-            raise
-        raise session_unavailable() from error
-    if os.name == "posix":
-        state_path.chmod(0o600)
-    validate_storage_state_path(
-        state_path,
-        require_exists=True,
-        require_private_permissions=os.name == "posix",
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        dir=state_path.parent,
+        prefix=f".{state_path.name}.",
+        suffix=".tmp",
     )
+    os.close(file_descriptor)
+    temporary_path = state_path.parent / Path(temporary_name).name
+    try:
+        try:
+            async with factory() as playwright:
+                browser = await playwright.chromium.launch(headless=False)
+                try:
+                    context = await browser.new_context()
+                    try:
+                        page = await context.new_page()
+                        await page.goto("https://www.douyin.com/", wait_until="domcontentloaded")
+                        pause()
+                        await context.storage_state(path=str(temporary_path))
+                    finally:
+                        await context.close()
+                finally:
+                    await browser.close()
+        except Exception as error:
+            if getattr(error, "code", None):
+                raise
+            raise session_unavailable() from error
+        if not has_valid_douyin_cookie(temporary_path):
+            raise login_incomplete()
+        if os.name == "posix":
+            temporary_path.chmod(0o600)
+        validate_storage_state_path(
+            temporary_path,
+            require_exists=True,
+            require_private_permissions=os.name == "posix",
+        )
+        os.replace(temporary_path, state_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
     label = sanitise_storage_state_path(state_path)
     logger.info("douyin_session_bootstrap outcome=success state_path=%s", label)
     return BootstrapResult(state_path_label=label)

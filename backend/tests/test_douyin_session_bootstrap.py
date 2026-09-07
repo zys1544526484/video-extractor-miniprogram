@@ -8,7 +8,11 @@ import pytest
 
 from app.config import Settings
 from app.douyin_session.bootstrap import bootstrap_manual_session
-from app.douyin_session.models import sanitise_storage_state_path, validate_storage_state_path
+from app.douyin_session.models import (
+    has_valid_douyin_cookie,
+    sanitise_storage_state_path,
+    validate_storage_state_path,
+)
 from app.errors import AppError
 
 
@@ -19,13 +23,16 @@ class FakePage:
 
 
 class FakeContext:
+    def __init__(self, state_payload: dict[str, object]) -> None:
+        self.state_payload = state_payload
+
     async def new_page(self) -> FakePage:
         return FakePage()
 
     async def storage_state(self, *, path: str) -> None:
         await asyncio.to_thread(
             Path(path).write_text,
-            json.dumps({"cookies": [], "origins": []}),
+            json.dumps(self.state_payload),
             encoding="utf-8",
         )
 
@@ -34,36 +41,51 @@ class FakeContext:
 
 
 class FakeBrowser:
+    def __init__(self, state_payload: dict[str, object]) -> None:
+        self.state_payload = state_payload
+
     async def new_context(self) -> FakeContext:
-        return FakeContext()
+        return FakeContext(self.state_payload)
 
     async def close(self) -> None:
         return None
 
 
 class FakeChromium:
+    def __init__(self, state_payload: dict[str, object]) -> None:
+        self.state_payload = state_payload
+
     async def launch(self, *, headless: bool) -> FakeBrowser:
         assert headless is False
-        return FakeBrowser()
+        return FakeBrowser(self.state_payload)
 
 
 class FakePlaywright:
-    chromium = FakeChromium()
+    def __init__(self, state_payload: dict[str, object]) -> None:
+        self.chromium = FakeChromium(state_payload)
 
 
 class FakeManager:
+    def __init__(self, state_payload: dict[str, object] | None = None) -> None:
+        self.state_payload = state_payload or {
+            "cookies": [{"domain": ".douyin.com", "name": "session", "value": "present"}],
+            "origins": [],
+        }
+
     async def __aenter__(self) -> FakePlaywright:
-        return FakePlaywright()
+        return FakePlaywright(self.state_payload)
 
     async def __aexit__(self, *_args) -> None:
         return None
 
 
 def session_settings(tmp_path: Path, **changes: object) -> Settings:
+    external_storage = tmp_path / "external-storage"
+    external_storage.mkdir()
     values: dict[str, object] = {
         "app_env": "test",
         "douyin_session_enabled": True,
-        "douyin_storage_state_path": tmp_path.parent / "operator-state.json",
+        "douyin_storage_state_path": external_storage / "operator-state.json",
     }
     values.update(changes)
     return Settings(**values)
@@ -116,6 +138,60 @@ def test_storage_state_rejects_repository_relative_or_invalid_files(tmp_path: Pa
 
 def test_storage_state_label_never_reveals_parent_directories(tmp_path: Path) -> None:
     assert sanitise_storage_state_path(tmp_path / "secret" / "state.json") == "<external-storage>/state.json"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"cookies": [], "origins": []},
+        {"cookies": [{"domain": ".example.com", "name": "session", "value": "present"}]},
+        {"cookies": [{"domain": ".douyin.com", "name": "", "value": "present"}]},
+    ],
+)
+async def test_bootstrap_rejects_incomplete_login_without_creating_state(
+    tmp_path: Path,
+    payload: dict[str, object],
+) -> None:
+    settings = session_settings(tmp_path)
+
+    with pytest.raises(AppError) as caught:
+        await bootstrap_manual_session(
+            settings,
+            playwright_factory=lambda: FakeManager(payload),
+            wait_for_operator=lambda: None,
+        )
+
+    assert caught.value.code == "DOUYIN_SESSION_LOGIN_INCOMPLETE"
+    assert settings.douyin_storage_state_path is not None
+    assert not settings.douyin_storage_state_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_incomplete_login_does_not_overwrite_existing_state(tmp_path: Path) -> None:
+    settings = session_settings(tmp_path)
+    assert settings.douyin_storage_state_path is not None
+    settings.douyin_storage_state_path.write_text("existing-valid-state", encoding="utf-8")
+
+    with pytest.raises(AppError) as caught:
+        await bootstrap_manual_session(
+            settings,
+            playwright_factory=lambda: FakeManager({"cookies": [], "origins": []}),
+            wait_for_operator=lambda: None,
+        )
+
+    assert caught.value.code == "DOUYIN_SESSION_LOGIN_INCOMPLETE"
+    assert settings.douyin_storage_state_path.read_text(encoding="utf-8") == "existing-valid-state"
+    assert not list(settings.douyin_storage_state_path.parent.glob(".operator-state.json.*.tmp"))
+
+
+def test_douyin_cookie_check_does_not_return_cookie_details(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps({"cookies": [{"domain": ".douyin.com", "name": "secret", "value": "hidden"}]}),
+        encoding="utf-8",
+    )
+    assert has_valid_douyin_cookie(state) is True
 
 
 def production_settings(**changes: object) -> Settings:

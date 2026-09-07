@@ -38,3 +38,20 @@ def session_timeout() -> AppError:
         status_code=504,
         retryable=True,
     )
+
+
+def login_incomplete() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_LOGIN_INCOMPLETE",
+        "未检测到有效的抖音登录会话，请完成手动登录后再保存",
+        status_code=400,
+    )
+
+
+def session_media_not_found() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_MEDIA_NOT_FOUND",
+        "未在目标抖音作品的主播放器中找到可验证的视频媒体",
+        status_code=502,
+        retryable=True,
+    )
