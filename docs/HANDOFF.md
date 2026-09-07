@@ -16,6 +16,9 @@
 - 当前复跑：后端 pytest `168 passed`（2 warnings）；Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`；小程序静态及合成 production 校验均为 80 files PASS。Docker CLI 仍不可用；不执行真实登录或 smoke，等待远程 CI 与后续人工会话验证。
 - 真实启动阻塞修复：`077c2df` 将 lazy loader 的两阶段调用收敛为“loader → `async_playwright` factory → async context manager”，既保留注入式 factory，也修复未注入真实路径的 `TypeError`。bootstrap 和 `PlaywrightSessionAdapter` 均有无注入回归；bootstrap 临时 state 失败清理与旧会话保留测试继续通过。CLI 捕获 `AppError` 后只输出稳定错误码和中文提示、退出码 1，不向普通用户显示 traceback 或会话数据。
 - 本轮全量验证：后端 pytest `171 passed`（2 warnings）；Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`；小程序静态及合成 production 校验均为 80 files PASS。`backend/wechat_video_extractor_backend.egg-info/` 的三个未提交变更在任务开始前已存在且不属于本次工作，未被暂存或提交。
+- 短链重定向修正已推送：`10cc625` 为 smoke 短链增加每跳 `SafeHttpClient` SSRF/DNS/IP 校验和抖音路由白名单；只接受 `v.douyin.com` 短链及 `douyin.com` `/video/{数字ID}`、`www.iesdouyin.com` `/share/video/{数字ID}`，在路径/ID 校验后删除正常查询参数并交给严格的 query-free Worker。重定向日志仅记录脱敏路由，不记录查询、Cookie、Token 或签名。主页、站外、私网、userinfo、异常端口和循环都有回归覆盖。
+- 真实短链本轮已安全规范到作品 ID `7678969660380843304`。完整 smoke 以临时 `DOUYIN_SESSION_ENABLED=true` 运行时，因本机没有配置仓库外 state 路径而返回 `DOUYIN_SESSION_CONFIG_INVALID`（516ms）；没有读取、打印或保存会话，且没有取得媒体地址。`c11e120` 把该配置错误收敛为稳定安全错误，防止 smoke CLI 输出 traceback。媒体地址、无 Cookie 1024-byte 读取、耗时与真机流程继续为 `NOT VERIFIED`。
+- 本轮全量验证：后端 pytest `180 passed`（2 warnings）；Ruff、compileall、前端 `npm test` `49 passed`、`npm run validate:miniprogram` 与合成 `npm run validate:production`（各 80 files）以及 `git diff --check` 均通过。先前存在的三个 egg-info 未提交文件保持未暂存、未提交；本次文档 commit push 后再确认远程 CI。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 

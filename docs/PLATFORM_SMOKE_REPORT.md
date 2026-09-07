@@ -10,6 +10,8 @@
 
 P3 增加了默认关闭的运营者服务器专用会话 PoC，但本轮**未执行真实 session smoke**：当前环境没有可验证的运营者手动登录会话，未取得真实媒体地址，也未进行无 Cookie 1024-byte 读取。该缺口记录为 `NOT VERIFIED`，不能以自动 fake-browser 测试替代。后续仅可在运营者手动登录、会话文件保留在仓库外且没有验证码/风控时，针对用户有权保存的公开作品单独记录耗时和结果；不得保存 Cookie、完整签名地址或会话内容。
 
+P3 短链修正后，用户本轮提供的短链可由无会话的安全重定向阶段规范到作品 ID `7678969660380843304`。该阶段对初始地址和每一跳均执行 SafeHttpClient 的 SSRF/DNS/IP 校验及抖音域名/作品路径白名单；正常查询参数仅在已核实数字 ID 后丢弃，日志不保存查询、Cookie、Token 或签名。完整 smoke 以临时开关运行时，在浏览器启动前因当前进程没有配置仓库外 storage state 返回 `DOUYIN_SESSION_CONFIG_INVALID`，总耗时 `516ms`。因此本次未加载会话、未取得媒体地址、未进行无 Cookie 1024-byte 读取，仍为 `NOT VERIFIED`，不得描述为抖音下载成功。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。

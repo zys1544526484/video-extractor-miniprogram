@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- P3 短链规范化补充（2026-09-07）：专用 session smoke 的短链入口现在会经 `SafeHttpClient` 逐跳执行 SSRF/DNS/IP、协议/端口和抖音路径白名单校验，记录仅含脱敏路由链；`www.douyin.com/video/{数字ID}` 和 `www.iesdouyin.com/share/video/{数字ID}` 可在校验后剥离正常查询串并规范为严格 canonical URL，首页、推荐、站外、私网、userinfo、异常端口及循环仍拒绝。用户本轮短链已解析到作品 ID `7678969660380843304`，不携带 Cookie 进入解析阶段。完整 session smoke 随后因当前进程未配置仓库外 `DOUYIN_STORAGE_STATE_PATH` 安全返回 `DOUYIN_SESSION_CONFIG_INVALID`（516ms）；没有加载会话、未取得媒体地址或执行无 Cookie 读取。全量门禁：后端 pytest `180 passed`（2 warnings）、Ruff、compileall、前端 Node `49 passed`、小程序静态/合成 production 校验（80 files）及 `git diff --check` 均通过；远程 CI 待本次文档提交触发后确认。P3 仍为 `NOT VERIFIED`。
+
 - P3 抖音运营者服务器专用会话 PoC：`IMPLEMENTED / NOT VERIFIED`。默认 `DOUYIN_SESSION_ENABLED=false`，不接入现有 API 或小程序流程。可选 bootstrap 仅在可视浏览器中等待运营者手动登录，先验证非空 `douyin.com` Cookie，再以临时文件原子替换仓库外 storage state；登录不完整不会创建或覆盖会话。Worker 先确认最终页面严格等于目标 `/video/{数字ID}`，有界等待可见主播放器的 `currentSrc/src`，再以结构化数据辅助；网络媒体仅作 MIME 合格的候选，不能替代主播放器来源。媒体复验只发送 Referer、Origin、User-Agent、Accept，绝不发送 Cookie/Authorization/Token，日志只保留 `https://媒体域名`。当前未手动登录、未取得真实媒体地址，未完成无 Cookie 1024-byte 读取；不能把抖音下载写为成功。
 
 - P2 抖音公开内容解析 PoC：`IMPLEMENTED / PARTIAL LOCAL VERIFIED`。抖音现在使用独立的 `DouyinParser`，仅消费匿名公开跳转和 HTML 中的作品 ID/公开元数据；公开 HTML 未提供具体作品或安全媒体地址时返回可重试 `DOUYIN_RESOLVE_FAILED`，不再因 `cookie`、`unavailable` 或 `Unsupported URL` 宽泛文本误标为私密。用户此前的短链 smoke 已安全解析到作品页但未取得公开媒体地址，约 2.7 秒返回该错误，因此抖音真实下载仍为 `NOT VERIFIED`。
