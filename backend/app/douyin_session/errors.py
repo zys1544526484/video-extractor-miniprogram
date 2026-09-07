@@ -29,3 +29,12 @@ def target_mismatch() -> AppError:
 
 def session_unavailable() -> AppError:
     return AppError("DOUYIN_SESSION_UNAVAILABLE", "抖音专用会话环境不可用", status_code=503)
+
+
+def session_timeout() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_TIMEOUT",
+        "抖音专用会话解析超时，请稍后重试",
+        status_code=504,
+        retryable=True,
+    )

@@ -16,6 +16,7 @@ from .errors import (
     session_bound_media,
     session_disabled,
     session_expired,
+    session_timeout,
     session_unavailable,
     target_mismatch,
 )
@@ -136,12 +137,16 @@ class DouyinSessionWorker:
         )
         started = time.monotonic()
         async with self._semaphore:
-            capture = await self.browser.capture(
-                target_url=target_url,
-                target_id=target_id,
-                storage_state_path=str(state_path),
-                timeout_seconds=self.settings.douyin_session_timeout_seconds,
-            )
+            try:
+                async with asyncio.timeout(self.settings.douyin_session_timeout_seconds):
+                    capture = await self.browser.capture(
+                        target_url=target_url,
+                        target_id=target_id,
+                        storage_state_path=str(state_path),
+                        timeout_seconds=self.settings.douyin_session_timeout_seconds,
+                    )
+            except TimeoutError as error:
+                raise session_timeout() from error
             if capture.state == "expired":
                 raise session_expired()
             if capture.state == "risk":

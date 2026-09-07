@@ -26,7 +26,10 @@ async def public_resolver(host: str) -> list[str]:
 
 def session_settings(tmp_path: Path, **changes: object) -> Settings:
     state_path = tmp_path / "operator-state.json"
-    state_path.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+    state_path.write_text(
+        json.dumps({"cookies": [{"value": "secret-session-cookie"}], "origins": []}),
+        encoding="utf-8",
+    )
     values: dict[str, object] = {
         "app_env": "test",
         "douyin_session_enabled": True,
@@ -60,6 +63,12 @@ class FakeBrowser:
         return self.capture_result
 
 
+class SlowBrowser(FakeBrowser):
+    async def capture(self, **kwargs) -> CapturedMedia:
+        await asyncio.sleep(0.02)
+        return await super().capture(**kwargs)
+
+
 def video_handler(request: httpx.Request) -> httpx.Response:
     assert request.headers.get("cookie") is None
     if request.method == "HEAD":
@@ -85,6 +94,7 @@ async def test_session_worker_keeps_cookie_out_of_public_probe_and_result(tmp_pa
     assert result.media_origin == "https://cdn.example.com/video.mp4"
     assert "signature" not in caplog.text
     assert "cookies" not in repr(result)
+    assert "secret-session-cookie" not in caplog.text
     assert browser.calls[0]["target_id"] == WORK_ID
 
 
@@ -147,6 +157,49 @@ async def test_session_worker_rejects_invalid_target_and_ssrf_media(tmp_path: Pa
     with pytest.raises(AppError) as ssrf:
         await worker.inspect(TARGET_URL)
     assert ssrf.value.code == "URL_INVALID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("headers", "expected_code"),
+    [
+        ({"content-type": "text/html", "content-length": "2048"}, "MEDIA_FORMAT_UNSUPPORTED"),
+        ({"content-type": "video/mp4", "content-length": str(20 * 1024 * 1024)}, "MEDIA_TOO_LARGE"),
+    ],
+)
+async def test_session_worker_keeps_safe_media_type_and_size_limits(
+    tmp_path: Path,
+    headers: dict[str, str],
+    expected_code: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(200, headers=headers)
+        raise AssertionError("invalid media must not be streamed")
+
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(handler),
+        browser=FakeBrowser(CapturedMedia(target_id=WORK_ID, media_url=MEDIA_URL)),
+    )
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+    assert caught.value.code == expected_code
+
+
+@pytest.mark.asyncio
+async def test_session_worker_enforces_browser_timeout(tmp_path: Path) -> None:
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path, douyin_session_timeout_seconds=1),
+        http=safe_http(video_handler),
+        browser=SlowBrowser(CapturedMedia(target_id=WORK_ID, media_url=MEDIA_URL)),
+    )
+    worker.settings.douyin_session_timeout_seconds = 0.001  # type: ignore[assignment]
+
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+
+    assert caught.value.code == "DOUYIN_SESSION_TIMEOUT"
 
 
 @pytest.mark.asyncio

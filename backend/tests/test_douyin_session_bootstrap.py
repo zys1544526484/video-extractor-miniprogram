@@ -116,3 +116,33 @@ def test_storage_state_rejects_repository_relative_or_invalid_files(tmp_path: Pa
 
 def test_storage_state_label_never_reveals_parent_directories(tmp_path: Path) -> None:
     assert sanitise_storage_state_path(tmp_path / "secret" / "state.json") == "<external-storage>/state.json"
+
+
+def production_settings(**changes: object) -> Settings:
+    values: dict[str, object] = {
+        "app_env": "production",
+        "public_base_url": "https://api.example.cn",
+        "app_token_secret": "2xY7z9K4mN8qR1vT5wC0dF3hJ6lP9sB2",
+        "wechat_app_id": "wx1234567890abcdef",
+        "wechat_app_secret": "a" * 32,
+        "mock_wechat_auth": False,
+        "dev_bypass_download_entitlement": False,
+    }
+    values.update(changes)
+    return Settings(**values)
+
+
+def test_production_session_path_is_checked_only_when_explicitly_enabled(tmp_path: Path) -> None:
+    disabled = production_settings(douyin_session_enabled=False)
+    assert disabled.douyin_session_enabled is False
+    with pytest.raises(ValueError, match="必须设置"):
+        production_settings(douyin_session_enabled=True)
+    with pytest.raises(ValueError, match="仓库目录"):
+        production_settings(
+            douyin_session_enabled=True,
+            douyin_storage_state_path=Path(__file__).resolve().parents[2] / "state.json",
+        )
+    invalid = tmp_path / "bad-state.json"
+    invalid.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="权限不安全|格式无效"):
+        production_settings(douyin_session_enabled=True, douyin_storage_state_path=invalid)
