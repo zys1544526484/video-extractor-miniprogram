@@ -4,6 +4,15 @@
 
 ## 当前基线
 
+### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
+
+- 任务分支：`codex/p2-douyin-parser-poc`；开始基线已核对为 `af3f2bc452a317675f67c25b0d099b53b8a9d60d`，工作区干净。本轮未切换或修改 `main`，不使用 force push，不合并。
+- 已推送独立提交：`24c1152`（抖音错误分类）、`15d4bf5`（独立公开 Parser PoC）、`0185189`（安全/日志回归）和 `6717acc`（任务及小程序错误显示回归）。
+- `DouyinParser` 只处理匿名公开重定向及 HTML/嵌入数据；初始和重定向 URL、从页面读取的媒体及封面地址都由 `SafeHttpClient` 和既有 SSRF 规则校验。未添加 Cookie、X-Bogus/A-Bogus、账号会话、隐藏接口或规避逻辑。公开 HTML 直接提供作品元数据和媒体地址时，仍只向下游媒体会话交付内部来源，不向小程序暴露上游地址。
+- 分类规则：不再根据 `cookie`、`unavailable` 或 `Unsupported URL` 的宽泛字样判断私密；抖音短链跳首页、作品 ID 丢失或短时回退 Unsupported URL 返回 `DOUYIN_RESOLVE_FAILED`、中文“抖音短链接未能解析到具体作品，请稍后重试”、`retryable=true`。明确私密、删除、仅好友或登录要求才返回 `CONTENT_RESTRICTED`。结果页和 24 小时历史都会保存并展示该错误码和中文原因。
+- 实际 smoke 使用临时 `DOUYIN_SMOKE_URL`（未写入测试）。用户此前的短链最终安全页面路径为 `/video/7678631238139268402`，耗时 2717ms，匿名公开页面未提供可安全代理的媒体地址，因此结果为 `DOUYIN_RESOLVE_FAILED`。抖音真实预览/下载/保存仍为 `NOT VERIFIED`。
+- 自动测试覆盖短链、正常作品链接、跳首页、明确私密、恶意跳转、公开媒体地址 SSRF、超时、Registry 隔离、日志查询脱敏、任务/历史和结果页错误展示。后续须复跑全量门禁并检查远程 CI；不可将本次 smoke 失败写成平台通过。
+
 ### 当前审计/实施交接（2026-09-05）
 
 - 最新 `main`：`b006c3f7bcf00d369d22c7e99ab2f738764ea84f`

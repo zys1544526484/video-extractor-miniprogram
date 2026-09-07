@@ -1,8 +1,10 @@
 # 真实平台 Smoke Test 记录
 
-更新时间：2026-09-03
+更新时间：2026-09-07
 
-已使用用户提供的两条抖音公开分享短链进行真实网络测试。两次请求都成功到达本机 FastAPI 与隔离的 yt-dlp 子进程，但上游分别要求 fresh cookies 或对公开详情 JSON 返回 HTTP 403，API 合规降级为 `CONTENT_RESTRICTED`；本项目没有导入 Cookie 或模拟登录。因此抖音仍为 `NOT VERIFIED`，这些失败不能算作平台通过。
+此前两条抖音公开分享短链的失败曾被过宽地归类为 `CONTENT_RESTRICTED`。P2 已修正该语义：Cookie、`unavailable`、跳转首页和 `Unsupported URL` 都不足以证明内容私密。只有公开页面或上游明确证明私密、删除、仅好友或必须登录时才使用该错误码；其余公开短链/平台兼容失败使用可重试 `DOUYIN_RESOLVE_FAILED`。
+
+2026-09-07 使用用户此前提供的公开抖音短链，以临时环境变量 `DOUYIN_SMOKE_URL` 执行独立 PoC smoke。SafeHttpClient 将短链安全跳转到路径 `/video/7678631238139268402`；匿名公开 HTML 未提供可安全代理的媒体地址，yt-dlp 短时回退也未提供有效公开来源。总耗时 2717ms，结果为 `DOUYIN_RESOLVE_FAILED`（retryable）。没有提交或导入 Cookie、签名参数、账号会话，也没有把链接写入自动测试。
 
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
@@ -22,7 +24,7 @@ Windows Uvicorn 真实服务回归修复后，再次以同一 Bilibili 样例选
 | Bilibili | 1/3 | PARTIAL | 1 个公开视频的解析、DASH 合并、预览与下载真实链路 PASS；图文解析 NOT VERIFIED；仍缺 2 个样例与真机保存 |
 | 微博 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
 | 小红书 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
-| 抖音 | 0/3 成功；2 次失败 | CONTENT_RESTRICTED | 最新作品 ID `7678631238139268402` 的详情 JSON 返回 403 并要求 fresh cookies；request_id `req_c1fbc8cfcbf14ffa9bc73388b7cfe97a`；未绕过 |
+| 抖音 | 0/3 成功；公开 PoC 失败 | DOUYIN_RESOLVE_FAILED | 短链已安全得到具体作品路径，但匿名公开页面未给出可安全使用的媒体地址；2026-09-07 smoke 2717ms；未绕过 |
 | 快手 | 0/3 | NOT VERIFIED | yt-dlp 未列出 extractor；当前仅 Generic 合规降级路径 |
 
 记录真实样例时只保存页面 URL、测试时间、结果码、媒体大小/时长摘要和 request_id，不保存 Cookie 或私密内容。

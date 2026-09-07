@@ -1,8 +1,10 @@
 # STATUS
 
-更新时间：2026-09-05
+更新时间：2026-09-07
 
 ## 当前阶段
+
+- P2 抖音公开内容解析 PoC：`IMPLEMENTED / PARTIAL LOCAL VERIFIED`。抖音现在使用独立的 `DouyinParser`，仅消费匿名公开跳转和 HTML 中的作品 ID/公开元数据；公开 HTML 未提供具体作品或安全媒体地址时返回可重试 `DOUYIN_RESOLVE_FAILED`，不再因 `cookie`、`unavailable` 或 `Unsupported URL` 宽泛文本误标为私密。用户此前的短链 smoke 已安全解析到作品页但未取得公开媒体地址，约 2.7 秒返回该错误，因此抖音真实下载仍为 `NOT VERIFIED`。
 
 - P1 参考结果页与多媒体源：`IMPLEMENTED / LOCAL VERIFIED`。首页已移除画质预选；结果页提供视频/图片/标题 Tab、真实源列表切换、短期能力链接复制和图片保存；旧单源结果缓存兼容。源2刷新/历史重开会保持，只有服务端确认源已过期才回退并提示；视频封面不会自动进入作品图片列表，纯图片结果使用 `media_type=image`。图片链路现已走独立 SafeHttpClient 探测/下载路径，数据库清理不会误删 TEMP_DIR 中的 SQLite 文件。
 
@@ -44,7 +46,7 @@
 - 修复 Windows Uvicorn 事件循环不支持 asyncio 子进程的问题；真实服务再次完成用户提供的 43 分钟 B站样例，输出 171,656,688 bytes 单一 MP4，预览与下载 Range 均为 HTTP 206。
 - 小程序上传包估算由约 2.6MiB 降至约 99KiB；测试目录与未使用的大图已通过 `packOptions.ignore` 排除，尚未执行真实上传。
 - 上线前 P0 代码修复：体验版/正式版生产配置强制校验、微信登录查询串日志降级、服务端广告尝试凭证、yt-dlp 独立受限子进程与 Windows UTF-8 协议均已本地回归通过。
-- 用户提供的抖音公开短链真实 smoke test到达解析器，但上游要求 fresh cookies，按合规边界返回 `CONTENT_RESTRICTED`；没有导入 Cookie，抖音能力仍为 `NOT VERIFIED`。
+- 用户提供的抖音公开短链真实 smoke test 现在由独立 PoC 处理：短链跳转已得到具体公开作品页，但匿名公开 HTML 未给出可安全代理的媒体地址；约 2.7 秒返回 `DOUYIN_RESOLVE_FAILED`（可重试）。没有导入 Cookie，抖音下载能力仍为 `NOT VERIFIED`。
 - GitHub Actions CI：已配置 `codex/**` push 与针对 `main` 的 pull request 触发，并真实运行 `npm run validate:production`；同时执行 production 配置、compileall、Alembic 空库升级/head 校验、Docker build 和固定版本 Caddy `caddy validate`。最新分支 push CI 的前后端两个 job 均成功。
 
 ## 已确认产品决策
@@ -75,3 +77,10 @@
 - 结果页在轮询中经历 `onHide` 后立即 `onShow` 时，会标记恢复请求并等待旧轮询退出；旧轮询的进度、成功和失败结果均按 generation 与 job_id 丢弃，退出后仅启动一个当前页面的全新轮询，避免页面永久停在 loading 或旧结果覆盖新结果。
 - 页面级 Node 回归覆盖“轮询等待 → hide → show → 旧结果返回 → 新轮询成功”，确认旧结果不会写入页面，且最终只由恢复轮询显示成功结果。
 - 本轮本地验证：后端 pytest `116 passed`（2 warnings）；前端 Node `47 passed`；Ruff、compileall、小程序校验（80 files）、合成生产配置校验和 `git diff --check` 全部 PASS。微信开发者工具和真机生命周期操作仍为 `NOT VERIFIED`。
+
+## P2 抖音公开内容解析 PoC（2026-09-07）
+
+- 新增专用 `DouyinParser`，Registry 仅将抖音路由到该解析器；Bilibili、微博、小红书、快手和 Generic 适配器保持原有类型与路径。
+- 仅使用 `SafeHttpClient` 执行初始 URL、每一跳重定向、公开页面及解析出的媒体/封面地址校验；不提交 Cookie、不调用签名隐藏接口、不模拟登录或绕过平台限制。短链丢失作品 ID、跳首页或 yt-dlp `Unsupported URL` 返回 `DOUYIN_RESOLVE_FAILED`（可重试）；只有公开页面或 yt-dlp 明确证明私密、删除、仅好友或必须登录时才返回 `CONTENT_RESTRICTED`。
+- 公开 HTML 能提供作品 ID、标题、封面和公开媒体地址时，解析器只返回内部 `ParserResultModel` 来源，仍由既有媒体探测、短期 token、用户归属和代理链路处理；解析阶段不会预下载视频。
+- 实际 smoke：使用临时 `DOUYIN_SMOKE_URL`（不写入测试夹具）测试用户此前提供的公开短链。最终安全页面路径为 `/video/7678631238139268402`，耗时 `2717ms`，未在匿名页面发现可用公开媒体地址，结果 `DOUYIN_RESOLVE_FAILED`。真实预览、下载、真机保存均继续为 `NOT VERIFIED`。

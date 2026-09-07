@@ -11,7 +11,7 @@
 | 真机 | Android、iOS 设备 | 相册权限、接近 180MiB 自动压缩成品、长视频播放、网络切换和中断恢复未验证 |
 | 合规 | 主体、类目与隐私指引 | 个人主体类目可用性和审核材料尚未确认 |
 
-真实平台 smoke test目前有 1 条 Bilibili 公开视频完整链路通过、1 条 Generic 公开 MP4 通过，以及 2 条抖音公开短链受限记录；微博、小红书和快手尚未执行成功样例，详见 `docs/PLATFORM_SMOKE_REPORT.md`。这不阻塞本地开发，但阻塞 Release Candidate。
+真实平台 smoke test目前有 1 条 Bilibili 公开视频完整链路通过、1 条 Generic 公开 MP4 通过，以及抖音公开短链解析失败记录。P2 PoC 已能把最新测试短链安全解析到具体作品页，但匿名公开 HTML 尚未提供可安全使用的媒体地址，因此返回 `DOUYIN_RESOLVE_FAILED` 而非误标私密；抖音下载仍为 `NOT VERIFIED`。微博、小红书和快手尚未执行成功样例，详见 `docs/PLATFORM_SMOKE_REPORT.md`。这不阻塞本地开发，但阻塞 Release Candidate。
 
 当前首版为正式免费模式，广告资格和 adUnitId 不再阻塞上线。备案域名、真实微信凭证、服务器、五平台样例和真机仍属于外部 Gate，不能用 Mock 或自动测试代替。
 
