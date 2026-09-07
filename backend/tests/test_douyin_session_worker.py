@@ -15,7 +15,7 @@ from app.services.safe_http import SafeHttpClient
 
 WORK_ID = "7123456789012345678"
 TARGET_URL = f"https://www.douyin.com/video/{WORK_ID}"
-MEDIA_URL = "https://cdn.example.com/video.mp4?signature=must-not-log"
+MEDIA_URL = "https://cdn.example.com/signed-path/video.mp4?signature=must-not-log"
 
 
 async def public_resolver(host: str) -> list[str]:
@@ -72,6 +72,7 @@ class SlowBrowser(FakeBrowser):
 def video_handler(request: httpx.Request) -> httpx.Response:
     assert request.headers.get("cookie") is None
     assert request.headers.get("authorization") is None
+    assert all("token" not in key.lower() for key in request.headers)
     assert request.headers["referer"] == TARGET_URL
     assert request.headers["origin"] == "https://www.douyin.com"
     assert request.headers.get("user-agent")
@@ -98,6 +99,7 @@ async def test_session_worker_keeps_cookie_out_of_public_probe_and_result(tmp_pa
     assert result.bytes_read == 1024
     assert result.media_origin == "https://cdn.example.com"
     assert "signature" not in caplog.text
+    assert "signed-path" not in caplog.text
     assert "cookies" not in repr(result)
     assert "secret-session-cookie" not in caplog.text
     assert browser.calls[0]["target_id"] == WORK_ID

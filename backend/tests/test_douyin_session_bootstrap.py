@@ -171,7 +171,10 @@ async def test_bootstrap_rejects_incomplete_login_without_creating_state(
 async def test_incomplete_login_does_not_overwrite_existing_state(tmp_path: Path) -> None:
     settings = session_settings(tmp_path)
     assert settings.douyin_storage_state_path is not None
-    settings.douyin_storage_state_path.write_text("existing-valid-state", encoding="utf-8")
+    existing_state = json.dumps(
+        {"cookies": [{"domain": ".douyin.com", "name": "old", "value": "valid"}], "origins": []}
+    )
+    settings.douyin_storage_state_path.write_text(existing_state, encoding="utf-8")
 
     with pytest.raises(AppError) as caught:
         await bootstrap_manual_session(
@@ -181,7 +184,7 @@ async def test_incomplete_login_does_not_overwrite_existing_state(tmp_path: Path
         )
 
     assert caught.value.code == "DOUYIN_SESSION_LOGIN_INCOMPLETE"
-    assert settings.douyin_storage_state_path.read_text(encoding="utf-8") == "existing-valid-state"
+    assert settings.douyin_storage_state_path.read_text(encoding="utf-8") == existing_state
     assert not list(settings.douyin_storage_state_path.parent.glob(".operator-state.json.*.tmp"))
 
 
