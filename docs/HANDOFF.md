@@ -9,6 +9,9 @@
 - 分支：`codex/p3-douyin-session-poc`，从已核对的 P2 HEAD `9275b0a11658dc2ccf788acfbb7a8a6b44b585ac` 创建；不修改 `main`、不使用 force push、不创建或合并 PR。
 - 用户已明确授权**运营者手动登录的服务器专用会话**，但未授权用户 Cookie、自动登录、验证码/滑块/设备验证/风控处理、私密或受限内容访问。该路线默认关闭且不接入当前生产解析流程。
 - 详细边界见 `docs/ADR/0001-douyin-server-session-poc.md`。会话文件必须存放在仓库外，且 `.gitignore` 增加了 storage-state 防护；任何测试和交付不得写入真实会话、账号或媒体签名地址。
+- 已推送独立提交：`930df41`（范围授权与 ADR）、`f2a435c`（P2 目标身份收紧）、`c7c35cd`（可选 bootstrap 与配置）、`dddf9b1`（隔离 Worker PoC）、`6863277`（安全边界测试）。Playwright 为额外可选依赖，正常 API、CI 与 Docker 默认不会安装浏览器；所有 import 均延迟到明确 CLI/Worker 调用。
+- Worker 只接受无查询串的 `https://www.douyin.com/video/{数字ID}`；先确认页面目标 ID，随后才用无 Cookie `SafeHttpClient` 探测/Range 读取候选视频。结果模型和日志不包含 Cookie、storage state、完整签名媒体 URL 或查询串。登录失效、风险页、目标不一致、session-bound 媒体和超时使用稳定错误停止。
+- 本轮自动验证：后端 pytest `154 passed`（2 warnings）、Ruff、compileall、`git diff --check` PASS；前端 `npm test` `49 passed`，小程序静态与合成 production 配置校验（80 files）PASS。Docker CLI 在本机不可用。当前没有运行手动登录或真实会话 smoke，真实媒体地址、无 Cookie 1024-byte 读取、实际耗时和真机流程均为 `NOT VERIFIED`；不要将 PoC 代码描述为抖音下载成功。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 

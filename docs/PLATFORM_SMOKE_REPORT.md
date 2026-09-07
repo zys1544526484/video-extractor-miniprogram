@@ -8,6 +8,8 @@
 
 审查修正后再次 smoke：解析器不再扫描字段附近的 URL，而只读取 script 内结构化 JSON、JSON-LD 或 hydration JSON 的白名单视频字段。该匿名页面有 2 个 script、21 个可解码 JSON/hydration 值，但未发现 `video.play_addr`、`video.play_addr_h264`、`video.download_addr` 或 `video.bit_rate[*].play_addr`。因此本次没有取得媒体地址，3234ms 后仍正确返回 `DOUYIN_RESOLVE_FAILED`（retryable），不能描述为解析成功。
 
+P3 增加了默认关闭的运营者服务器专用会话 PoC，但本轮**未执行真实 session smoke**：当前环境没有可验证的运营者手动登录会话，未取得真实媒体地址，也未进行无 Cookie 1024-byte 读取。该缺口记录为 `NOT VERIFIED`，不能以自动 fake-browser 测试替代。后续仅可在运营者手动登录、会话文件保留在仓库外且没有验证码/风控时，针对用户有权保存的公开作品单独记录耗时和结果；不得保存 Cookie、完整签名地址或会话内容。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。
@@ -26,7 +28,7 @@ Windows Uvicorn 真实服务回归修复后，再次以同一 Bilibili 样例选
 | Bilibili | 1/3 | PARTIAL | 1 个公开视频的解析、DASH 合并、预览与下载真实链路 PASS；图文解析 NOT VERIFIED；仍缺 2 个样例与真机保存 |
 | 微博 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
 | 小红书 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
-| 抖音 | 0/3 成功；公开 PoC 失败 | DOUYIN_RESOLVE_FAILED | 短链已安全得到具体作品路径，但匿名公开页面未给出可安全使用的媒体地址；2026-09-07 smoke 2717ms；未绕过 |
+| 抖音 | 0/3 成功；公开 PoC 失败，专用会话 PoC 未实测 | NOT VERIFIED | 匿名短链未给出可安全使用的媒体地址；运营者专用会话默认关闭且尚未手动登录/实测；未绕过 |
 | 快手 | 0/3 | NOT VERIFIED | yt-dlp 未列出 extractor；当前仅 Generic 合规降级路径 |
 
 记录真实样例时只保存页面 URL、测试时间、结果码、媒体大小/时长摘要和 request_id，不保存 Cookie 或私密内容。
