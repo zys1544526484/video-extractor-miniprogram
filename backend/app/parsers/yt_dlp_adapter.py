@@ -477,6 +477,7 @@ class YtDlpAdapter:
         *,
         download_media: bool = False,
         requested_quality: str = "original",
+        timeout_seconds: int | None = None,
     ) -> ParserResultModel:
         try:
             literal_host = urlsplit(url).hostname
@@ -485,6 +486,10 @@ class YtDlpAdapter:
             literal_ip = None
         if literal_ip is not None and not literal_ip.is_global:
             raise AppError("PLATFORM_CHANGED", "平台解析目标不是公网地址", retryable=True)
+        effective_timeout = min(
+            self.settings.parse_timeout_seconds,
+            max(1, int(timeout_seconds or self.settings.parse_timeout_seconds)),
+        )
         payload = {
             "url": url,
             "platform": platform,
@@ -495,7 +500,7 @@ class YtDlpAdapter:
                 "max_video_bytes": self.settings.max_video_bytes,
                 "max_source_video_bytes": self.settings.max_source_video_bytes,
                 "http_timeout_seconds": self.settings.http_timeout_seconds,
-                "parse_timeout_seconds": self.settings.parse_timeout_seconds,
+                "parse_timeout_seconds": effective_timeout,
             },
         }
         environment = dict(os.environ)
@@ -534,7 +539,7 @@ class YtDlpAdapter:
             **process_options,
         )
         try:
-            async with asyncio.timeout(self.settings.parse_timeout_seconds):
+            async with asyncio.timeout(effective_timeout):
                 stdout, _ = await asyncio.to_thread(
                     process.communicate,
                     json.dumps(payload, ensure_ascii=False).encode("utf-8")

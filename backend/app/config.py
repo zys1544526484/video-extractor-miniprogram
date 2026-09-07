@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     max_source_video_bytes: int = 2 * 1024 * 1024 * 1024
     min_free_disk_bytes: int = 10 * 1024 * 1024 * 1024
     parse_timeout_seconds: int = 1800
+    douyin_metadata_timeout_seconds: int = 8
+    douyin_yt_dlp_fallback_timeout_seconds: int = 4
     media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 86400
     media_access_token_ttl_seconds: int = 900
@@ -68,6 +70,10 @@ class Settings(BaseSettings):
             raise ValueError("MIN_FREE_DISK_BYTES 不得为负数")
         if self.media_processing_timeout_seconds < 30:
             raise ValueError("MEDIA_PROCESSING_TIMEOUT_SECONDS 不得低于 30 秒")
+        if not 1 <= self.douyin_metadata_timeout_seconds <= 30:
+            raise ValueError("DOUYIN_METADATA_TIMEOUT_SECONDS 必须在 1..30 秒范围内")
+        if not 1 <= self.douyin_yt_dlp_fallback_timeout_seconds <= 15:
+            raise ValueError("DOUYIN_YT_DLP_FALLBACK_TIMEOUT_SECONDS 必须在 1..15 秒范围内")
         if not 1 <= self.global_parse_concurrency <= 8:
             raise ValueError("GLOBAL_PARSE_CONCURRENCY 必须在 1..8 范围内")
         if not 1 <= self.parse_worker_concurrency <= 8:

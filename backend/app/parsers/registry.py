@@ -3,6 +3,7 @@ from __future__ import annotations
 from ..config import Settings
 from ..errors import AppError
 from .base import BaseParser
+from .douyin import DouyinParser
 from .generic import GenericParser
 from .platforms import KuaishouParser, YtDlpPlatformParser
 from .yt_dlp_adapter import YtDlpAdapter
@@ -17,7 +18,7 @@ class ParserRegistry:
             "bilibili": YtDlpPlatformParser("bilibili", adapter, download_media=True),
             "weibo": YtDlpPlatformParser("weibo", adapter),
             "xiaohongshu": YtDlpPlatformParser("xiaohongshu", adapter),
-            "douyin": YtDlpPlatformParser("douyin", adapter),
+            "douyin": DouyinParser(adapter),
             "kuaishou": KuaishouParser(generic),
         }
 
@@ -26,4 +27,3 @@ class ParserRegistry:
         if parser is None:
             raise AppError("PLATFORM_UNSUPPORTED", "暂不支持该链接")
         return parser
-
