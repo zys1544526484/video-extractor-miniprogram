@@ -30,3 +30,18 @@ test('history labels have stable fallbacks', () => {
   assert.equal(platformLabel('unknown-platform'), 'unknown-platform')
   assert.equal(shortDate('invalid'), '')
 })
+
+test('history preserves the douyin short-link resolution reason', () => {
+  const failed = historyJobView({
+    status: 'failed',
+    platform: 'douyin',
+    error: {
+      code: 'DOUYIN_RESOLVE_FAILED',
+      message: '抖音短链接未能解析到具体作品，请稍后重试',
+      retryable: true
+    }
+  })
+
+  assert.equal(failed.platform_label, '抖音')
+  assert.equal(failed.detail, 'DOUYIN_RESOLVE_FAILED：抖音短链接未能解析到具体作品，请稍后重试')
+})

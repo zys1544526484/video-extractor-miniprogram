@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.errors import AppError
 from app.models import MediaAccessToken, MediaSessionRecord, ParseJob
 from app.schemas import ParsePublicResult
 from app.security.tokens import decode_auth_token
@@ -61,6 +62,17 @@ class SlowParseService:
             await progress(10, "等待取消")
         await asyncio.sleep(30)
         raise AssertionError("cancelled task must not complete")
+
+
+class DouyinResolveFailureService:
+    async def parse(self, text, user_id, quality, progress=None) -> ParsePublicResult:
+        if progress:
+            await progress(15, "解析公开页面")
+        raise AppError(
+            "DOUYIN_RESOLVE_FAILED",
+            "抖音短链接未能解析到具体作品，请稍后重试",
+            retryable=True,
+        )
 
 
 class ConcurrentParseService:
@@ -349,6 +361,38 @@ def test_parse_requires_idempotency_key(client: TestClient, auth_headers: dict[s
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_INVALID"
+
+
+def test_douyin_resolve_failure_is_persisted_for_job_and_history(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    client.app.state.parse_jobs.parse_service = DouyinResolveFailureService()
+    created = client.post(
+        "/api/v1/parse",
+        headers={**auth_headers, "Idempotency-Key": "douyin_resolve_failure_01"},
+        json={"text": "https://v.douyin.com/lost-work-id/"},
+    )
+    job_id = created.json()["job"]["job_id"]
+    deadline = time.time() + 3
+    failed = None
+    while time.time() < deadline:
+        response = client.get(f"/api/v1/parse/jobs/{job_id}", headers=auth_headers)
+        candidate = response.json()["job"]
+        if candidate["status"] == "failed":
+            failed = candidate
+            break
+        time.sleep(0.02)
+
+    assert failed is not None
+    assert failed["error"] == {
+        "code": "DOUYIN_RESOLVE_FAILED",
+        "message": "抖音短链接未能解析到具体作品，请稍后重试",
+        "retryable": True,
+    }
+    history = client.get("/api/v1/parse/jobs", headers=auth_headers).json()["jobs"]
+    item = next(value for value in history if value["job_id"] == job_id)
+    assert item["error"] == failed["error"]
 
 
 def test_new_job_is_rejected_when_safe_disk_reserve_is_exhausted(

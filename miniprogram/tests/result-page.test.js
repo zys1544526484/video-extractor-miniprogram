@@ -132,12 +132,12 @@ test('result page polls a created job and renders the completed result', async (
   }
 })
 
-test('result page exposes backend error code and reason after polling failure', async () => {
+test('result page exposes the douyin resolution error after polling failure', async () => {
   const originalWait = api.waitForParseJob
   api.waitForParseJob = async (jobId, onProgress) => {
     onProgress({ job_id: jobId, status: 'processing', progress: 18, stage: '解析公开页面', source_url: 'https://example.com/a' })
-    const error = new Error('该内容不可公开访问')
-    error.code = 'CONTENT_NOT_PUBLIC'
+    const error = new Error('抖音短链接未能解析到具体作品，请稍后重试')
+    error.code = 'DOUYIN_RESOLVE_FAILED'
     throw error
   }
   const context = {
@@ -150,8 +150,8 @@ test('result page exposes backend error code and reason after polling failure', 
   try {
     await pageDefinition.startJobPolling.call(context, 'job-failed')
     assert.equal(context.data.state, 'error')
-    assert.equal(context.data.parseErrorCode, 'CONTENT_NOT_PUBLIC')
-    assert.equal(context.data.parseErrorMessage, '该内容不可公开访问')
+    assert.equal(context.data.parseErrorCode, 'DOUYIN_RESOLVE_FAILED')
+    assert.equal(context.data.parseErrorMessage, '抖音短链接未能解析到具体作品，请稍后重试')
   } finally {
     api.waitForParseJob = originalWait
   }
