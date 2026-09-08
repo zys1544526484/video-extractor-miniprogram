@@ -23,6 +23,8 @@
 - 本机复跑的进程未继承外部 state 路径，故以 `DOUYIN_SESSION_CONFIG_INVALID` 结束，但安全输出已保留目标 ID `7678969660380843304`（921ms）。这不验证新播放器捕获是否能取得媒体；用户应在已配置运营者会话的本机终端执行可视 smoke。三个任务前已有 egg-info 修改继续未暂存、未提交。
 - 补充 adapter 级“没有可见主播放器”回归已推送：`b263904` 增加该测试，`de2b7ff` 修正测试替身的播放器挂载等待模拟。最新本地全量门禁复跑均通过；该两笔提交未改动业务安全边界，远程 CI 需以最新 HEAD 为准。
 - P3 阶段化生产诊断：`5d0184a` 将 launcher、导航（固定 `domcontentloaded`）、身份、播放器、媒体捕获与无 Cookie 媒体验证拆成独立上限，失败日志只保留阶段毫秒数和既有脱敏字段。可选 Xvfb headed 容器位于 `backend/Dockerfile.douyin-session` 与 `deploy/docker-compose.douyin-session.yml`，默认 profile 关闭、不暴露端口/VNC、只读挂载仓库外会话文件；普通 API 镜像和 CI 不变。全量本地 pytest、Ruff、compileall、Node 49 项、小程序与生产配置校验均通过。浏览器暖复用仍未实现，必须继续列为性能/部署阻塞。
+- P3 诊断可见性与稳定性收尾（2026-09-08）：smoke 最后一行 JSON 直接输出安全 `last_phase`、`phase_elapsed_ms`、`phases_ms`、规范 `final_page_path`、video/source 计数与布尔状态、媒体响应 MIME/仅 scheme+hostname 域名；不输出任何媒体路径、查询、签名、Cookie、Token、Authorization 或 storage-state 信息。浏览器导入/启动/断连才使用 `DOUYIN_SESSION_UNAVAILABLE`；导航/页面错误使用 `DOUYIN_SESSION_PAGE_FAILED`，播放器和媒体错误保持具体分类。Worker 记录枚举式 internal reason 但不输出原始异常，安全关闭 Context/Browser，关闭失败不覆盖原业务错误。新增 smoke JSON 脱敏、具体错误分类和 headed→headless 资源独立回归。本地真实 headed/headless smoke 尚未复跑，故仍为 `NOT VERIFIED`；本轮完成全量门禁并 push 后在此记录 CI URL。
+- 本轮本地门禁：全量 backend pytest（2 条依赖弃用 warning）、`ruff check app tests alembic`、`compileall app alembic`、`npm test`（49 passed）、小程序常规/合成 production 校验（各 80 files）与 `git diff --check` 均通过。Docker CLI 仍不可用，Docker build 本地为 `NOT VERIFIED`；远程 CI 必须以本次 push 的 run 为准。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 

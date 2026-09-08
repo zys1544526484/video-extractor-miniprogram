@@ -28,7 +28,18 @@ async def public_resolver(host: str) -> list[str]:
 def session_settings(tmp_path: Path, **changes: object) -> Settings:
     state_path = tmp_path / "operator-state.json"
     state_path.write_text(
-        json.dumps({"cookies": [{"value": "secret-session-cookie"}], "origins": []}),
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "operator_session",
+                        "value": "secret-session-cookie",
+                        "domain": ".douyin.com",
+                    }
+                ],
+                "origins": [],
+            }
+        ),
         encoding="utf-8",
     )
     values: dict[str, object] = {
@@ -151,6 +162,7 @@ async def test_session_worker_keeps_distinct_player_capture_failures(
         await worker.inspect(TARGET_URL)
 
     assert caught.value.code == expected_code
+    assert worker.last_internal_reason in {"player_not_mounted", "player_media_missing"}
 
 
 @pytest.mark.asyncio
@@ -533,7 +545,7 @@ async def test_playwright_adapter_uses_single_post_playback_response_for_blob_pl
     assert captured.media_url == network_url
     assert captured.diagnostics is not None
     assert captured.diagnostics.has_blob_url is True
-    assert captured.diagnostics.media_domains == ("cdn.example.com",)
+    assert captured.diagnostics.media_domains == ("https://cdn.example.com",)
     assert captured.diagnostics.media_content_types == ("application/vnd.apple.mpegurl",)
 
 
@@ -652,6 +664,9 @@ async def test_playwright_adapter_marks_missing_primary_player_separately() -> N
 
     assert captured.state == "player_missing"
     assert captured.target_id == WORK_ID
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.last_phase == "player_mount"
+    assert "player_mount" in dict(captured.diagnostics.phase_ms)
 
 
 @pytest.mark.asyncio
@@ -676,3 +691,85 @@ async def test_playwright_adapter_ignores_hidden_captcha_text_but_stops_for_visi
         timeout_seconds=3,
     )
     assert risk.state == "risk"
+
+
+class NavigationFailurePage(AdapterPage):
+    async def goto(self, _url: str, **_kwargs: object) -> None:
+        raise RuntimeError("browser page error includes https://secret.example/?token=never-log")
+
+
+@pytest.mark.asyncio
+async def test_navigation_failure_is_not_misclassified_as_session_unavailable() -> None:
+    adapter = adapter_for(NavigationFailurePage())
+
+    with pytest.raises(AppError) as caught:
+        await adapter.capture(
+            target_url=TARGET_URL,
+            target_id=WORK_ID,
+            storage_state_path="C:/outside/operator-state.json",
+            timeout_seconds=3,
+        )
+
+    assert caught.value.code == "DOUYIN_SESSION_PAGE_FAILED"
+    assert adapter.last_diagnostics is not None
+    assert adapter.last_diagnostics.last_phase == "page_navigation"
+    assert "secret.example" not in str(adapter.last_diagnostics)
+
+
+class CloseFailureContext(AdapterContext):
+    async def close(self) -> None:
+        raise RuntimeError("close must not replace player error")
+
+
+class CloseFailureBrowser(AdapterBrowser):
+    async def new_context(self, *, storage_state: str) -> AdapterContext:
+        assert storage_state.endswith("operator-state.json")
+        return CloseFailureContext(self.page)
+
+    async def close(self) -> None:
+        raise RuntimeError("browser close failure")
+
+
+class CloseFailureChromium(AdapterChromium):
+    async def launch(self, *, headless: bool) -> AdapterBrowser:
+        self.page.headless = headless
+        return CloseFailureBrowser(self.page)
+
+
+class CloseFailurePlaywright(AdapterPlaywright):
+    def __init__(self, page: AdapterPage) -> None:
+        self.chromium = CloseFailureChromium(page)
+
+
+class CloseFailureManager(AdapterManager):
+    async def __aenter__(self) -> AdapterPlaywright:
+        return CloseFailurePlaywright(self.page)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failures_do_not_override_player_result_or_leak_between_modes(caplog) -> None:
+    first_page = AdapterPage(visible=False)
+    second_page = AdapterPage(current_src=MEDIA_URL)
+    pages = iter([first_page, second_page])
+    adapter = PlaywrightSessionAdapter(playwright_factory=lambda: CloseFailureManager(next(pages)))
+
+    first = await adapter.capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        headless=False,
+    )
+    second = await adapter.capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        headless=True,
+    )
+
+    assert first.state == "player_missing"
+    assert second.state == "ok"
+    assert first_page.headless is False
+    assert second_page.headless is True
+    assert caplog.text.count("douyin_session_cleanup outcome=failed") == 4

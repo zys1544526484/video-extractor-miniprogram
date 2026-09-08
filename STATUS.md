@@ -1,8 +1,12 @@
 # STATUS
 
-更新时间：2026-09-07
+更新时间：2026-09-08
 
 ## 当前阶段
+
+- P3 诊断可见性与异常分类（2026-09-08）：`python -m app.douyin_session.smoke` 的最后一行 JSON 现在直接包含安全的 `last_phase`、阶段毫秒数、规范作品路径、主播放器 video/来源状态、媒体响应 MIME 和仅含 scheme+hostname 的媒体域名；不包含媒体路径/查询串、签名、Cookie、Token、Authorization 或 storage-state 路径。`DOUYIN_SESSION_UNAVAILABLE` 仅用于 Playwright 导入、浏览器启动或浏览器已断连；页面导航/播放器问题分别返回 `DOUYIN_SESSION_PAGE_FAILED`、`DOUYIN_SESSION_PLAYER_NOT_FOUND` 或既有媒体错误。Worker 在清理 Page/Context/Browser 时不会让清理异常覆盖业务错误，连续 headed/headless 运行使用独立对象。真实 Windows 复测尚未执行，因此当前两个模式的实际阶段 JSON 与成功率仍为 `NOT VERIFIED`。
+
+- 本轮本地门禁（2026-09-08）：全量后端 pytest（2 条依赖弃用 warning）、Ruff、compileall、前端 Node `49 passed`、小程序静态与合成 production 校验（各 80 files）及 `git diff --check` 均通过。Docker CLI 本机不可用；push 后的远程 CI 尚待确认。
 
 - P3 生产运行阶段化（2026-09-08）：Worker 现在分别限制 browser launch、`domcontentloaded` 导航、目标身份、播放器挂载/激活、媒体捕获与无 Cookie 媒体验证；超时日志只输出 `last_phase` 与阶段毫秒数。headless/headed 共用 storage state、上下文与播放器行为，不添加 stealth、webdriver 修改、验证码或风控处理。标准 headless 的真实稳定性仍为 `NOT VERIFIED`；可选 Linux Xvfb headed runner 以独立、默认关闭、无端口/VNC、仓库外只读会话卷方式提供，普通 API/Docker/CI 不受影响。浏览器暖复用尚未完成，不得当作性能改善交付。
 

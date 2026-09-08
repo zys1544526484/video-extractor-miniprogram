@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.douyin_session.models import SessionWorkerResult
+from app.douyin_session.models import PlayerDiagnostics, SessionWorkerResult
 from app.douyin_session.smoke import (
     SmokeOutput,
     resolve_smoke_target,
@@ -44,9 +44,14 @@ def safe_http(handler) -> SafeHttpClient:
 
 
 class FakeWorker:
-    def __init__(self, result: SessionWorkerResult | AppError) -> None:
+    def __init__(
+        self,
+        result: SessionWorkerResult | AppError,
+        diagnostics: PlayerDiagnostics | None = None,
+    ) -> None:
         self.result = result
         self.urls: list[str] = []
+        self.last_diagnostics = diagnostics
 
     async def inspect(self, target_url: str) -> SessionWorkerResult:
         self.urls.append(target_url)
@@ -235,7 +240,48 @@ async def test_smoke_keeps_resolved_work_id_when_session_media_capture_fails() -
     assert output.work_id == WORK_ID
 
 
-def test_smoke_output_schema_has_no_url_or_path_fields() -> None:
+@pytest.mark.asyncio
+async def test_smoke_failure_emits_safe_phase_diagnostics_without_media_route_or_credentials() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="<html></html>")
+
+    diagnostics = PlayerDiagnostics(
+        page_route=f"/video/{WORK_ID}",
+        target_id=WORK_ID,
+        video_count=2,
+        visible_video_count=1,
+        has_current_src=False,
+        has_src=True,
+        has_source_child=False,
+        has_blob_url=False,
+        media_response_count=1,
+        media_content_types=("video/mp4",),
+        media_domains=("https://cdn.example.com/private/signed?token=never-log",),
+        last_phase="player_mount",
+        phase_ms=(("page_navigation", 17), ("player_mount", 31)),
+    )
+    output = await run_smoke(
+        Settings(app_env="test", douyin_session_enabled=True),
+        CANONICAL_URL,
+        http=safe_http(handler),
+        worker=FakeWorker(
+            AppError("DOUYIN_SESSION_PLAYER_NOT_FOUND", "safe message"), diagnostics
+        ),  # type: ignore[arg-type]
+    )
+
+    payload = json.dumps(output.__dict__)
+    assert output.last_phase == "player_mount"
+    assert output.phase_elapsed_ms == 31
+    assert output.phases_ms == {"page_navigation": 17, "player_mount": 31}
+    assert output.final_page_path == f"/video/{WORK_ID}"
+    assert output.media_domains == ("https://cdn.example.com",)
+    assert output.media_mime_types == ("video/mp4",)
+    assert "private" not in payload
+    assert "token" not in payload.lower()
+    assert "never-log" not in payload
+
+
+def test_smoke_output_schema_only_contains_safe_diagnostic_fields() -> None:
     assert set(SmokeOutput.__annotations__) == {
         "outcome",
         "error_code",
@@ -243,4 +289,17 @@ def test_smoke_output_schema_has_no_url_or_path_fields() -> None:
         "media_domain",
         "bytes_read",
         "elapsed_ms",
+        "last_phase",
+        "phase_elapsed_ms",
+        "phases_ms",
+        "final_page_path",
+        "video_count",
+        "visible_video_count",
+        "has_current_src",
+        "has_src",
+        "has_source_child",
+        "has_blob_source",
+        "media_response_count",
+        "media_mime_types",
+        "media_domains",
     }

@@ -35,6 +35,23 @@ def session_unavailable() -> AppError:
     return AppError("DOUYIN_SESSION_UNAVAILABLE", "抖音专用会话环境不可用", status_code=503)
 
 
+def session_page_failed() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_PAGE_FAILED",
+        "抖音作品页面加载异常，请稍后重试",
+        status_code=502,
+        retryable=True,
+    )
+
+
+def session_login_required() -> AppError:
+    return AppError(
+        "DOUYIN_SESSION_LOGIN_REQUIRED",
+        "抖音专用会话未处于登录状态，请由运营者重新手动登录",
+        status_code=503,
+    )
+
+
 def session_timeout() -> AppError:
     return AppError(
         "DOUYIN_SESSION_TIMEOUT",

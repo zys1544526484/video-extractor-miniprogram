@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from ..config import Settings, load_settings
 from ..errors import AppError
 from ..services.safe_http import SafeHttpClient
-from .models import normalise_douyin_redirect_target
+from .models import PlayerDiagnostics, normalise_douyin_redirect_target
 from .worker import DouyinSessionWorker
 
 
@@ -23,10 +23,78 @@ class SmokeOutput:
     media_domain: str | None
     bytes_read: int | None
     elapsed_ms: int
+    last_phase: str | None
+    phase_elapsed_ms: int | None
+    phases_ms: dict[str, int]
+    final_page_path: str | None
+    video_count: int | None
+    visible_video_count: int | None
+    has_current_src: bool | None
+    has_src: bool | None
+    has_source_child: bool | None
+    has_blob_source: bool | None
+    media_response_count: int | None
+    media_mime_types: tuple[str, ...]
+    media_domains: tuple[str, ...]
 
 
 logger = logging.getLogger(__name__)
 SHORT_LINK_HOST = "v.douyin.com"
+
+
+def _safe_origin(value: str) -> str | None:
+    """Return only scheme + hostname, never a media route or credentials."""
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme in {"http", "https"} and parsed.hostname:
+        return f"{parsed.scheme}://{parsed.hostname.lower()}"
+    return None
+
+
+def _safe_page_path(value: str, target_id: str | None) -> str | None:
+    if target_id is None:
+        return None
+    expected = f"/video/{target_id}"
+    return expected if value == expected else None
+
+
+def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | None) -> dict[str, object]:
+    if diagnostics is None:
+        return {
+            "last_phase": None,
+            "phase_elapsed_ms": None,
+            "phases_ms": {},
+            "final_page_path": None,
+            "video_count": None,
+            "visible_video_count": None,
+            "has_current_src": None,
+            "has_src": None,
+            "has_source_child": None,
+            "has_blob_source": None,
+            "media_response_count": None,
+            "media_mime_types": (),
+            "media_domains": (),
+        }
+    phases = {name: int(elapsed) for name, elapsed in diagnostics.phase_ms}
+    return {
+        "last_phase": diagnostics.last_phase,
+        "phase_elapsed_ms": phases.get(diagnostics.last_phase),
+        "phases_ms": phases,
+        "final_page_path": _safe_page_path(diagnostics.page_route, work_id),
+        "video_count": diagnostics.video_count,
+        "visible_video_count": diagnostics.visible_video_count,
+        "has_current_src": diagnostics.has_current_src,
+        "has_src": diagnostics.has_src,
+        "has_source_child": diagnostics.has_source_child,
+        "has_blob_source": diagnostics.has_blob_url,
+        "media_response_count": diagnostics.media_response_count,
+        "media_mime_types": tuple(sorted(set(diagnostics.media_content_types))),
+        "media_domains": tuple(
+            sorted({origin for value in diagnostics.media_domains if (origin := _safe_origin(value))})
+        ),
+    }
 
 
 def _resolve_failed() -> AppError:
@@ -107,9 +175,10 @@ async def run_smoke(
     started = time.monotonic()
     client = http or build_safe_http(settings)
     work_id: str | None = None
+    active_worker = worker or DouyinSessionWorker(settings=settings, http=client)
     try:
         target_url, work_id = await resolve_smoke_target(url, client)
-        result = await (worker or DouyinSessionWorker(settings=settings, http=client)).inspect(target_url)
+        result = await active_worker.inspect(target_url)
         return SmokeOutput(
             outcome="success",
             error_code="NONE",
@@ -117,6 +186,7 @@ async def run_smoke(
             media_domain=result.media_origin,
             bytes_read=result.bytes_read,
             elapsed_ms=int((time.monotonic() - started) * 1000),
+            **_diagnostic_fields(getattr(active_worker, "last_diagnostics", None), work_id),
         )
     except AppError as error:
         return SmokeOutput(
@@ -126,13 +196,23 @@ async def run_smoke(
             media_domain=None,
             bytes_read=None,
             elapsed_ms=int((time.monotonic() - started) * 1000),
+            **_diagnostic_fields(getattr(active_worker, "last_diagnostics", None), work_id),
         )
 
 
 async def async_main() -> int:
     url = os.environ.get("DOUYIN_SMOKE_URL", "").strip()
     if not url:
-        print(json.dumps(asdict(SmokeOutput("failure", "SMOKE_URL_REQUIRED", None, None, None, 0))))
+        print(
+            json.dumps(
+                asdict(
+                    SmokeOutput(
+                        "failure", "SMOKE_URL_REQUIRED", None, None, None, 0,
+                        **_diagnostic_fields(None, None),
+                    )
+                )
+            )
+        )
         return 2
     output = await run_smoke(load_settings(), url)
     print(json.dumps(asdict(output), ensure_ascii=False))

@@ -17,7 +17,9 @@ from .errors import (
     session_config_invalid,
     session_disabled,
     session_expired,
+    session_login_required,
     session_media_not_found,
+    session_page_failed,
     session_player_not_found,
     session_timeout,
     session_unavailable,
@@ -27,6 +29,7 @@ from .models import (
     CapturedMedia,
     PlayerDiagnostics,
     SessionWorkerResult,
+    has_valid_douyin_cookie,
     target_id_from_url,
     validate_storage_state_path,
 )
@@ -37,6 +40,10 @@ RISK_URL_MARKERS = ("/captcha", "/verify", "/security", "/risk")
 RISK_COMPONENT_SELECTOR = (
     '[data-e2e*="captcha"], [data-e2e*="verify"], [data-e2e*="risk"], '
     'iframe[src*="captcha"], iframe[src*="verify"], [role="dialog"][data-captcha]'
+)
+LOGIN_COMPONENT_SELECTOR = (
+    '[data-e2e*="login"], [data-e2e*="login-button"], '
+    '[class*="login"][role="dialog"], [role="dialog"] [data-e2e*="qrcode"]'
 )
 HLS_CONTENT_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
 PRIMARY_VIDEO_MOUNTED_SCRIPT = """
@@ -139,7 +146,7 @@ def _safe_media_domain(url: str) -> str | None:
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return None
-    return parsed.hostname.lower()
+    return f"{parsed.scheme}://{parsed.hostname.lower()}"
 
 
 def _is_media_response(content_type: str, resource_type: str) -> bool:
@@ -161,6 +168,7 @@ class PlaywrightSessionAdapter:
 
     def __init__(self, playwright_factory: Callable[[], Any] | None = None) -> None:
         self.playwright_factory = playwright_factory
+        self.last_diagnostics: PlayerDiagnostics | None = None
 
     @staticmethod
     async def _has_visible_risk_component(page: Any) -> bool:
@@ -168,6 +176,15 @@ class PlaywrightSessionAdapter:
             return True
         try:
             return await page.locator(RISK_COMPONENT_SELECTOR).first.is_visible(timeout=250)
+        except Exception:
+            return False
+
+    @staticmethod
+    async def _has_visible_login_component(page: Any) -> bool:
+        if "/login" in page.url.lower():
+            return True
+        try:
+            return await page.locator(LOGIN_COMPONENT_SELECTOR).first.is_visible(timeout=250)
         except Exception:
             return False
 
@@ -207,6 +224,69 @@ class PlaywrightSessionAdapter:
             any(value.startswith("blob:") for value in urls),
         )
 
+    @staticmethod
+    async def _close_safely(resource: Any, *, resource_name: str) -> None:
+        if resource is None:
+            return
+        try:
+            await resource.close()
+        except Exception:
+            # Closing must never replace the useful page/player error.  Do not
+            # include exception text because browser errors can echo URLs.
+            logger.warning("douyin_session_cleanup outcome=failed resource=%s", resource_name)
+
+    @staticmethod
+    def _browser_disconnected(browser: Any | None) -> bool:
+        if browser is None:
+            return True
+        try:
+            is_connected = getattr(browser, "is_connected", None)
+            return callable(is_connected) and not bool(is_connected())
+        except Exception:
+            return False
+
+    def _record_diagnostics(
+        self,
+        *,
+        target_id: str,
+        phase: str,
+        phase_ms: dict[str, int],
+        snapshot: dict[str, Any] | None = None,
+        playback_media: list[tuple[str, str]] | None = None,
+        has_current_src: bool = False,
+        has_src: bool = False,
+        has_source_child: bool = False,
+        has_blob_url: bool = False,
+    ) -> PlayerDiagnostics:
+        snapshot = snapshot or {}
+        playback_media = playback_media or []
+        phase_copy = dict(phase_ms)
+        diagnostics = PlayerDiagnostics(
+            page_route=f"/video/{target_id}",
+            target_id=target_id,
+            video_count=int(snapshot.get("video_count", 0)),
+            visible_video_count=int(snapshot.get("visible_video_count", 0)),
+            has_current_src=has_current_src,
+            has_src=has_src,
+            has_source_child=has_source_child,
+            has_blob_url=has_blob_url,
+            media_response_count=len(playback_media),
+            media_content_types=tuple(sorted({mime for _url, mime in playback_media})),
+            media_domains=tuple(
+                sorted(
+                    {
+                        domain
+                        for url, _mime in playback_media
+                        if (domain := _safe_media_domain(url))
+                    }
+                )
+            ),
+            last_phase=phase,
+            phase_ms=tuple(phase_copy.items()),
+        )
+        self.last_diagnostics = diagnostics
+        return diagnostics
+
     async def capture(
         self,
         *,
@@ -227,6 +307,7 @@ class PlaywrightSessionAdapter:
         navigation_timeout_seconds = navigation_timeout_seconds or timeout_seconds
         player_timeout_seconds = player_timeout_seconds or timeout_seconds
         media_capture_timeout_seconds = media_capture_timeout_seconds or timeout_seconds
+        self.last_diagnostics = None
         phase_started = time.monotonic()
         phase_ms: dict[str, int] = {}
         phase = "browser_launch"
@@ -237,8 +318,11 @@ class PlaywrightSessionAdapter:
             phase = next_phase
             phase_started = time.monotonic()
 
-        def log_phase_failure() -> None:
+        def complete_phase() -> None:
             phase_ms[phase] = int((time.monotonic() - phase_started) * 1000)
+
+        def log_phase_failure() -> None:
+            complete_phase()
             logger.warning(
                 "douyin_session_phase target_id=%s last_phase=%s phase_ms=%s",
                 target_id,
@@ -247,14 +331,38 @@ class PlaywrightSessionAdapter:
             )
 
         try:
-            async with context_manager_factory() as playwright:
-                browser = await asyncio.wait_for(
-                    playwright.chromium.launch(headless=headless), timeout=launch_timeout_seconds
-                )
+            manager = context_manager_factory()
+        except AppError:
+            raise
+        except Exception as error:
+            raise session_unavailable() from error
+
+        browser: Any | None = None
+        context: Any | None = None
+        snapshot: dict[str, Any] = {}
+        playback_media: list[tuple[str, str]] = []
+        try:
+            async with manager as playwright:
+                try:
+                    browser = await asyncio.wait_for(
+                        playwright.chromium.launch(headless=headless), timeout=launch_timeout_seconds
+                    )
+                except TimeoutError as error:
+                    log_phase_failure()
+                    self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                    raise session_timeout() from error
+                except Exception as error:
+                    log_phase_failure()
+                    self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                    raise session_unavailable() from error
                 try:
                     context = await browser.new_context(storage_state=storage_state_path)
-                    try:
-                        page = await context.new_page()
+                    page = await context.new_page()
+                except Exception as error:
+                    log_phase_failure()
+                    self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                    raise session_page_failed() from error
+                try:
                         playback_media: list[tuple[str, str]] = []
                         capture_playback_responses = False
 
@@ -273,21 +381,66 @@ class PlaywrightSessionAdapter:
 
                         page.on("response", observe_response)
                         move_to("page_navigation")
-                        await page.goto(
-                            target_url,
-                            wait_until="domcontentloaded",
-                            timeout=navigation_timeout_seconds * 1000,
-                        )
+                        try:
+                            await page.goto(
+                                target_url,
+                                wait_until="domcontentloaded",
+                                timeout=navigation_timeout_seconds * 1000,
+                            )
+                        except TimeoutError as error:
+                            log_phase_failure()
+                            self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                            raise session_timeout() from error
+                        except Exception as error:
+                            log_phase_failure()
+                            self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                            raise session_page_failed() from error
                         move_to("target_identity")
                         if await self._has_visible_risk_component(page):
-                            return CapturedMedia(target_id=None, media_url=None, state="risk")
-                        if "/login" in page.url.lower():
-                            return CapturedMedia(target_id=None, media_url=None, state="expired")
+                            complete_phase()
+                            return CapturedMedia(
+                                target_id=None,
+                                media_url=None,
+                                state="risk",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id, phase=phase, phase_ms=phase_ms
+                                ),
+                            )
+                        if await self._has_visible_login_component(page):
+                            complete_phase()
+                            return CapturedMedia(
+                                target_id=None,
+                                media_url=None,
+                                state="expired",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id, phase=phase, phase_ms=phase_ms
+                                ),
+                            )
                         if target_id_from_url(page.url) != target_id:
-                            return CapturedMedia(target_id=None, media_url=None, state="mismatch")
+                            complete_phase()
+                            return CapturedMedia(
+                                target_id=None,
+                                media_url=None,
+                                state="mismatch",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id, phase=phase, phase_ms=phase_ms
+                                ),
+                            )
                         move_to("player_mount")
                         if not await self._wait_for_primary_player(page, player_timeout_seconds):
-                            return CapturedMedia(target_id=target_id, media_url=None, state="player_missing")
+                            snapshot = await self._player_snapshot(page)
+                            complete_phase()
+                            return CapturedMedia(
+                                target_id=target_id,
+                                media_url=None,
+                                state="player_missing",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id,
+                                    phase=phase,
+                                    phase_ms=phase_ms,
+                                    snapshot=snapshot,
+                                ),
+                            )
                         before_start = await self._player_snapshot(page)
                         move_to("player_activation")
                         capture_playback_responses = True
@@ -332,37 +485,25 @@ class PlaywrightSessionAdapter:
                             # bounded candidate; multiple responses stay unresolved to avoid
                             # choosing ads or recommendations.
                             media_url = network_urls[0]
-                        domains = tuple(
-                            sorted(
-                                {
-                                    domain
-                                    for url, _mime in playback_media
-                                    if (domain := _safe_media_domain(url))
-                                }
-                            )
-                        )
-                        phase_ms[phase] = int((time.monotonic() - phase_started) * 1000)
-                        diagnostics = PlayerDiagnostics(
-                            page_route=f"https://www.douyin.com/video/{target_id}",
+                        complete_phase()
+                        diagnostics = self._record_diagnostics(
                             target_id=target_id,
-                            video_count=int(
-                                snapshot.get("video_count", before_start.get("video_count", 0))
-                            ),
-                            visible_video_count=int(
-                                snapshot.get(
+                            phase=phase,
+                            phase_ms=phase_ms,
+                            snapshot={
+                                "video_count": snapshot.get(
+                                    "video_count", before_start.get("video_count", 0)
+                                ),
+                                "visible_video_count": snapshot.get(
                                     "visible_video_count",
                                     before_start.get("visible_video_count", 0),
-                                )
-                            ),
+                                ),
+                            },
+                            playback_media=playback_media,
                             has_current_src=has_current_src,
                             has_src=has_src,
                             has_source_child=has_source_child,
                             has_blob_url=has_blob_url,
-                            media_response_count=len(playback_media),
-                            media_content_types=tuple(sorted({mime for _url, mime in playback_media})),
-                            media_domains=domains,
-                            last_phase=phase,
-                            phase_ms=tuple(phase_ms.items()),
                         )
                         return CapturedMedia(
                             target_id=target_id,
@@ -370,17 +511,51 @@ class PlaywrightSessionAdapter:
                             state="ok" if media_url else "media_missing",
                             diagnostics=diagnostics,
                         )
-                    finally:
-                        await context.close()
-                finally:
-                    await browser.close()
+                except TimeoutError as error:
+                    log_phase_failure()
+                    self._record_diagnostics(
+                        target_id=target_id, phase=phase, phase_ms=phase_ms, snapshot=snapshot,
+                        playback_media=playback_media,
+                    )
+                    raise session_timeout() from error
+                except AppError:
+                    raise
+                except Exception as error:
+                    log_phase_failure()
+                    self._record_diagnostics(
+                        target_id=target_id, phase=phase, phase_ms=phase_ms, snapshot=snapshot,
+                        playback_media=playback_media,
+                    )
+                    raise session_page_failed() from error
         except TimeoutError as error:
             log_phase_failure()
+            self._record_diagnostics(
+                target_id=target_id,
+                phase=phase,
+                phase_ms=phase_ms,
+                snapshot=snapshot,
+                playback_media=playback_media,
+            )
             raise session_timeout() from error
         except AppError:
             raise
         except Exception as error:
-            raise session_unavailable() from error
+            log_phase_failure()
+            self._record_diagnostics(
+                target_id=target_id,
+                phase=phase,
+                phase_ms=phase_ms,
+                snapshot=snapshot,
+                playback_media=playback_media,
+            )
+            if self._browser_disconnected(browser):
+                raise session_unavailable() from error
+            # The browser has launched and remains connected. An unexpected
+            # page/context error is not an unavailable Playwright environment.
+            raise session_page_failed() from error
+        finally:
+            await self._close_safely(context, resource_name="context")
+            await self._close_safely(browser, resource_name="browser")
 
 
 class DouyinSessionWorker:
@@ -397,12 +572,25 @@ class DouyinSessionWorker:
         self.http = http
         self.browser = browser or PlaywrightSessionAdapter()
         self._semaphore = asyncio.Semaphore(settings.douyin_session_max_concurrency)
+        self.last_diagnostics: PlayerDiagnostics | None = None
+        # Stable internal category for operators and tests.  It intentionally
+        # never contains a browser exception message or a URL.
+        self.last_internal_reason: str | None = None
+
+    def _copy_browser_diagnostics(self) -> None:
+        diagnostics = getattr(self.browser, "last_diagnostics", None)
+        if isinstance(diagnostics, PlayerDiagnostics):
+            self.last_diagnostics = diagnostics
 
     async def inspect(self, target_url: str) -> SessionWorkerResult:
+        self.last_diagnostics = None
+        self.last_internal_reason = None
         if not self.settings.douyin_session_enabled:
+            self.last_internal_reason = "feature_disabled"
             raise session_disabled()
         target_id = target_id_from_url(target_url)
         if target_id is None:
+            self.last_internal_reason = "invalid_target"
             raise AppError("URL_INVALID", "抖音专用会话只接受已确认的作品链接")
         try:
             state_path = validate_storage_state_path(
@@ -410,8 +598,13 @@ class DouyinSessionWorker:
                 require_exists=True,
             )
         except ValueError as error:
+            self.last_internal_reason = "storage_state_invalid"
             logger.warning("douyin_session_worker outcome=config_invalid")
             raise session_config_invalid() from error
+        if not has_valid_douyin_cookie(state_path):
+            self.last_internal_reason = "storage_state_not_logged_in"
+            logger.warning("douyin_session_worker outcome=login_required")
+            raise session_login_required()
         started = time.monotonic()
         async with self._semaphore:
             try:
@@ -435,9 +628,15 @@ class DouyinSessionWorker:
                     ),
                 )
             except TimeoutError as error:
+                self._copy_browser_diagnostics()
+                self.last_internal_reason = "worker_timeout"
                 raise session_timeout() from error
+            except AppError:
+                self._copy_browser_diagnostics()
+                raise
             if capture.diagnostics is not None:
                 diagnostics = capture.diagnostics
+                self.last_diagnostics = diagnostics
                 logger.info(
                     "douyin_session_player target_id=%s page=%s videos=%d visible=%d "
                     "current_src=%s src=%s source_child=%s blob=%s media_responses=%d "
@@ -457,16 +656,22 @@ class DouyinSessionWorker:
                     ",".join(f"{name}:{elapsed}" for name, elapsed in diagnostics.phase_ms),
                 )
             if capture.state == "expired":
+                self.last_internal_reason = "session_expired"
                 raise session_expired()
             if capture.state == "risk":
+                self.last_internal_reason = "risk_component_visible"
                 raise risk_controlled()
             if capture.state == "player_missing":
+                self.last_internal_reason = "player_not_mounted"
                 raise session_player_not_found()
             if capture.state == "media_missing":
+                self.last_internal_reason = "player_media_missing"
                 raise session_media_not_found()
             if capture.state != "ok" or capture.target_id != target_id:
+                self.last_internal_reason = "target_mismatch"
                 raise target_mismatch()
             if not capture.media_url:
+                self.last_internal_reason = "player_media_missing"
                 raise session_media_not_found()
             try:
                 logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)
@@ -490,14 +695,17 @@ class DouyinSessionWorker:
                     finally:
                         await stream.close()
             except TimeoutError as error:
+                self.last_internal_reason = "media_verify_timeout"
                 raise AppError(
                     "DOUYIN_SESSION_MEDIA_VERIFY_TIMEOUT", "媒体公开复验超时", retryable=True
                 ) from error
             except AppError as error:
                 if error.code == "CONTENT_NOT_PUBLIC":
+                    self.last_internal_reason = "session_bound_media"
                     raise session_bound_media() from error
                 raise
             if bytes_read < 1024:
+                self.last_internal_reason = "public_media_too_short"
                 raise AppError("DOWNLOAD_FAILED", "公开媒体无法读取足够的视频数据", retryable=True)
             result = SessionWorkerResult(
                 target_id=target_id,
