@@ -11,6 +11,7 @@
 - 最终输出从固定字段白名单重建：完整媒体地址即使包含 path/query 也只保留 `scheme://hostname`；作品页只允许 `/video/{work_id}`；未知字段、未知阶段、原始异常和敏感字符串不透传。PowerShell 丢弃 stderr 和非 JSON 行，只回显最后一行安全 JSON。
 - 自动验证真实结果：backend pytest `221 passed`（2 warnings），Ruff PASS，compileall PASS；前端 Node `49 passed`；小程序常规/合成 production 校验各 `80 files checked` PASS；Alembic 空库升级到 head并复核 PASS；`git diff --check` PASS。本机 Docker/Caddy CLI 不可用，容器构建与 Caddy validate 等待本次 push 后的 GitHub Actions，不能写成本地 PASS。
 - 本轮未运行真实 Playwright、未读取运营者会话、未执行平台请求，因此最新 P3 Headed 结果保持 `NOT VERIFIED`。推送与远程 CI 完成后到达首个人工 Gate：用户只运行一次 `powershell -ExecutionPolicy Bypass -File .\scripts\verify_douyin_session.ps1`，其真实 JSON 决定 M2 进入生产化还是最后一次集中修正。
+- 一键脚本首次在真实工作区执行时，Git porcelain 首行的状态空格被通用 trim 去掉，导致第一个允许保留的 egg-info 文件被误判；真实 smoke 未启动。预检现保留原始 porcelain 空格，并新增首行未暂存状态回归。该修正只影响本地验收前置判断，不放宽允许的未提交路径。
 
 ### M0：项目接管与规范归一（2026-09-08）
 

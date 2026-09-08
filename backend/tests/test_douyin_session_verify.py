@@ -75,6 +75,16 @@ def test_preflight_accepts_remote_head_and_only_known_generated_changes(tmp_path
     assert head == REMOTE_HEAD
 
 
+def test_porcelain_status_keeps_the_first_path_when_it_starts_with_space() -> None:
+    from app.douyin_session.verify import _status_paths
+
+    status = " M backend/wechat_video_extractor_backend.egg-info/PKG-INFO\n"
+
+    assert _status_paths(status) == {
+        "backend/wechat_video_extractor_backend.egg-info/PKG-INFO"
+    }
+
+
 def test_preflight_rejects_unexpected_worktree_change(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

@@ -107,7 +107,9 @@ def _run_git(cwd: Path, arguments: Sequence[str]) -> GitResult:
         )
     except (OSError, subprocess.SubprocessError):
         return GitResult(1, "")
-    return GitResult(completed.returncode, completed.stdout.strip())
+    # Porcelain status uses a meaningful leading space for an unstaged change.
+    # Callers that expect a scalar value trim it in ``_git_value`` instead.
+    return GitResult(completed.returncode, completed.stdout)
 
 
 def _git_value(
