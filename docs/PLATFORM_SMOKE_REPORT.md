@@ -16,6 +16,8 @@ P3 主播放器捕获已扩展并具有自动回归：直接 `currentSrc`、`src
 
 用户在本机报告：同一公开作品的 headed Chromium session smoke 已取得 douyinvod 媒体域名并无 Cookie 读取 1024 bytes，耗时 20171ms；headless 仍在约 30546ms 返回 `DOUYIN_SESSION_TIMEOUT`。这证明 headed 路线，不证明 headless 或可部署性。后续 smoke 日志将按 browser launch、页面导航、身份、播放器、媒体捕获、媒体复验分别记录安全阶段耗时；实际 Xvfb/headless 与暖启动结果尚未产生，均为 `NOT VERIFIED`。
 
+2026-09-08 的 M1 未新增真实平台结果：已提供 `scripts/verify_douyin_session.ps1`，用于对最新 P3 只执行一次 Headed smoke。当前 Codex 进程仅验证到安全前置失败 `VERIFY_SESSION_NOT_ENABLED`，没有启动浏览器、读取 storage state 或发送抖音请求。必须等待运营者在原有已配置终端运行该脚本后的单行脱敏 JSON，不能把自动测试或历史单次 headed 成功当作最新版本 PASS。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。

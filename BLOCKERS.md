@@ -23,4 +23,6 @@ P3 专用会话 PoC 也不消除抖音发布阻塞：短链重定向现已安全
 
 Referer 现已按完整目标路径、抖音 origin-only、其他抖音路径、外部来源和缺失来源分别计数；图片/脚本/接口等非媒体 MIME 不进入这些计数。origin-only 不是通配许可，只有严格目标页、唯一可见主播放器与受控窗口等全部约束成立后才可参与唯一候选组；其他三类始终拒绝。真实 Windows 会话尚未复测，因此仍不能据此判断该公开作品已下载成功。
 
+M1 已把最新 P3 的必要自动检查收敛为 `scripts/verify_douyin_session.ps1`。本机自动预检、测试和远程 CI 均已通过，但当前 Codex 进程不读取运营者会话，因此真实 Headed 结果仍是人工 Gate。用户只需在原先已配置会话的 PowerShell 中运行一次脚本；在收到这一次严格脱敏 JSON 前，不进入暖浏览器、Xvfb/headless 选型或正式 Parser 接入。
+
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。

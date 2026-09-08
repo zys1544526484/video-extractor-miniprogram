@@ -9,8 +9,8 @@
 - 新增 `scripts/verify_douyin_session.ps1`，用户在已配置运营者会话的 PowerShell 中只需运行一条命令。脚本不 bootstrap、不写会话，只执行一次 Headed smoke。
 - Python 验收层在 smoke 前自动 fetch 并核对当前 `codex/p3-douyin-session-poc` 与远端 HEAD，确认当前提交包含 `f15943d...`，并拒绝三个已知 egg-info 之外的未提交修改。必要环境与仓库外 storage state 只检查存在性/有效登录状态，不输出值或路径。
 - 最终输出从固定字段白名单重建：完整媒体地址即使包含 path/query 也只保留 `scheme://hostname`；作品页只允许 `/video/{work_id}`；未知字段、未知阶段、原始异常和敏感字符串不透传。PowerShell 丢弃 stderr 和非 JSON 行，只回显最后一行安全 JSON。
-- 自动验证真实结果：backend pytest `221 passed`（2 warnings），Ruff PASS，compileall PASS；前端 Node `49 passed`；小程序常规/合成 production 校验各 `80 files checked` PASS；Alembic 空库升级到 head并复核 PASS；`git diff --check` PASS。本机 Docker/Caddy CLI 不可用，容器构建与 Caddy validate 等待本次 push 后的 GitHub Actions，不能写成本地 PASS。
-- 本轮未运行真实 Playwright、未读取运营者会话、未执行平台请求，因此最新 P3 Headed 结果保持 `NOT VERIFIED`。推送与远程 CI 完成后到达首个人工 Gate：用户只运行一次 `powershell -ExecutionPolicy Bypass -File .\scripts\verify_douyin_session.ps1`，其真实 JSON 决定 M2 进入生产化还是最后一次集中修正。
+- 自动验证真实结果：backend pytest `222 passed`（2 warnings），Ruff PASS，compileall PASS；前端 Node `49 passed`；小程序常规/合成 production 校验各 `80 files checked` PASS；Alembic 空库升级到 head并复核 PASS；`git diff --check` PASS。本机 Docker/Caddy CLI 不可用；代码提交 `ba345f4903fa47afc1d60f1613dc079a54c24ab2` 的 [GitHub Actions #93](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34234612318) 成功，远程 Docker build 与固定 Caddy validate 由该 run 验证。
+- Wrapper 已在当前真实工作区执行预检，正确允许三个既有 egg-info 修改，并因当前 Codex 进程未配置会话环境而安全返回 `VERIFY_SESSION_NOT_ENABLED`；没有启动浏览器或发送平台请求。最新 P3 Headed 结果保持 `NOT VERIFIED`。当前已经到达首个人工 Gate：用户只运行一次 `powershell -ExecutionPolicy Bypass -File .\scripts\verify_douyin_session.ps1`，其真实 JSON 决定 M2 进入生产化还是最后一次集中修正。
 - 一键脚本首次在真实工作区执行时，Git porcelain 首行的状态空格被通用 trim 去掉，导致第一个允许保留的 egg-info 文件被误判；真实 smoke 未启动。预检现保留原始 porcelain 空格，并新增首行未暂存状态回归。该修正只影响本地验收前置判断，不放宽允许的未提交路径。
 
 ### M0：项目接管与规范归一（2026-09-08）

@@ -1,10 +1,10 @@
 # Release Readiness — V1
 
-更新时间：2026-09-04
+更新时间：2026-09-08
 
 ## 当前结论
 
-**不可提审（NOT READY）**。Token 时间语义、生产配置校验和 Caddy 语法已由自动测试/最新分支 push CI 验证，两个 job 成功；但不代表真实微信能力、部署后日志行为、容器运行或五平台解析已验证。
+**不可提审（NOT READY）**。M1 最新本地门禁为 backend pytest 222 项、Node 49 项、小程序常规/production 各 80 个文件、Ruff、compileall、Alembic 空库升级/head 和 `git diff --check` 全部通过；代码提交 `ba345f4903fa47afc1d60f1613dc079a54c24ab2` 的 GitHub Actions #93 成功并覆盖 Docker build/Caddy validate。但最新 P3 真实 Headed smoke、标准 headless/Xvfb、暖浏览器、正式解析接入、真实微信能力、部署日志和目标平台 3/3 样例均未验证。
 
 ## 已完成
 

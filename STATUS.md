@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-- M1 P3 单次验收入口（2026-09-08）：新增 `scripts/verify_douyin_session.ps1` 与可单测的 `app.douyin_session.verify`。脚本自动 fetch 并核对 `codex/p3-douyin-session-poc`、远端完整 HEAD 与 `f15943d...` 最低基线；只容忍三个既有 egg-info 修改，检查显式开关、smoke URL 和仓库外有效运营者会话后，强制 `headless=false` 并只调用一次 smoke。最终 JSON从白名单重建，媒体只保留 scheme+hostname，路径、查询、签名、Cookie、Token、会话路径和未知字段均不透传。新增 5 项自动回归；本轮没有执行真实浏览器或读取运营者会话，最新 P3 真实结果仍为 `NOT VERIFIED`，下一步是用户只运行一次该脚本。
+- M1 P3 单次验收入口（2026-09-08）：新增 `scripts/verify_douyin_session.ps1` 与可单测的 `app.douyin_session.verify`。脚本自动 fetch 并核对 `codex/p3-douyin-session-poc`、远端完整 HEAD 与 `f15943d...` 最低基线；只容忍三个既有 egg-info 修改，检查显式开关、smoke URL 和仓库外有效运营者会话后，强制 `headless=false` 并只调用一次 smoke。最终 JSON从白名单重建，媒体只保留 scheme+hostname，路径、查询、签名、Cookie、Token、会话路径和未知字段均不透传。最新全量回归为 backend pytest `222 passed`（2 warnings）、Ruff/compileall PASS、Node `49 passed`、小程序常规/production 各 `80 files checked`、Alembic 空库升级/head 与 `git diff --check` PASS；代码提交 `ba345f4903fa47afc1d60f1613dc079a54c24ab2` 的 [GitHub Actions #93](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34234612318) 成功。本轮没有执行真实浏览器或读取运营者会话，最新 P3 真实结果仍为 `NOT VERIFIED`，下一步是用户只运行一次该脚本。
 - M1 真实预检修正（2026-09-08）：首次运行一键脚本时发现 Git porcelain 首行的前导状态空格被 trim，导致第一个允许保留的 egg-info 文件路径少一个字符并误报工作区异常；smoke 未启动。现保留原始 porcelain 输出并新增回归，允许列表本身未扩大。
 
 - M0 接管基线（2026-09-08）：已核对 `origin/main=af3f2bc452a317675f67c25b0d099b53b8a9d60d`、当前 `codex/p3-douyin-session-poc=f15943d599cdab085566662b6c9116751b504a21`，并确认当前分支与远端一致。新增 `docs/SOL_TAKEOVER_SPEC.md` 作为 M0–M6 当前执行基准，历史 `SOURCE_SPEC_V1.md` 降为需求来源。文档已校准免费模式、24 小时任务/媒体记录、900 秒访问 Token、90000 秒临时文件清理、HTTPS MP4 按需代理和旧广告视觉记录。P3 暖浏览器、可调用的 Xvfb 内部 Worker、Registry 接入及 3/3 真实样例仍未实现或验证；下一步为 M1 一键 Headed 单次验收工具，不继续零散启发式修补。
