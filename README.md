@@ -26,6 +26,16 @@ Copy-Item .env.example .env
 
 要在微信开发者工具中测试真实公开链接，请保持后端 `.env` 为 `APP_ENV=development`、`MOCK_WECHAT_AUTH=true`、`DOWNLOAD_ACCESS_MODE=free`，并将 `miniprogram/config/env.js` 设为 `MOCK_API=false`。解析现采用持久任务：页面重开会继续查询，任务和媒体记录默认保留 24 小时，单个媒体访问 Token 默认 900 秒；长视频默认最多处理 30 分钟。模拟器中的 `127.0.0.1` 指向本机，真机体验必须改用已备案 HTTPS 合法域名。
 
+## P3 抖音会话单次本机验收
+
+仅在运营者已经手动创建仓库外会话文件，并在当前 PowerShell 中配置 `DOUYIN_SESSION_ENABLED=true`、`DOUYIN_STORAGE_STATE_PATH` 和 `DOUYIN_SMOKE_URL` 后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify_douyin_session.ps1
+```
+
+脚本会先核对当前分支、远端 HEAD、工作区和必要环境，再强制执行一次 Headed smoke。终端只输出一行白名单脱敏 JSON，不显示会话路径/内容、Cookie、完整媒体 URL、查询参数或签名。该入口不执行 bootstrap，也不会创建或更新会话文件。
+
 首页只需粘贴分享文案并开始提取，不预选画质。结果页按后端真实返回的源展示实际清晰度和大小，支持源切换、视频/图片/标题三个 Tab、短期安全链接复制及相册保存。服务器可暂存不超过 2GiB 的公开源文件；成品超过 180MiB、编码不兼容时，会自动按时长压缩/降档为 H.264 + AAC，并最终交付一个完整 MP4。不会把降档版本冒充原视频。
 
 ## 检查

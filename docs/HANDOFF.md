@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### M1：P3 一键 Headed 单次验收（2026-09-08）
+
+- 新增 `scripts/verify_douyin_session.ps1`，用户在已配置运营者会话的 PowerShell 中只需运行一条命令。脚本不 bootstrap、不写会话，只执行一次 Headed smoke。
+- Python 验收层在 smoke 前自动 fetch 并核对当前 `codex/p3-douyin-session-poc` 与远端 HEAD，确认当前提交包含 `f15943d...`，并拒绝三个已知 egg-info 之外的未提交修改。必要环境与仓库外 storage state 只检查存在性/有效登录状态，不输出值或路径。
+- 最终输出从固定字段白名单重建：完整媒体地址即使包含 path/query 也只保留 `scheme://hostname`；作品页只允许 `/video/{work_id}`；未知字段、未知阶段、原始异常和敏感字符串不透传。PowerShell 丢弃 stderr 和非 JSON 行，只回显最后一行安全 JSON。
+- 自动验证真实结果：backend pytest `221 passed`（2 warnings），Ruff PASS，compileall PASS；前端 Node `49 passed`；小程序常规/合成 production 校验各 `80 files checked` PASS；Alembic 空库升级到 head并复核 PASS；`git diff --check` PASS。本机 Docker/Caddy CLI 不可用，容器构建与 Caddy validate 等待本次 push 后的 GitHub Actions，不能写成本地 PASS。
+- 本轮未运行真实 Playwright、未读取运营者会话、未执行平台请求，因此最新 P3 Headed 结果保持 `NOT VERIFIED`。推送与远程 CI 完成后到达首个人工 Gate：用户只运行一次 `powershell -ExecutionPolicy Bypass -File .\scripts\verify_douyin_session.ps1`，其真实 JSON 决定 M2 进入生产化还是最后一次集中修正。
+
 ### M0：项目接管与规范归一（2026-09-08）
 
 - 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`；`origin/main` 已核对为 `af3f2bc452a317675f67c25b0d099b53b8a9d60d`，当前分支与远端均为 `codex/p3-douyin-session-poc` / `f15943d599cdab085566662b6c9116751b504a21`。

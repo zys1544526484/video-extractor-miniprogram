@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- M1 P3 单次验收入口（2026-09-08）：新增 `scripts/verify_douyin_session.ps1` 与可单测的 `app.douyin_session.verify`。脚本自动 fetch 并核对 `codex/p3-douyin-session-poc`、远端完整 HEAD 与 `f15943d...` 最低基线；只容忍三个既有 egg-info 修改，检查显式开关、smoke URL 和仓库外有效运营者会话后，强制 `headless=false` 并只调用一次 smoke。最终 JSON从白名单重建，媒体只保留 scheme+hostname，路径、查询、签名、Cookie、Token、会话路径和未知字段均不透传。新增 5 项自动回归；本轮没有执行真实浏览器或读取运营者会话，最新 P3 真实结果仍为 `NOT VERIFIED`，下一步是用户只运行一次该脚本。
+
 - M0 接管基线（2026-09-08）：已核对 `origin/main=af3f2bc452a317675f67c25b0d099b53b8a9d60d`、当前 `codex/p3-douyin-session-poc=f15943d599cdab085566662b6c9116751b504a21`，并确认当前分支与远端一致。新增 `docs/SOL_TAKEOVER_SPEC.md` 作为 M0–M6 当前执行基准，历史 `SOURCE_SPEC_V1.md` 降为需求来源。文档已校准免费模式、24 小时任务/媒体记录、900 秒访问 Token、90000 秒临时文件清理、HTTPS MP4 按需代理和旧广告视觉记录。P3 暖浏览器、可调用的 Xvfb 内部 Worker、Registry 接入及 3/3 真实样例仍未实现或验证；下一步为 M1 一键 Headed 单次验收工具，不继续零散启发式修补。
 
 - P3 Referer 跨域归属收紧（2026-09-08）：视频/HLS MIME 先被过滤，之后 Referer 仅以安全计数归类为 `exact_target_path`、`douyin_origin_only`、`other_douyin_path`、`external_origin`、`missing`；不会输出 Referer 值。完整目标路径继续可用；抖音 origin-only 仅在目标 `/video/{id}`、唯一可见主播放器、隐藏播放器暂停/禁预载、受控捕获窗口、主框架、唯一等价组、SSRF 与无 Cookie Range 复验均满足时才可用。其余三类一律拒绝。seek 只尝试未缓冲位置；已全缓冲时最多 reload 一次并重新确认目标 ID。真实 Headed smoke 未运行，仍为 `NOT VERIFIED`。
