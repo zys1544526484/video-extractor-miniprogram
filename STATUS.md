@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- M0 接管基线（2026-09-08）：已核对 `origin/main=af3f2bc452a317675f67c25b0d099b53b8a9d60d`、当前 `codex/p3-douyin-session-poc=f15943d599cdab085566662b6c9116751b504a21`，并确认当前分支与远端一致。新增 `docs/SOL_TAKEOVER_SPEC.md` 作为 M0–M6 当前执行基准，历史 `SOURCE_SPEC_V1.md` 降为需求来源。文档已校准免费模式、24 小时任务/媒体记录、900 秒访问 Token、90000 秒临时文件清理、HTTPS MP4 按需代理和旧广告视觉记录。P3 暖浏览器、可调用的 Xvfb 内部 Worker、Registry 接入及 3/3 真实样例仍未实现或验证；下一步为 M1 一键 Headed 单次验收工具，不继续零散启发式修补。
+
 - P3 Referer 跨域归属收紧（2026-09-08）：视频/HLS MIME 先被过滤，之后 Referer 仅以安全计数归类为 `exact_target_path`、`douyin_origin_only`、`other_douyin_path`、`external_origin`、`missing`；不会输出 Referer 值。完整目标路径继续可用；抖音 origin-only 仅在目标 `/video/{id}`、唯一可见主播放器、隐藏播放器暂停/禁预载、受控捕获窗口、主框架、唯一等价组、SSRF 与无 Cookie Range 复验均满足时才可用。其余三类一律拒绝。seek 只尝试未缓冲位置；已全缓冲时最多 reload 一次并重新确认目标 ID。真实 Headed smoke 未运行，仍为 `NOT VERIFIED`。
 
 - P3 blob 主播放器受控归属（2026-09-08）：目标 ID 与唯一可见主播放器确认后，Worker 暂停隐藏 video、关闭其预加载、清空前置匿名候选，并仅在短时 `main_player_capture` 窗口内激活该主播放器。候选在任务内存中记录捕获阶段、主框架、资源类型、Range/长度、ETag 与规范路径指纹；输出只含八类未绑定原因计数和等价组数。窗口候选需主框架、canonical Referer、视频 MIME、SSRF 校验，且以规范路径指纹形成唯一强等价组；跨 CDN 同路径 Range 镜像可归组，多个不同组继续安全失败。无 Cookie 复验以 `bytes=0-4095` 读取并在内存比较内容哈希，不记录内容或哈希。blob 无候选时仅对同一主播放器 seek 一次，不再 reload。真实 Windows Headed smoke 仍为 `NOT VERIFIED`。

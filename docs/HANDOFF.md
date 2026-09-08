@@ -4,6 +4,13 @@
 
 ## 当前基线
 
+### M0：项目接管与规范归一（2026-09-08）
+
+- 仓库：`https://github.com/zys1544526484/video-extractor-miniprogram`；`origin/main` 已核对为 `af3f2bc452a317675f67c25b0d099b53b8a9d60d`，当前分支与远端均为 `codex/p3-douyin-session-poc` / `f15943d599cdab085566662b6c9116751b504a21`。
+- 新增 `docs/SOL_TAKEOVER_SPEC.md`，将本轮完整接管要求归一为 M0–M6 执行基准；`docs/00_MASTER_EXECUTION.md` 已链接该规范，`SOURCE_SPEC_V1.md` 继续只保存历史来源。
+- 已记录并校准主要漂移：历史解析前广告/无历史/单源规则与当前免费模式、24 小时恢复记录、多真实源冲突；2 小时/3 小时旧期限与当前 24 小时记录、900 秒 Token、90000 秒临时清理冲突；“所有媒体预先落盘”与 HTTPS MP4 按需代理快路径冲突；P3 配置/容器骨架与尚未实现的暖浏览器/内部 Worker 不能混称完成。
+- 本阶段只修改文档，不改业务代码。三个任务前已有 `backend/wechat_video_extractor_backend.egg-info/` 修改继续保留且不暂存、不提交。下一阶段 M1 将审查最新 P3 并提供只执行一次 Headed smoke 的安全 PowerShell 验收脚本；所有自动工作完成前不要求用户手测。
+
 ### 当前请求：P3 运营者服务器专用抖音会话 PoC（2026-09-07）
 
 - 分支：`codex/p3-douyin-session-poc`，从已核对的 P2 HEAD `9275b0a11658dc2ccf788acfbb7a8a6b44b585ac` 创建；不修改 `main`、不使用 force push、不创建或合并 PR。
