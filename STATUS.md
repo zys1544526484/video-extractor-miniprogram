@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- P3 Referer 跨域归属收紧（2026-09-08）：视频/HLS MIME 先被过滤，之后 Referer 仅以安全计数归类为 `exact_target_path`、`douyin_origin_only`、`other_douyin_path`、`external_origin`、`missing`；不会输出 Referer 值。完整目标路径继续可用；抖音 origin-only 仅在目标 `/video/{id}`、唯一可见主播放器、隐藏播放器暂停/禁预载、受控捕获窗口、主框架、唯一等价组、SSRF 与无 Cookie Range 复验均满足时才可用。其余三类一律拒绝。seek 只尝试未缓冲位置；已全缓冲时最多 reload 一次并重新确认目标 ID。真实 Headed smoke 未运行，仍为 `NOT VERIFIED`。
+
 - P3 blob 主播放器受控归属（2026-09-08）：目标 ID 与唯一可见主播放器确认后，Worker 暂停隐藏 video、关闭其预加载、清空前置匿名候选，并仅在短时 `main_player_capture` 窗口内激活该主播放器。候选在任务内存中记录捕获阶段、主框架、资源类型、Range/长度、ETag 与规范路径指纹；输出只含八类未绑定原因计数和等价组数。窗口候选需主框架、canonical Referer、视频 MIME、SSRF 校验，且以规范路径指纹形成唯一强等价组；跨 CDN 同路径 Range 镜像可归组，多个不同组继续安全失败。无 Cookie 复验以 `bytes=0-4095` 读取并在内存比较内容哈希，不记录内容或哈希。blob 无候选时仅对同一主播放器 seek 一次，不再 reload。真实 Windows Headed smoke 仍为 `NOT VERIFIED`。
 
 - P3 目标媒体归属收紧（2026-09-08）：在 `goto` 前监听的官方作品详情 JSON 只有请求 `aweme_id`、响应 `aweme_id` 与目标完全一致时才可形成候选；页面 hydration/JSON-LD 同样先定位精确目标作品对象，再只读取 `play_addr_h264`、`play_addr`、按可比较码率从高到低的 `bit_rate.play_addr` 和最后回退的 `download_addr`。多个 CDN `url_list` 被作为同一已绑定作品的镜像，逐个以无 Cookie 的安全请求头复验；`download_addr` 不承诺去除任何画面内标识。没有该绑定证据时，裸网络响应仍必须唯一、主框架且 Referer 为 canonical 目标页，否则安全失败。结构化候选出现后跳过播放器等待与 reload。smoke 安全 JSON 追加绑定/未绑定候选计数、候选组数和来源枚举；已关闭 Context 记录为正常关闭，不再误报 cleanup failed。自动测试已覆盖详情 ID 双向匹配、推荐对象排除、镜像/码率优先级、描述伪造 URL、未绑定多 MP4 拒绝及关闭边界；本机真实 Headed 复测仍为 `NOT VERIFIED`。

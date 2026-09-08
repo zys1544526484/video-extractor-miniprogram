@@ -21,4 +21,6 @@ P3 专用会话 PoC 也不消除抖音发布阻塞：短链重定向现已安全
 
 本轮进一步把无结构化字段的 blob 响应限制在目标可见主播放器的受控启动窗口：隐藏 video 会被暂停并禁用预加载，窗口外媒体只统计拒绝原因；窗口内必须满足主框架、canonical Referer、MIME、SSRF 和唯一等价组。跨 CDN 的相同规范路径/Ranges 可作为一个候选组，多个不同组保持失败；无 Cookie 小范围内容哈希只在内存中比较。该机制尚未在用户当前 Windows 会话上真实执行，不能描述为媒体已取得或下载成功。
 
+Referer 现已按完整目标路径、抖音 origin-only、其他抖音路径、外部来源和缺失来源分别计数；图片/脚本/接口等非媒体 MIME 不进入这些计数。origin-only 不是通配许可，只有严格目标页、唯一可见主播放器与受控窗口等全部约束成立后才可参与唯一候选组；其他三类始终拒绝。真实 Windows 会话尚未复测，因此仍不能据此判断该公开作品已下载成功。
+
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。

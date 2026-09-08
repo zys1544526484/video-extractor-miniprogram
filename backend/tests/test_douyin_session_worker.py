@@ -348,6 +348,7 @@ class AdapterPage:
         mount_responses: list[AdapterResponse] | None = None,
         play_responses: list[AdapterResponse] | None = None,
         seek_responses: list[AdapterResponse] | None = None,
+        seek_result: object = True,
         reload_responses: list[AdapterResponse] | None = None,
         visible: bool = True,
         paused_hidden: int = 0,
@@ -363,6 +364,7 @@ class AdapterPage:
         self.mount_responses = mount_responses or []
         self.play_responses = play_responses or []
         self.seek_responses = seek_responses or []
+        self.seek_result = seek_result
         self.reload_responses = reload_responses or []
         self.visible = visible
         self.paused_hidden = paused_hidden
@@ -420,7 +422,7 @@ class AdapterPage:
             for response in self.seek_responses:
                 for callback in self.callbacks:
                     callback(response)
-            return True
+            return self.seek_result
         if "scrollIntoView" in script:
             for response in self.play_responses:
                 for callback in self.callbacks:
@@ -726,8 +728,139 @@ async def test_controlled_blob_capture_reports_only_safe_rejection_counts() -> N
     assert captured.diagnostics is not None
     assert captured.diagnostics.before_target_verified == 1
     assert captured.diagnostics.wrong_frame == 1
-    assert captured.diagnostics.missing_referer == 1
+    assert captured.diagnostics.referer_missing == 1
     assert "before.mp4" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_controlled_origin_only_referer_is_accepted_after_all_player_guards() -> None:
+    media_url = "https://cdn.example.com/origin-only.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        paused_hidden=1,
+        play_responses=[AdapterResponse(media_url, referer="https://www.douyin.com/")],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == media_url
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.referer_douyin_origin_only == 1
+    assert captured.diagnostics.equivalent_group_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("referer", "field"),
+    [
+        ("https://www.douyin.com/video/7999999999999999999", "referer_other_douyin_path"),
+        ("https://attacker.example.com/", "referer_external_origin"),
+        (None, "referer_missing"),
+    ],
+)
+async def test_non_matching_referer_categories_are_rejected(referer: str | None, field: str) -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        play_responses=[AdapterResponse("https://cdn.example.com/rejected.mp4", referer=referer)],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert getattr(captured.diagnostics, field) == 1
+
+
+@pytest.mark.asyncio
+async def test_origin_only_before_controlled_window_is_not_accepted() -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse("https://cdn.example.com/too-early.mp4", referer="https://www.douyin.com/")],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.referer_douyin_origin_only == 1
+    assert captured.diagnostics.before_target_verified == 1
+
+
+@pytest.mark.asyncio
+async def test_origin_only_multiple_resource_groups_are_rejected() -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        play_responses=[
+            AdapterResponse("https://cdn.example.com/first.mp4", referer="https://www.douyin.com/"),
+            AdapterResponse("https://cdn.example.com/second.mp4", referer="https://www.douyin.com/"),
+        ],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.ambiguous_resource >= 2
+
+
+@pytest.mark.asyncio
+async def test_mime_is_filtered_before_referer_is_counted() -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        play_responses=[
+            AdapterResponse(
+                "https://cdn.example.com/image.jpg",
+                "image/jpeg",
+                referer="https://attacker.example.com/",
+            )
+        ],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.wrong_mime == 1
+    assert captured.diagnostics.referer_external_origin == 0
+
+
+@pytest.mark.asyncio
+async def test_buffered_seek_uses_one_rechecked_reload_instead_of_waiting() -> None:
+    media_url = "https://cdn.example.com/reloaded.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        seek_result={"triggered": False, "buffered": True},
+        reload_responses=[AdapterResponse(media_url, referer=TARGET_URL)],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == media_url
+    assert page.reload_calls == 1
 
 
 @pytest.mark.asyncio

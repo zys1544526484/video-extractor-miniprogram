@@ -162,8 +162,11 @@ class PlayerDiagnostics:
     candidate_source: str | None = None
     before_target_verified: int = 0
     wrong_frame: int = 0
-    missing_referer: int = 0
-    referer_mismatch: int = 0
+    referer_exact_target_path: int = 0
+    referer_douyin_origin_only: int = 0
+    referer_other_douyin_path: int = 0
+    referer_external_origin: int = 0
+    referer_missing: int = 0
     wrong_mime: int = 0
     ssrf_rejected: int = 0
     ambiguous_resource: int = 0

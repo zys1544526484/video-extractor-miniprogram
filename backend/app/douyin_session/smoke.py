@@ -42,8 +42,11 @@ class SmokeOutput:
     candidate_source: str | None
     before_target_verified: int | None
     wrong_frame: int | None
-    missing_referer: int | None
-    referer_mismatch: int | None
+    referer_exact_target_path: int | None
+    referer_douyin_origin_only: int | None
+    referer_other_douyin_path: int | None
+    referer_external_origin: int | None
+    referer_missing: int | None
     wrong_mime: int | None
     ssrf_rejected: int | None
     ambiguous_resource: int | None
@@ -95,8 +98,11 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
             "candidate_source": None,
             "before_target_verified": None,
             "wrong_frame": None,
-            "missing_referer": None,
-            "referer_mismatch": None,
+            "referer_exact_target_path": None,
+            "referer_douyin_origin_only": None,
+            "referer_other_douyin_path": None,
+            "referer_external_origin": None,
+            "referer_missing": None,
             "wrong_mime": None,
             "ssrf_rejected": None,
             "ambiguous_resource": None,
@@ -126,8 +132,11 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
         "candidate_source": diagnostics.candidate_source,
         "before_target_verified": diagnostics.before_target_verified,
         "wrong_frame": diagnostics.wrong_frame,
-        "missing_referer": diagnostics.missing_referer,
-        "referer_mismatch": diagnostics.referer_mismatch,
+        "referer_exact_target_path": diagnostics.referer_exact_target_path,
+        "referer_douyin_origin_only": diagnostics.referer_douyin_origin_only,
+        "referer_other_douyin_path": diagnostics.referer_other_douyin_path,
+        "referer_external_origin": diagnostics.referer_external_origin,
+        "referer_missing": diagnostics.referer_missing,
         "wrong_mime": diagnostics.wrong_mime,
         "ssrf_rejected": diagnostics.ssrf_rejected,
         "ambiguous_resource": diagnostics.ambiguous_resource,

@@ -133,11 +133,18 @@ PRIMARY_VIDEO_SEEK_SCRIPT = """
     return !excluded && style.visibility !== 'hidden' && style.display !== 'none'
       && rect.width > 120 && rect.height > 120;
   });
-  if (!video) return false;
-  try { video.currentTime = Math.max(0, Math.min((video.duration || 1) - 0.01, 0.5)); } catch (_) {}
+  if (!video) return { triggered: false, buffered: false };
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  let target = null;
+  for (let index = 0; index < video.buffered.length; index += 1) {
+    const end = video.buffered.end(index);
+    if (duration > 1 && end < duration - 0.25) { target = Math.min(duration - 0.1, end + 0.5); break; }
+  }
+  if (target === null) return { triggered: false, buffered: true };
+  try { video.currentTime = target; } catch (_) { return { triggered: false, buffered: true }; }
   const result = video.play();
   if (result && typeof result.catch === 'function') result.catch(() => {});
-  return true;
+  return { triggered: true, buffered: false };
 }
 """
 PUBLIC_MEDIA_HEADERS = {
@@ -179,8 +186,11 @@ class CachedMediaCandidate:
 class CandidateRejectionCounts:
     before_target_verified: int = 0
     wrong_frame: int = 0
-    missing_referer: int = 0
-    referer_mismatch: int = 0
+    referer_exact_target_path: int = 0
+    referer_douyin_origin_only: int = 0
+    referer_other_douyin_path: int = 0
+    referer_external_origin: int = 0
+    referer_missing: int = 0
     wrong_mime: int = 0
     ssrf_rejected: int = 0
     ambiguous_resource: int = 0
@@ -399,42 +409,32 @@ class PlaywrightSessionAdapter:
         return TargetBoundMediaGroup("detail_json", tuple(urls[:MAX_EARLY_MEDIA_CANDIDATES]))
 
     @staticmethod
-    def _referer_matches_target(referer: str | None, target_url: str) -> bool:
+    def _referer_kind(referer: str | None, target_url: str) -> str:
+        """Classify without retaining a Referer value in diagnostics or logs."""
         if referer is None:
-            return False
-        referer_parts = urlsplit(referer)
-        target_parts = urlsplit(target_url)
-        return (
+            return "missing"
+        try:
+            referer_parts = urlsplit(referer)
+            target_parts = urlsplit(target_url)
+        except ValueError:
+            return "external_origin"
+        same_origin = (
             referer_parts.scheme == target_parts.scheme
             and referer_parts.hostname == target_parts.hostname
-            and referer_parts.path == target_parts.path
+            and referer_parts.port == target_parts.port
         )
+        if same_origin and referer_parts.path == target_parts.path:
+            return "exact_target_path"
+        if same_origin and referer_parts.path in {"", "/"}:
+            return "douyin_origin_only"
+        host = (referer_parts.hostname or "").lower().rstrip(".")
+        if host == "douyin.com" or host.endswith(".douyin.com"):
+            return "other_douyin_path"
+        return "external_origin"
 
-    async def _select_early_candidate(
-        self,
-        candidates: list[CachedMediaCandidate],
-        *,
-        target_url: str,
-        validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
-    ) -> str | None:
-        """Select exactly one public, target-page candidate after identity is verified."""
-        now = time.monotonic()
-        accepted: list[str] = []
-        for candidate in candidates:
-            if (
-                not candidate.main_frame
-                or now - candidate.captured_at > MAX_EARLY_MEDIA_AGE_SECONDS
-                or not self._referer_matches_target(candidate.referer, target_url)
-            ):
-                continue
-            if validator is not None:
-                try:
-                    await validator(candidate.url)
-                except AppError:
-                    continue
-            accepted.append(candidate.url)
-        unique = list(dict.fromkeys(accepted))
-        return unique[0] if len(unique) == 1 else None
+    @staticmethod
+    def _count_referer_kind(counts: CandidateRejectionCounts, kind: str) -> None:
+        setattr(counts, f"referer_{kind}", getattr(counts, f"referer_{kind}") + 1)
 
     async def _validated_group_urls(
         self,
@@ -558,8 +558,11 @@ class PlaywrightSessionAdapter:
             candidate_source=candidate_source,
             before_target_verified=rejection_counts.before_target_verified,
             wrong_frame=rejection_counts.wrong_frame,
-            missing_referer=rejection_counts.missing_referer,
-            referer_mismatch=rejection_counts.referer_mismatch,
+            referer_exact_target_path=rejection_counts.referer_exact_target_path,
+            referer_douyin_origin_only=rejection_counts.referer_douyin_origin_only,
+            referer_other_douyin_path=rejection_counts.referer_other_douyin_path,
+            referer_external_origin=rejection_counts.referer_external_origin,
+            referer_missing=rejection_counts.referer_missing,
             wrong_mime=rejection_counts.wrong_mime,
             ssrf_rejected=rejection_counts.ssrf_rejected,
             ambiguous_resource=rejection_counts.ambiguous_resource,
@@ -679,17 +682,15 @@ class PlaywrightSessionAdapter:
                                 return
                             main_frame = self._request_is_main_frame(request, page)
                             referer = self._request_referer(request)
+                            referer_kind = self._referer_kind(referer, target_url)
+                            self._count_referer_kind(rejection_counts, referer_kind)
                             if not target_verified:
                                 rejection_counts.before_target_verified += 1
                                 return
                             if not main_frame:
                                 rejection_counts.wrong_frame += 1
                                 return
-                            if referer is None:
-                                rejection_counts.missing_referer += 1
-                                return
-                            if not self._referer_matches_target(referer, target_url):
-                                rejection_counts.referer_mismatch += 1
+                            if referer_kind not in {"exact_target_path", "douyin_origin_only"}:
                                 return
                             if len(controlled_candidates) >= MAX_EARLY_MEDIA_CANDIDATES:
                                 rejection_counts.ambiguous_resource += 1
@@ -838,6 +839,20 @@ class PlaywrightSessionAdapter:
                                 ),
                             )
                         before_start = await self._player_snapshot(page)
+                        if int(before_start.get("visible_video_count", 0)) != 1:
+                            complete_phase()
+                            return CapturedMedia(
+                                target_id=target_id,
+                                media_url=None,
+                                state="player_missing",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id,
+                                    phase=phase,
+                                    phase_ms=phase_ms,
+                                    snapshot=before_start,
+                                    rejection_counts=rejection_counts,
+                                ),
+                            )
                         groups: list[list[CachedMediaCandidate]] = []
                         selected_urls: tuple[str, ...] = ()
                         # The target page and exactly one visible main player now exist.
@@ -886,9 +901,15 @@ class PlaywrightSessionAdapter:
                             # other UI and is not retried.
                             move_to("player_seek")
                             controlled_candidates.clear()
-                            await asyncio.wait_for(
+                            seek_result = await asyncio.wait_for(
                                 page.evaluate(PRIMARY_VIDEO_SEEK_SCRIPT), timeout=player_timeout_seconds
                             )
+                            if isinstance(seek_result, dict) and seek_result.get("buffered"):
+                                move_to("player_reload")
+                                await page.reload(
+                                    wait_until="domcontentloaded",
+                                    timeout=navigation_timeout_seconds * 1000,
+                                )
                             await self._wait_for_controlled_capture(page, media_capture_timeout_seconds)
                             if target_id_from_url(page.url) != target_id:
                                 return CapturedMedia(
