@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     douyin_session_timeout_seconds: int = 30
     douyin_session_max_concurrency: int = 1
     douyin_session_headless: bool = True
+    douyin_session_launch_timeout_seconds: int = 12
+    douyin_session_navigation_timeout_seconds: int = 12
+    douyin_session_player_timeout_seconds: int = 12
+    douyin_session_media_capture_timeout_seconds: int = 8
+    douyin_session_media_verify_timeout_seconds: int = 12
+    douyin_session_browser_max_tasks: int = 10
+    douyin_session_browser_ttl_seconds: int = 300
     media_processing_timeout_seconds: int = 1800
     media_session_ttl_seconds: int = 86400
     media_access_token_ttl_seconds: int = 900
@@ -83,6 +90,19 @@ class Settings(BaseSettings):
             raise ValueError("DOUYIN_YT_DLP_FALLBACK_TIMEOUT_SECONDS 必须在 1..15 秒范围内")
         if not 1 <= self.douyin_session_timeout_seconds <= 120:
             raise ValueError("DOUYIN_SESSION_TIMEOUT_SECONDS 必须在 1..120 秒范围内")
+        for name, value in {
+            "DOUYIN_SESSION_LAUNCH_TIMEOUT_SECONDS": self.douyin_session_launch_timeout_seconds,
+            "DOUYIN_SESSION_NAVIGATION_TIMEOUT_SECONDS": self.douyin_session_navigation_timeout_seconds,
+            "DOUYIN_SESSION_PLAYER_TIMEOUT_SECONDS": self.douyin_session_player_timeout_seconds,
+            "DOUYIN_SESSION_MEDIA_CAPTURE_TIMEOUT_SECONDS": self.douyin_session_media_capture_timeout_seconds,
+            "DOUYIN_SESSION_MEDIA_VERIFY_TIMEOUT_SECONDS": self.douyin_session_media_verify_timeout_seconds,
+        }.items():
+            if not 1 <= value <= 30:
+                raise ValueError(f"{name} 必须在 1..30 秒范围内")
+        if not 1 <= self.douyin_session_browser_max_tasks <= 50:
+            raise ValueError("DOUYIN_SESSION_BROWSER_MAX_TASKS 必须在 1..50 范围内")
+        if not 30 <= self.douyin_session_browser_ttl_seconds <= 3600:
+            raise ValueError("DOUYIN_SESSION_BROWSER_TTL_SECONDS 必须在 30..3600 秒范围内")
         if self.douyin_session_max_concurrency != 1:
             raise ValueError("DOUYIN_SESSION_MAX_CONCURRENCY 当前必须为 1")
         if not 1 <= self.global_parse_concurrency <= 8:

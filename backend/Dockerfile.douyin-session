@@ -1,0 +1,13 @@
+# Optional isolated headed browser runner. It is not used by the normal API image.
+FROM mcr.microsoft.com/playwright/python:v1.56.0-noble
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+RUN apt-get update && apt-get install --no-install-recommends -y xvfb ffmpeg && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY pyproject.toml ./
+COPY app ./app
+RUN python -m pip install --upgrade pip && python -m pip install '.[douyin-session]'
+RUN useradd --system --create-home --uid 10001 sessionrunner
+USER sessionrunner
+# The service is intentionally private; orchestration supplies a task runner.
+CMD ["sh", "-c", "while :; do sleep 3600; done"]

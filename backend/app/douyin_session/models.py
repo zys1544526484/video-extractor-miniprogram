@@ -154,6 +154,8 @@ class PlayerDiagnostics:
     media_response_count: int
     media_content_types: tuple[str, ...]
     media_domains: tuple[str, ...]
+    last_phase: str
+    phase_ms: tuple[tuple[str, int], ...]
 
 
 @dataclass(frozen=True)

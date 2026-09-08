@@ -113,6 +113,10 @@ class SessionBrowserAdapter(Protocol):
         storage_state_path: str,
         timeout_seconds: int,
         headless: bool,
+        launch_timeout_seconds: int,
+        navigation_timeout_seconds: int,
+        player_timeout_seconds: int,
+        media_capture_timeout_seconds: int,
     ) -> CapturedMedia: ...
 
 
@@ -211,13 +215,42 @@ class PlaywrightSessionAdapter:
         storage_state_path: str,
         timeout_seconds: int,
         headless: bool = True,
+        launch_timeout_seconds: int | None = None,
+        navigation_timeout_seconds: int | None = None,
+        player_timeout_seconds: int | None = None,
+        media_capture_timeout_seconds: int | None = None,
     ) -> CapturedMedia:
         # The lazy loader returns Playwright's async_playwright factory, not
         # the async context manager itself.
         context_manager_factory = self.playwright_factory or _load_async_playwright()
+        launch_timeout_seconds = launch_timeout_seconds or timeout_seconds
+        navigation_timeout_seconds = navigation_timeout_seconds or timeout_seconds
+        player_timeout_seconds = player_timeout_seconds or timeout_seconds
+        media_capture_timeout_seconds = media_capture_timeout_seconds or timeout_seconds
+        phase_started = time.monotonic()
+        phase_ms: dict[str, int] = {}
+        phase = "browser_launch"
+
+        def move_to(next_phase: str) -> None:
+            nonlocal phase, phase_started
+            phase_ms[phase] = int((time.monotonic() - phase_started) * 1000)
+            phase = next_phase
+            phase_started = time.monotonic()
+
+        def log_phase_failure() -> None:
+            phase_ms[phase] = int((time.monotonic() - phase_started) * 1000)
+            logger.warning(
+                "douyin_session_phase target_id=%s last_phase=%s phase_ms=%s",
+                target_id,
+                phase,
+                ",".join(f"{name}:{elapsed}" for name, elapsed in phase_ms.items()),
+            )
+
         try:
             async with context_manager_factory() as playwright:
-                browser = await playwright.chromium.launch(headless=headless)
+                browser = await asyncio.wait_for(
+                    playwright.chromium.launch(headless=headless), timeout=launch_timeout_seconds
+                )
                 try:
                     context = await browser.new_context(storage_state=storage_state_path)
                     try:
@@ -239,29 +272,36 @@ class PlaywrightSessionAdapter:
                                 playback_media.append((response.url, content_type.split(";", 1)[0].lower()))
 
                         page.on("response", observe_response)
+                        move_to("page_navigation")
                         await page.goto(
                             target_url,
                             wait_until="domcontentloaded",
-                            timeout=timeout_seconds * 1000,
+                            timeout=navigation_timeout_seconds * 1000,
                         )
+                        move_to("target_identity")
                         if await self._has_visible_risk_component(page):
                             return CapturedMedia(target_id=None, media_url=None, state="risk")
                         if "/login" in page.url.lower():
                             return CapturedMedia(target_id=None, media_url=None, state="expired")
                         if target_id_from_url(page.url) != target_id:
                             return CapturedMedia(target_id=None, media_url=None, state="mismatch")
-                        if not await self._wait_for_primary_player(page, timeout_seconds):
+                        move_to("player_mount")
+                        if not await self._wait_for_primary_player(page, player_timeout_seconds):
                             return CapturedMedia(target_id=target_id, media_url=None, state="player_missing")
                         before_start = await self._player_snapshot(page)
+                        move_to("player_activation")
                         capture_playback_responses = True
-                        await page.evaluate(PRIMARY_VIDEO_START_SCRIPT)
+                        await asyncio.wait_for(
+                            page.evaluate(PRIMARY_VIDEO_START_SCRIPT), timeout=player_timeout_seconds
+                        )
+                        move_to("media_capture")
                         try:
                             await page.wait_for_function(
                                 """() => Array.from(document.querySelectorAll('video')).some(
                                     (video) => Boolean(video.currentSrc || video.src
                                         || video.querySelector('source[src]'))
                                 )""",
-                                timeout=timeout_seconds * 1000,
+                                timeout=media_capture_timeout_seconds * 1000,
                             )
                         except Exception as error:
                             if error.__class__.__name__ != "TimeoutError":
@@ -301,6 +341,7 @@ class PlaywrightSessionAdapter:
                                 }
                             )
                         )
+                        phase_ms[phase] = int((time.monotonic() - phase_started) * 1000)
                         diagnostics = PlayerDiagnostics(
                             page_route=f"https://www.douyin.com/video/{target_id}",
                             target_id=target_id,
@@ -320,6 +361,8 @@ class PlaywrightSessionAdapter:
                             media_response_count=len(playback_media),
                             media_content_types=tuple(sorted({mime for _url, mime in playback_media})),
                             media_domains=domains,
+                            last_phase=phase,
+                            phase_ms=tuple(phase_ms.items()),
                         )
                         return CapturedMedia(
                             target_id=target_id,
@@ -331,6 +374,9 @@ class PlaywrightSessionAdapter:
                         await context.close()
                 finally:
                     await browser.close()
+        except TimeoutError as error:
+            log_phase_failure()
+            raise session_timeout() from error
         except AppError:
             raise
         except Exception as error:
@@ -369,14 +415,25 @@ class DouyinSessionWorker:
         started = time.monotonic()
         async with self._semaphore:
             try:
-                async with asyncio.timeout(self.settings.douyin_session_timeout_seconds):
-                    capture = await self.browser.capture(
+                capture = await asyncio.wait_for(
+                    self.browser.capture(
                         target_url=target_url,
                         target_id=target_id,
                         storage_state_path=str(state_path),
                         timeout_seconds=self.settings.douyin_session_timeout_seconds,
                         headless=self.settings.douyin_session_headless,
-                    )
+                        launch_timeout_seconds=self.settings.douyin_session_launch_timeout_seconds,
+                        navigation_timeout_seconds=self.settings.douyin_session_navigation_timeout_seconds,
+                        player_timeout_seconds=self.settings.douyin_session_player_timeout_seconds,
+                        media_capture_timeout_seconds=self.settings.douyin_session_media_capture_timeout_seconds,
+                    ),
+                    timeout=(
+                        self.settings.douyin_session_launch_timeout_seconds
+                        + self.settings.douyin_session_navigation_timeout_seconds
+                        + self.settings.douyin_session_player_timeout_seconds * 2
+                        + self.settings.douyin_session_media_capture_timeout_seconds
+                    ),
+                )
             except TimeoutError as error:
                 raise session_timeout() from error
             if capture.diagnostics is not None:
@@ -384,7 +441,7 @@ class DouyinSessionWorker:
                 logger.info(
                     "douyin_session_player target_id=%s page=%s videos=%d visible=%d "
                     "current_src=%s src=%s source_child=%s blob=%s media_responses=%d "
-                    "content_types=%s media_domains=%s",
+                    "content_types=%s media_domains=%s last_phase=%s phase_ms=%s",
                     diagnostics.target_id,
                     diagnostics.page_route,
                     diagnostics.video_count,
@@ -396,6 +453,8 @@ class DouyinSessionWorker:
                     diagnostics.media_response_count,
                     ",".join(diagnostics.media_content_types) or "none",
                     ",".join(diagnostics.media_domains) or "none",
+                    diagnostics.last_phase,
+                    ",".join(f"{name}:{elapsed}" for name, elapsed in diagnostics.phase_ms),
                 )
             if capture.state == "expired":
                 raise session_expired()
@@ -410,24 +469,30 @@ class DouyinSessionWorker:
             if not capture.media_url:
                 raise session_media_not_found()
             try:
-                # No session headers are supplied: a candidate must be independently
-                # public before it can be used by the existing media pipeline.
-                public_headers = {**PUBLIC_MEDIA_HEADERS, "Referer": target_url}
-                probe = await self.http.probe_media(capture.media_url, headers=public_headers)
-                stream = await self.http.open_stream(
-                    capture.media_url,
-                    headers=public_headers,
-                    range_header="bytes=0-1023",
-                    media_kind="video",
-                )
-                try:
-                    bytes_read = 0
-                    async for chunk in stream.response.aiter_bytes():
-                        bytes_read += len(chunk)
-                        if bytes_read >= 1024:
-                            break
-                finally:
-                    await stream.close()
+                logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)
+                async with asyncio.timeout(self.settings.douyin_session_media_verify_timeout_seconds):
+                    # No session headers are supplied: a candidate must be independently
+                    # public before it can be used by the existing media pipeline.
+                    public_headers = {**PUBLIC_MEDIA_HEADERS, "Referer": target_url}
+                    probe = await self.http.probe_media(capture.media_url, headers=public_headers)
+                    stream = await self.http.open_stream(
+                        capture.media_url,
+                        headers=public_headers,
+                        range_header="bytes=0-1023",
+                        media_kind="video",
+                    )
+                    try:
+                        bytes_read = 0
+                        async for chunk in stream.response.aiter_bytes():
+                            bytes_read += len(chunk)
+                            if bytes_read >= 1024:
+                                break
+                    finally:
+                        await stream.close()
+            except TimeoutError as error:
+                raise AppError(
+                    "DOUYIN_SESSION_MEDIA_VERIFY_TIMEOUT", "媒体公开复验超时", retryable=True
+                ) from error
             except AppError as error:
                 if error.code == "CONTENT_NOT_PUBLIC":
                     raise session_bound_media() from error

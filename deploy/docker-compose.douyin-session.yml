@@ -1,0 +1,20 @@
+# Explicitly opt-in: docker compose -f docker-compose.yml -f docker-compose.douyin-session.yml --profile douyin-session up -d
+services:
+  douyin-session:
+    profiles: ["douyin-session"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.douyin-session
+    environment:
+      APP_ENV: production
+      DOUYIN_SESSION_ENABLED: "true"
+      DOUYIN_SESSION_HEADLESS: "false"
+      DOUYIN_STORAGE_STATE_PATH: /run/douyin-session/operator-state.json
+    volumes:
+      - ${DOUYIN_STORAGE_STATE_DIR:?set_an_external_directory}:/run/douyin-session:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "xvfb-run", "-a", "python", "-m", "app.douyin_session.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

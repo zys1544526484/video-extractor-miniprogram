@@ -242,7 +242,10 @@ async def test_session_worker_enforces_browser_timeout(tmp_path: Path) -> None:
         http=safe_http(video_handler),
         browser=SlowBrowser(CapturedMedia(target_id=WORK_ID, media_url=MEDIA_URL)),
     )
-    worker.settings.douyin_session_timeout_seconds = 0.001  # type: ignore[assignment]
+    worker.settings.douyin_session_launch_timeout_seconds = 0.001  # type: ignore[assignment]
+    worker.settings.douyin_session_navigation_timeout_seconds = 0.001  # type: ignore[assignment]
+    worker.settings.douyin_session_player_timeout_seconds = 0.001  # type: ignore[assignment]
+    worker.settings.douyin_session_media_capture_timeout_seconds = 0.001  # type: ignore[assignment]
 
     with pytest.raises(AppError) as caught:
         await worker.inspect(TARGET_URL)
@@ -604,6 +607,8 @@ async def test_session_worker_logs_only_safe_player_diagnostics(tmp_path: Path, 
         media_response_count=1,
         media_content_types=("video/mp4",),
         media_domains=("cdn.example.com",),
+        last_phase="media_capture",
+        phase_ms=(("browser_launch", 1), ("media_capture", 2)),
     )
     worker = DouyinSessionWorker(
         settings=session_settings(tmp_path),
