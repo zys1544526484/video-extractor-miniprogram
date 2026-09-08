@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- P3 生产运行阶段化（2026-09-08）：Worker 现在分别限制 browser launch、`domcontentloaded` 导航、目标身份、播放器挂载/激活、媒体捕获与无 Cookie 媒体验证；超时日志只输出 `last_phase` 与阶段毫秒数。headless/headed 共用 storage state、上下文与播放器行为，不添加 stealth、webdriver 修改、验证码或风控处理。标准 headless 的真实稳定性仍为 `NOT VERIFIED`；可选 Linux Xvfb headed runner 以独立、默认关闭、无端口/VNC、仓库外只读会话卷方式提供，普通 API/Docker/CI 不受影响。浏览器暖复用尚未完成，不得当作性能改善交付。
+
 - P3 主播放器捕获修正（2026-09-07）：确认目标作品页后，Worker 现在依次检查可见且非广告/非推荐主播放器的 `currentSrc`、`src`、`<source src>`；blob/MediaSource 场景仅接受启动该主播放器后出现的**单一** video/HLS 响应，多个候选保持失败以免误选广告或推荐内容。新增 `DOUYIN_SESSION_HEADLESS=true`（默认）供生产运行，人工本机 smoke 可临时设为 `false`；不会点击登录、验证码、风控或广告。失败明确区分主播放器不存在与播放器无可验证媒体。诊断日志仅含规范页面路径、作品 ID、video 可见计数、来源存在性、媒体响应 MIME 与域名。Smoke 在解析后失败时保留 `work_id`。本机当前进程没有继承 storage-state 配置，复跑返回 `DOUYIN_SESSION_CONFIG_INVALID` 并保留作品 ID；实际新捕获链路、媒体地址和无 Cookie 读取仍为 `NOT VERIFIED`。
 
 - P3 短链规范化补充（2026-09-07）：专用 session smoke 的短链入口现在会经 `SafeHttpClient` 逐跳执行 SSRF/DNS/IP、协议/端口和抖音路径白名单校验，记录仅含脱敏路由链；`www.douyin.com/video/{数字ID}` 和 `www.iesdouyin.com/share/video/{数字ID}` 可在校验后剥离正常查询串并规范为严格 canonical URL，首页、推荐、站外、私网、userinfo、异常端口及循环仍拒绝。用户本轮短链已解析到作品 ID `7678969660380843304`，不携带 Cookie 进入解析阶段。完整 session smoke 随后因当前进程未配置仓库外 `DOUYIN_STORAGE_STATE_PATH` 安全返回 `DOUYIN_SESSION_CONFIG_INVALID`（516ms）；没有加载会话、未取得媒体地址或执行无 Cookie 读取。全量门禁：后端 pytest `180 passed`（2 warnings）、Ruff、compileall、前端 Node `49 passed`、小程序静态/合成 production 校验（80 files）及 `git diff --check` 均通过；远程 CI 待本次文档提交触发后确认。P3 仍为 `NOT VERIFIED`。
