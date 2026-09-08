@@ -91,7 +91,7 @@ def video_handler(request: httpx.Request) -> httpx.Response:
     assert request.headers.get("accept")
     if request.method == "HEAD":
         return httpx.Response(200, headers={"content-type": "video/mp4", "content-length": "2048"})
-    assert request.headers.get("range") == "bytes=0-1023"
+    assert request.headers.get("range") in {"bytes=0-1023", "bytes=0-4095"}
     return httpx.Response(206, headers={"content-type": "video/mp4"}, content=b"v" * 1024)
 
 
@@ -347,8 +347,10 @@ class AdapterPage:
         responses: list[AdapterResponse] | None = None,
         mount_responses: list[AdapterResponse] | None = None,
         play_responses: list[AdapterResponse] | None = None,
+        seek_responses: list[AdapterResponse] | None = None,
         reload_responses: list[AdapterResponse] | None = None,
         visible: bool = True,
+        paused_hidden: int = 0,
     ) -> None:
         self.url = final_url
         self.current_src = current_src
@@ -360,8 +362,10 @@ class AdapterPage:
         self.responses = responses or []
         self.mount_responses = mount_responses or []
         self.play_responses = play_responses or []
+        self.seek_responses = seek_responses or []
         self.reload_responses = reload_responses or []
         self.visible = visible
+        self.paused_hidden = paused_hidden
         self.callbacks: list = []
         self.waited = False
         self.listener_before_goto = False
@@ -410,6 +414,13 @@ class AdapterPage:
             raise timeout_error()
 
     async def evaluate(self, script: str):
+        if "video.preload = 'none'" in script:
+            return self.paused_hidden
+        if "currentTime" in script:
+            for response in self.seek_responses:
+                for callback in self.callbacks:
+                    callback(response)
+            return True
         if "scrollIntoView" in script:
             for response in self.play_responses:
                 for callback in self.callbacks:
@@ -594,11 +605,11 @@ async def test_playwright_adapter_uses_single_post_playback_response_for_blob_pl
 
 
 @pytest.mark.asyncio
-async def test_blob_player_uses_one_public_media_response_seen_during_navigation() -> None:
+async def test_blob_player_uses_one_public_media_response_in_controlled_player_window() -> None:
     early_url = "https://cdn.example.com/navigation-manifest.m3u8?signature=never-log"
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        responses=[AdapterResponse(early_url, "application/vnd.apple.mpegurl", referer=TARGET_URL)],
+        play_responses=[AdapterResponse(early_url, "application/vnd.apple.mpegurl", referer=TARGET_URL)],
     )
     validated: list[str] = []
 
@@ -623,11 +634,11 @@ async def test_blob_player_uses_one_public_media_response_seen_during_navigation
 
 
 @pytest.mark.asyncio
-async def test_session_worker_validates_early_blob_candidate_before_public_probe(tmp_path: Path) -> None:
+async def test_session_worker_validates_controlled_blob_candidate_before_public_probe(tmp_path: Path) -> None:
     early_url = "https://cdn.example.com/worker-navigation.mp4"
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        responses=[AdapterResponse(early_url, referer=TARGET_URL)],
+        play_responses=[AdapterResponse(early_url, referer=TARGET_URL)],
     )
     worker = DouyinSessionWorker(
         settings=session_settings(tmp_path),
@@ -643,11 +654,11 @@ async def test_session_worker_validates_early_blob_candidate_before_public_probe
 
 
 @pytest.mark.asyncio
-async def test_blob_player_accepts_unique_candidate_seen_during_player_mount() -> None:
+async def test_blob_player_accepts_unique_candidate_seen_during_player_activation() -> None:
     early_url = "https://cdn.example.com/mount.mp4"
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        mount_responses=[AdapterResponse(early_url, referer=TARGET_URL)],
+        play_responses=[AdapterResponse(early_url, referer=TARGET_URL)],
     )
 
     captured = await adapter_for(page).capture(
@@ -694,11 +705,103 @@ async def test_blob_player_rejects_ambiguous_or_non_main_frame_early_candidates(
 
 
 @pytest.mark.asyncio
-async def test_blob_player_reloads_once_when_first_capture_has_no_attributable_media() -> None:
-    replay_url = "https://cdn.example.com/reload.mp4"
+async def test_controlled_blob_capture_reports_only_safe_rejection_counts() -> None:
+    before = AdapterResponse("https://cdn.example.com/before.mp4", referer=TARGET_URL)
+    wrong_frame = AdapterResponse("https://cdn.example.com/frame.mp4", referer=TARGET_URL)
+    wrong_frame.request.frame = object()
+    missing_referer = AdapterResponse("https://cdn.example.com/no-ref.mp4", referer=None)
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        reload_responses=[AdapterResponse(replay_url, referer=TARGET_URL)],
+        responses=[before],
+        play_responses=[wrong_frame, missing_referer],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.before_target_verified == 1
+    assert captured.diagnostics.wrong_frame == 1
+    assert captured.diagnostics.missing_referer == 1
+    assert "before.mp4" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_controlled_capture_groups_range_requests_and_cdn_mirrors_by_path() -> None:
+    urls = [
+        "https://v11-web.example.com/obj/target.mp4?range=0-99",
+        "https://v11-web.example.com/obj/target.mp4?range=100-199",
+        "https://v26-web.example.com/obj/target.mp4?range=200-299",
+        "https://v26-web.example.com/obj/target.mp4?range=300-399",
+    ]
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        paused_hidden=1,
+        play_responses=[AdapterResponse(url, referer=TARGET_URL) for url in urls],
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_urls == tuple(urls)
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.equivalent_group_count == 1
+    assert captured.diagnostics.hidden_player_possible == 1
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_different_content_inside_one_network_candidate_group(tmp_path: Path) -> None:
+    first = "https://cdn.example.com/first.mp4"
+    second = "https://mirror.example.com/first.mp4"
+
+    async def resolver(host: str) -> list[str]:
+        public_hosts = {"cdn.example.com", "mirror.example.com", "www.douyin.com"}
+        return ["93.184.216.34"] if host in public_hosts else ["127.0.0.1"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = b"a" * 1024 if request.url.host == "cdn.example.com" else b"b" * 1024
+        if request.method == "HEAD":
+            return httpx.Response(200, headers={"content-type": "video/mp4", "content-length": "1024"})
+        return httpx.Response(206, headers={"content-type": "video/mp4"}, content=body)
+
+    http = SafeHttpClient(
+        timeout_seconds=2,
+        max_redirects=2,
+        max_video_bytes=10 * 1024 * 1024,
+        resolver=resolver,
+        transport=httpx.MockTransport(handler),
+    )
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=http,
+        browser=FakeBrowser(
+            CapturedMedia(
+                WORK_ID,
+                first,
+                media_urls=(first, second),
+                candidate_source="main_player_network",
+            )
+        ),
+    )
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+
+    assert caught.value.code == "DOUYIN_SESSION_MEDIA_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_blob_player_seeks_once_when_first_capture_has_no_attributable_media() -> None:
+    replay_url = "https://cdn.example.com/seek.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        seek_responses=[AdapterResponse(replay_url, referer=TARGET_URL)],
     )
 
     captured = await adapter_for(page).capture(
@@ -709,7 +812,7 @@ async def test_blob_player_reloads_once_when_first_capture_has_no_attributable_m
     )
 
     assert captured.media_url == replay_url
-    assert page.reload_calls == 1
+    assert page.reload_calls == 0
 
 
 def target_detail_payload(*urls: str, response_id: str = WORK_ID) -> dict[str, object]:

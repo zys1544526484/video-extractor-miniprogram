@@ -19,4 +19,6 @@ P3 专用会话 PoC 也不消除抖音发布阻塞：短链重定向现已安全
 
 用户报告的 headed Chromium 完整成功证明专用会话路线曾可在人工可视环境完成目标作品、媒体域名和无 Cookie 1024-byte 复验；相同作品的标准 headless 曾在约 30 秒超时，故仍不可作为生产可部署结论。最新 Headed 诊断已证明登录、目标 ID 与可见 blob 主播放器正常，并捕获多个 MP4 CDN 响应；本轮不再从这些匿名响应猜选，而是优先使用与目标 `aweme_id` 双向匹配的官方详情 JSON 或页面 hydration 中的严格媒体字段。若仍没有这种绑定证据，多个候选继续安全失败。该策略和 cleanup 已关闭误报已完成自动测试，但尚未在该 Windows 会话复测，不能据此推断 headed/headless 已恢复。Xvfb、headless 阶段耗时、会话更新重载与浏览器暖复用仍须真实 Linux/Windows 验证；其中暖复用尚未实现。
 
+本轮进一步把无结构化字段的 blob 响应限制在目标可见主播放器的受控启动窗口：隐藏 video 会被暂停并禁用预加载，窗口外媒体只统计拒绝原因；窗口内必须满足主框架、canonical Referer、MIME、SSRF 和唯一等价组。跨 CDN 的相同规范路径/Ranges 可作为一个候选组，多个不同组保持失败；无 Cookie 小范围内容哈希只在内存中比较。该机制尚未在用户当前 Windows 会话上真实执行，不能描述为媒体已取得或下载成功。
+
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。

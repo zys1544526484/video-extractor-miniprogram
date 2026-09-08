@@ -160,6 +160,15 @@ class PlayerDiagnostics:
     unbound_candidate_count: int = 0
     candidate_group_count: int = 0
     candidate_source: str | None = None
+    before_target_verified: int = 0
+    wrong_frame: int = 0
+    missing_referer: int = 0
+    referer_mismatch: int = 0
+    wrong_mime: int = 0
+    ssrf_rejected: int = 0
+    ambiguous_resource: int = 0
+    hidden_player_possible: int = 0
+    equivalent_group_count: int = 0
 
 
 @dataclass(frozen=True)

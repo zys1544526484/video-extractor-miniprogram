@@ -314,4 +314,13 @@ def test_smoke_output_schema_only_contains_safe_diagnostic_fields() -> None:
         "unbound_candidate_count",
         "candidate_group_count",
         "candidate_source",
+        "before_target_verified",
+        "wrong_frame",
+        "missing_referer",
+        "referer_mismatch",
+        "wrong_mime",
+        "ssrf_rejected",
+        "ambiguous_resource",
+        "hidden_player_possible",
+        "equivalent_group_count",
     }

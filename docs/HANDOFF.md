@@ -29,6 +29,7 @@
 - `064ebfbf57788309200a22a14099a01e759caafa` 已推送；[GitHub Actions CI #85](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34194264980) 成功。它覆盖自动化门禁，不代表真实 Headed blob 媒体已重新捕获；下一步仅需使用既有运营者会话执行一次 Headed smoke。
 - P3 目标媒体归属收紧：详情 JSON 监听仍在 `goto` 前安装，但只接受官方 `douyin.com`/`iesdouyin.com` 明确 detail path，且请求与响应的 `aweme_id` 都严格等于目标；页面 hydration/JSON-LD 也只从匹配目标对象的 H.264、play、按码率排序的 bit-rate 和最后 download 字段读取。CDN 镜像是同一已绑定组，按顺序无 Cookie 复验；没有绑定组时，多条裸 MP4 继续拒绝猜选。结构化候选会跳过 player wait/reload；smoke JSON 增加安全的 bound/unbound/group/source 枚举字段，Context 已关闭不再被记成 cleanup failed。真实 Windows Headed smoke 仍未复跑，保持 `NOT VERIFIED`，不需要重新 bootstrap。
 - `c92873234a8e5b712890c72c76979fc9b68ad046` 已推送；[GitHub Actions CI #87](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34197350795) 成功。它证明后端、前端及生产静态门禁在干净 runner 通过，不证明真实浏览器会话已取得媒体。
+- P3 blob 主播放器受控归属：无结构化目标媒体时，身份和唯一可见主播放器确认后才暂停隐藏 video、清空匿名候选，并打开短时主播放器捕获窗口；只有该窗口的主框架、canonical Referer、视频 MIME、SSRF 合格候选才能用规范路径指纹组成唯一等价组。跨 CDN 同路径 Range 镜像可按组无 Cookie 复验；小范围内容哈希仅驻留内存且不进入日志/JSON。一个已验证主播放器最多 seek 一次，多个无法证明等价的组继续失败。smoke 新增安全原因计数和等价组数；真实 Headed 验证仍为 `NOT VERIFIED`，无需重新 bootstrap。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 

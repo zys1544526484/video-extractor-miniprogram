@@ -40,6 +40,15 @@ class SmokeOutput:
     unbound_candidate_count: int | None
     candidate_group_count: int | None
     candidate_source: str | None
+    before_target_verified: int | None
+    wrong_frame: int | None
+    missing_referer: int | None
+    referer_mismatch: int | None
+    wrong_mime: int | None
+    ssrf_rejected: int | None
+    ambiguous_resource: int | None
+    hidden_player_possible: int | None
+    equivalent_group_count: int | None
 
 
 logger = logging.getLogger(__name__)
@@ -84,6 +93,15 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
             "unbound_candidate_count": None,
             "candidate_group_count": None,
             "candidate_source": None,
+            "before_target_verified": None,
+            "wrong_frame": None,
+            "missing_referer": None,
+            "referer_mismatch": None,
+            "wrong_mime": None,
+            "ssrf_rejected": None,
+            "ambiguous_resource": None,
+            "hidden_player_possible": None,
+            "equivalent_group_count": None,
         }
     phases = {name: int(elapsed) for name, elapsed in diagnostics.phase_ms}
     return {
@@ -106,6 +124,15 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
         "unbound_candidate_count": diagnostics.unbound_candidate_count,
         "candidate_group_count": diagnostics.candidate_group_count,
         "candidate_source": diagnostics.candidate_source,
+        "before_target_verified": diagnostics.before_target_verified,
+        "wrong_frame": diagnostics.wrong_frame,
+        "missing_referer": diagnostics.missing_referer,
+        "referer_mismatch": diagnostics.referer_mismatch,
+        "wrong_mime": diagnostics.wrong_mime,
+        "ssrf_rejected": diagnostics.ssrf_rejected,
+        "ambiguous_resource": diagnostics.ambiguous_resource,
+        "hidden_player_possible": diagnostics.hidden_player_possible,
+        "equivalent_group_count": diagnostics.equivalent_group_count,
     }
 
 
