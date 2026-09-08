@@ -26,6 +26,7 @@
 - P3 诊断可见性与稳定性收尾（2026-09-08）：smoke 最后一行 JSON 直接输出安全 `last_phase`、`phase_elapsed_ms`、`phases_ms`、规范 `final_page_path`、video/source 计数与布尔状态、媒体响应 MIME/仅 scheme+hostname 域名；不输出任何媒体路径、查询、签名、Cookie、Token、Authorization 或 storage-state 信息。浏览器导入/启动/断连才使用 `DOUYIN_SESSION_UNAVAILABLE`；导航/页面错误使用 `DOUYIN_SESSION_PAGE_FAILED`，播放器和媒体错误保持具体分类。Worker 记录枚举式 internal reason 但不输出原始异常，安全关闭 Context/Browser，关闭失败不覆盖原业务错误。新增 smoke JSON 脱敏、具体错误分类和 headed→headless 资源独立回归。本地真实 headed/headless smoke 尚未复跑，故仍为 `NOT VERIFIED`；本轮完成全量门禁并 push 后在此记录 CI URL。
 - 本轮本地门禁：全量 backend pytest（2 条依赖弃用 warning）、`ruff check app tests alembic`、`compileall app alembic`、`npm test`（49 passed）、小程序常规/合成 production 校验（各 80 files）与 `git diff --check` 均通过。Docker CLI 仍不可用，Docker build 本地为 `NOT VERIFIED`；远程 CI 必须以本次 push 的 run 为准。
 - P3 blob 早期媒体捕获修正（2026-09-08）：response listener 在 `goto` 前安装；video/HLS 候选只保留于当前任务内存（最多 4 条、4096 字符、15 秒），任务结束清空，不进入日志、文件、异常或结果模型。目标 ID 和可见主播放器确认后，只有主框架、目标 Referer、MIME 合格且通过 `SafeHttpClient.validate_url` 的唯一候选才可用于无 Cookie 复验；多候选、广告/推荐/子框架均失败而非猜选。blob 无候选时只 reload 一次并再次确认目标 ID。Player 等待为有界条件等待；关闭顺序为 Page → Context → Browser，关闭异常仅记录 `resource` 和 `close_failed`。新增 navigation/mount 早期候选、唯一性、候选清空、一次 reload、关闭顺序与现有脱敏回归。真实 Headed 复测仍为 `NOT VERIFIED`，不需要重新 bootstrap。
+- `064ebfbf57788309200a22a14099a01e759caafa` 已推送；[GitHub Actions CI #85](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34194264980) 成功。它覆盖自动化门禁，不代表真实 Headed blob 媒体已重新捕获；下一步仅需使用既有运营者会话执行一次 Headed smoke。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
