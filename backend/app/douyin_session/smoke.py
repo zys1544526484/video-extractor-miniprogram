@@ -36,6 +36,10 @@ class SmokeOutput:
     media_response_count: int | None
     media_mime_types: tuple[str, ...]
     media_domains: tuple[str, ...]
+    target_bound_candidate_count: int | None
+    unbound_candidate_count: int | None
+    candidate_group_count: int | None
+    candidate_source: str | None
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +80,10 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
             "media_response_count": None,
             "media_mime_types": (),
             "media_domains": (),
+            "target_bound_candidate_count": None,
+            "unbound_candidate_count": None,
+            "candidate_group_count": None,
+            "candidate_source": None,
         }
     phases = {name: int(elapsed) for name, elapsed in diagnostics.phase_ms}
     return {
@@ -94,6 +102,10 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
         "media_domains": tuple(
             sorted({origin for value in diagnostics.media_domains if (origin := _safe_origin(value))})
         ),
+        "target_bound_candidate_count": diagnostics.target_bound_candidate_count,
+        "unbound_candidate_count": diagnostics.unbound_candidate_count,
+        "candidate_group_count": diagnostics.candidate_group_count,
+        "candidate_source": diagnostics.candidate_source,
     }
 
 

@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- P3 目标媒体归属收紧（2026-09-08）：在 `goto` 前监听的官方作品详情 JSON 只有请求 `aweme_id`、响应 `aweme_id` 与目标完全一致时才可形成候选；页面 hydration/JSON-LD 同样先定位精确目标作品对象，再只读取 `play_addr_h264`、`play_addr`、按可比较码率从高到低的 `bit_rate.play_addr` 和最后回退的 `download_addr`。多个 CDN `url_list` 被作为同一已绑定作品的镜像，逐个以无 Cookie 的安全请求头复验；`download_addr` 不承诺去除任何画面内标识。没有该绑定证据时，裸网络响应仍必须唯一、主框架且 Referer 为 canonical 目标页，否则安全失败。结构化候选出现后跳过播放器等待与 reload。smoke 安全 JSON 追加绑定/未绑定候选计数、候选组数和来源枚举；已关闭 Context 记录为正常关闭，不再误报 cleanup failed。自动测试已覆盖详情 ID 双向匹配、推荐对象排除、镜像/码率优先级、描述伪造 URL、未绑定多 MP4 拒绝及关闭边界；本机真实 Headed 复测仍为 `NOT VERIFIED`。
+
 - P3 blob/MediaSource 早期响应捕获（2026-09-08）：response 监听现在在 `page.goto` 前安装，导航和播放器挂载期间的 video/HLS 响应仅作为当前任务内存中的有界候选（最多 4 条、单条最多 4096 字符、最长 15 秒），不写日志、磁盘或异常。确认 canonical 目标页及可见主播放器后，候选还必须是主框架请求、Referer 对应目标作品、video/HLS MIME 并通过 `SafeHttpClient.validate_url`；只有唯一候选才能用于无 Cookie 复验，广告/推荐/子框架和多候选均拒绝。blob 无归属候选时最多受控 reload 一次并重新确认目标 ID。播放器等待为 100ms 有界条件轮询，没有固定 sleep。Page、Context、Browser 依序关闭，清理失败仅记录安全资源类型和 `close_failed` 枚举。真实 Headed 新 smoke 仍待执行，不能将本轮代码或旧结果写为下载成功。
 
 - P3 早期媒体捕获远程验证：commit `064ebfbf57788309200a22a14099a01e759caafa` 的 GitHub Actions CI #85 成功。该 CI 只证明自动化门禁，不能替代现有会话上的 Headed 真实 smoke。

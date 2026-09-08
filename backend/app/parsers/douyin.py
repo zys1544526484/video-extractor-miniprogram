@@ -23,7 +23,10 @@ TITLE_PATTERNS = (
     re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](?P<value>[^"\']+)', re.IGNORECASE),
     re.compile(r'<meta[^>]+content=["\'](?P<value>[^"\']+)["\'][^>]+property=["\']og:title', re.IGNORECASE),
 )
-VIDEO_MEDIA_FIELDS = ("play_addr", "play_addr_h264", "download_addr")
+# Keep this priority explicit.  ``download_addr`` can be a platform-provided
+# download rendition and may contain a visible platform watermark; it never
+# promises removal of an author watermark burned into the picture.
+VIDEO_MEDIA_FIELDS = ("play_addr_h264", "play_addr", "download_addr")
 COVER_FIELDS = ("origin_cover", "dynamic_cover", "static_cover", "cover", "poster")
 HYDRATION_JSON_START_PATTERN = re.compile(r"(?:^|[=(:,;])\s*(?P<json>[{\[])")
 JSON_PARSE_PATTERN = re.compile(r"JSON\.parse\(\s*(?P<json>\"(?:\\.|[^\"\\])*\")\s*\)")
@@ -200,6 +203,75 @@ class DouyinParser(BaseParser):
             decoded = _normalise_public_url(candidate).strip()
             if decoded.startswith(("http://", "https://")) and decoded not in urls:
                 urls.append(decoded)
+        return urls
+
+    @staticmethod
+    def _aweme_id(value: object) -> str | None:
+        """Return a numeric work id without accepting lookalike text fields."""
+        if isinstance(value, int):
+            value = str(value)
+        if isinstance(value, str) and value.isdigit():
+            return value
+        return None
+
+    @classmethod
+    def _target_work_nodes(cls, payload: object, target_id: str) -> list[dict[str, Any]]:
+        """Find only parsed objects whose own aweme id is the requested work."""
+        return [
+            node
+            for node in cls._walk_dicts(payload)
+            if cls._aweme_id(node.get("aweme_id") or node.get("awemeId")) == target_id
+        ]
+
+    @classmethod
+    def target_bound_media_urls_from_payload(cls, payload: object, target_id: str) -> list[str]:
+        """Read media fields from an exact target work object, in safe order.
+
+        This is intentionally narrower than the anonymous P2 metadata helper:
+        callers such as the operator-session PoC must never associate a
+        recommended work, page description, or arbitrary URL-shaped text with
+        the requested work.
+        """
+        urls: list[str] = []
+
+        def append(address: object) -> None:
+            for url in cls._urls_in_address(address):
+                if url not in urls:
+                    urls.append(url)
+
+        for node in cls._target_work_nodes(payload, target_id):
+            video = node.get("video")
+            if not isinstance(video, dict):
+                continue
+            append(video.get("play_addr_h264"))
+            append(video.get("play_addr"))
+
+            bit_rates = video.get("bit_rate") or video.get("bitRate")
+            if isinstance(bit_rates, list):
+                indexed_rates: list[tuple[int, int, dict[str, Any]]] = []
+                for index, rate in enumerate(bit_rates):
+                    if not isinstance(rate, dict):
+                        continue
+                    raw_rate = rate.get("bit_rate", rate.get("bitrate", rate.get("bitRate", 0)))
+                    try:
+                        comparable_rate = int(raw_rate)
+                    except (TypeError, ValueError):
+                        comparable_rate = 0
+                    indexed_rates.append((comparable_rate, -index, rate))
+                for _rate, _index, bit_rate in sorted(indexed_rates, reverse=True):
+                    append(bit_rate.get("play_addr"))
+
+            append(video.get("download_addr"))
+        return urls
+
+    @classmethod
+    def target_bound_media_urls_from_document(cls, document: str, target_id: str) -> list[str]:
+        """Read target-bound media only from successfully parsed script JSON."""
+        urls: list[str] = []
+        for payload in cls._script_json_values(document):
+            for url in cls.target_bound_media_urls_from_payload(payload, target_id):
+                if url not in urls:
+                    urls.append(url)
         return urls
 
     @classmethod

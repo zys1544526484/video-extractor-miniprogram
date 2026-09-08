@@ -288,7 +288,14 @@ async def test_session_worker_serialises_concurrent_browser_access(tmp_path: Pat
 class AdapterRequest:
     resource_type = "media"
 
-    def __init__(self, *, frame: object | None = None, referer: str | None = TARGET_URL) -> None:
+    def __init__(
+        self,
+        *,
+        url: str = TARGET_URL,
+        frame: object | None = None,
+        referer: str | None = TARGET_URL,
+    ) -> None:
+        self.url = url
         self.frame = frame
         self.headers = {} if referer is None else {"referer": referer}
 
@@ -301,11 +308,19 @@ class AdapterResponse:
         resource_type: str = "media",
         frame: object | None = None,
         referer: str | None = TARGET_URL,
+        request_url: str = TARGET_URL,
+        payload: object | None = None,
     ) -> None:
         self.url = url
         self.headers = {"content-type": content_type}
-        self.request = AdapterRequest(frame=frame, referer=referer)
+        self.request = AdapterRequest(url=request_url, frame=frame, referer=referer)
         self.request.resource_type = resource_type
+        self.payload = payload
+
+    async def json(self) -> object:
+        if self.payload is None:
+            raise ValueError("not JSON")
+        return self.payload
 
 
 class AdapterRiskLocator:
@@ -697,6 +712,120 @@ async def test_blob_player_reloads_once_when_first_capture_has_no_attributable_m
     assert page.reload_calls == 1
 
 
+def target_detail_payload(*urls: str, response_id: str = WORK_ID) -> dict[str, object]:
+    return {
+        "aweme_id": response_id,
+        "video": {"play_addr_h264": {"url_list": list(urls)}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_target_detail_json_binds_media_and_skips_player_wait_and_reload() -> None:
+    bound_url = "https://cdn.example.com/target-h264.mp4"
+    detail = AdapterResponse(
+        "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=" + WORK_ID,
+        "application/json",
+        resource_type="xhr",
+        request_url="https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=" + WORK_ID,
+        payload=target_detail_payload(bound_url),
+    )
+    page = AdapterPage(current_src="blob:https://www.douyin.com/opaque", responses=[detail])
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert page.listener_before_goto is True
+    assert page.waited is False
+    assert page.reload_calls == 0
+    assert captured.media_urls == (bound_url,)
+    assert captured.candidate_source == "detail_json"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.target_bound_candidate_count == 1
+    assert captured.diagnostics.candidate_group_count == 1
+
+
+@pytest.mark.asyncio
+async def test_detail_response_with_mismatched_response_id_cannot_bind_target_media() -> None:
+    detail = AdapterResponse(
+        "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=" + WORK_ID,
+        "application/json",
+        resource_type="xhr",
+        request_url="https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=" + WORK_ID,
+        payload=target_detail_payload("https://cdn.example.com/wrong.mp4", response_id="7999999999999999999"),
+    )
+    captured = await adapter_for(
+        AdapterPage(current_src="blob:https://www.douyin.com/opaque", responses=[detail])
+    ).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.target_bound_candidate_count == 0
+
+
+@pytest.mark.asyncio
+async def test_hydration_target_media_uses_mirrors_in_order_without_guessing_network() -> None:
+    first = "https://cdn.example.com/first.mp4"
+    second = "https://cdn.example.com/second.mp4"
+    document = json.dumps(
+        {
+            "aweme_list": [
+                {"aweme_id": "7999999999999999999", "video": {"play_addr": {"url_list": ["https://ads.example.com/ad.mp4"]}}},
+                {"aweme_id": WORK_ID, "video": {"play_addr_h264": {"url_list": [first, second]}}},
+            ]
+        }
+    )
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        document=f'<script type="application/json">{document}</script>',
+    )
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_urls == (first, second)
+    assert captured.candidate_source == "hydration_json"
+    assert page.waited is False
+
+
+@pytest.mark.asyncio
+async def test_worker_tries_bound_cdn_mirrors_until_one_is_public(tmp_path: Path) -> None:
+    first = "https://cdn.example.com/first.mp4"
+    second = "https://cdn.example.com/second.mp4"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("first.mp4"):
+            return httpx.Response(403)
+        return video_handler(request)
+
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(handler),
+        browser=FakeBrowser(
+            CapturedMedia(
+                WORK_ID,
+                first,
+                media_urls=(first, second),
+                candidate_source="hydration_json",
+            )
+        ),
+    )
+    result = await worker.inspect(TARGET_URL)
+
+    assert result.media_origin == "https://cdn.example.com"
+    assert result.bytes_read == 1024
+
+
 @pytest.mark.asyncio
 async def test_playwright_adapter_rejects_multiple_blob_network_candidates_as_ambiguous() -> None:
     page = AdapterPage(
@@ -921,6 +1050,48 @@ async def test_cleanup_failures_do_not_override_player_result_or_leak_between_mo
     assert first_page.headless is False
     assert second_page.headless is True
     assert caplog.text.count("douyin_session_cleanup outcome=failed") == 4
+
+
+class AlreadyClosedContext(AdapterContext):
+    async def close(self) -> None:
+        error_type = type("TargetClosedError", (Exception,), {})
+        raise error_type("already closed")
+
+
+class AlreadyClosedBrowser(AdapterBrowser):
+    async def new_context(self, *, storage_state: str) -> AdapterContext:
+        return AlreadyClosedContext(self.page)
+
+
+class AlreadyClosedChromium(AdapterChromium):
+    async def launch(self, *, headless: bool) -> AdapterBrowser:
+        return AlreadyClosedBrowser(self.page)
+
+
+class AlreadyClosedPlaywright(AdapterPlaywright):
+    def __init__(self, page: AdapterPage) -> None:
+        self.chromium = AlreadyClosedChromium(page)
+
+
+class AlreadyClosedManager(AdapterManager):
+    async def __aenter__(self) -> AdapterPlaywright:
+        return AlreadyClosedPlaywright(self.page)
+
+
+@pytest.mark.asyncio
+async def test_already_closed_context_is_not_reported_as_cleanup_failure(caplog) -> None:
+    adapter = PlaywrightSessionAdapter(
+        playwright_factory=lambda: AlreadyClosedManager(AdapterPage(current_src=MEDIA_URL))
+    )
+    captured = await adapter.capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "ok"
+    assert "resource=context internal_reason=close_failed" not in caplog.text
 
 
 class OrderedClosePage(AdapterPage):

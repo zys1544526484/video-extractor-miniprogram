@@ -156,6 +156,10 @@ class PlayerDiagnostics:
     media_domains: tuple[str, ...]
     last_phase: str
     phase_ms: tuple[tuple[str, int], ...]
+    target_bound_candidate_count: int = 0
+    unbound_candidate_count: int = 0
+    candidate_group_count: int = 0
+    candidate_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +170,11 @@ class CapturedMedia:
     media_url: str | None
     state: str = "ok"
     diagnostics: PlayerDiagnostics | None = None
+    # Mirror URLs from one exact target-bound structured source remain only in
+    # memory for this capture; the worker independently probes them without
+    # browser session credentials.
+    media_urls: tuple[str, ...] = ()
+    candidate_source: str | None = None
 
 
 @dataclass(frozen=True)

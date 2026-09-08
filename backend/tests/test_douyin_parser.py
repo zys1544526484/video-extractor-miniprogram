@@ -343,3 +343,44 @@ def test_registry_uses_douyin_parser_without_changing_other_platform_types(setti
     assert isinstance(registry.get("weibo"), YtDlpPlatformParser)
     assert isinstance(registry.get("xiaohongshu"), YtDlpPlatformParser)
     assert isinstance(registry.get("kuaishou"), KuaishouParser)
+
+
+def test_target_bound_structured_urls_ignore_recommendations_and_use_deterministic_priority() -> None:
+    payload = {
+        "aweme_list": [
+            {
+                "aweme_id": "7999999999999999999",
+                "video": {"play_addr": {"url_list": ["https://cdn.example.com/recommended.mp4"]}},
+            },
+            {
+                "aweme_id": WORK_ID,
+                "desc": "play_addr https://attacker.example.com/never.mp4",
+                "video": {
+                    "play_addr_h264": {"url_list": ["https://cdn.example.com/h264-a.mp4", "https://cdn.example.com/h264-b.mp4"]},
+                    "play_addr": {"url_list": ["https://cdn.example.com/play.mp4"]},
+                    "bit_rate": [
+                        {"bit_rate": 100, "play_addr": {"url_list": ["https://cdn.example.com/low.mp4"]}},
+                        {"bit_rate": 200, "play_addr": {"url_list": ["https://cdn.example.com/high.mp4"]}},
+                    ],
+                    "download_addr": {"url_list": ["https://cdn.example.com/download.mp4"]},
+                },
+            },
+        ]
+    }
+
+    assert DouyinParser.target_bound_media_urls_from_payload(payload, WORK_ID) == [
+        "https://cdn.example.com/h264-a.mp4",
+        "https://cdn.example.com/h264-b.mp4",
+        "https://cdn.example.com/play.mp4",
+        "https://cdn.example.com/high.mp4",
+        "https://cdn.example.com/low.mp4",
+        "https://cdn.example.com/download.mp4",
+    ]
+
+
+def test_target_bound_structured_urls_require_exact_work_id() -> None:
+    payload = {
+        "aweme_id": "7999999999999999999",
+        "video": {"play_addr": {"url_list": ["https://cdn.example.com/not-target.mp4"]}},
+    }
+    assert DouyinParser.target_bound_media_urls_from_payload(payload, WORK_ID) == []

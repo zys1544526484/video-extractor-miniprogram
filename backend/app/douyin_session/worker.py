@@ -6,10 +6,11 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from ..config import Settings
 from ..errors import AppError
+from ..parsers.douyin import DouyinParser
 from ..services.safe_http import SafeHttpClient
 from .bootstrap import _load_async_playwright
 from .errors import (
@@ -113,6 +114,12 @@ PUBLIC_MEDIA_HEADERS = {
 MAX_EARLY_MEDIA_CANDIDATES = 4
 MAX_EARLY_MEDIA_URL_LENGTH = 4096
 MAX_EARLY_MEDIA_AGE_SECONDS = 15
+MAX_DETAIL_RESPONSE_TASKS = 2
+DETAIL_PATH_MARKERS = (
+    "/aweme/v1/web/aweme/detail/",
+    "/aweme/v1/aweme/detail/",
+    "/aweme/detail/",
+)
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,14 @@ class CachedMediaCandidate:
     captured_at: float
     main_frame: bool
     referer: str | None
+
+
+@dataclass(frozen=True)
+class TargetBoundMediaGroup:
+    """Bound media mirrors from one exact target work JSON payload."""
+
+    source: str
+    urls: tuple[str, ...]
 
 
 class SessionBrowserAdapter(Protocol):
@@ -258,6 +273,44 @@ class PlaywrightSessionAdapter:
         return value if isinstance(value, str) and len(value) <= MAX_EARLY_MEDIA_URL_LENGTH else None
 
     @staticmethod
+    def _is_target_detail_request(request: Any, target_id: str) -> bool:
+        """Accept only an explicit official detail request for this work id."""
+        try:
+            parsed = urlsplit(str(getattr(request, "url", "")))
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower().rstrip(".")
+        allowed_host = (
+            host == "douyin.com"
+            or host.endswith(".douyin.com")
+            or host == "iesdouyin.com"
+            or host.endswith(".iesdouyin.com")
+        )
+        if not allowed_host:
+            return False
+        if not any(marker in parsed.path for marker in DETAIL_PATH_MARKERS):
+            return False
+        return parse_qs(parsed.query).get("aweme_id") == [target_id]
+
+    @staticmethod
+    async def _response_target_group(response: Any, target_id: str) -> TargetBoundMediaGroup | None:
+        """Parse a detail JSON response without retaining its URL or body."""
+        request = getattr(response, "request", None)
+        if request is None or not PlaywrightSessionAdapter._is_target_detail_request(request, target_id):
+            return None
+        content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
+        if "json" not in content_type:
+            return None
+        try:
+            payload = await response.json()
+        except Exception:
+            return None
+        urls = DouyinParser.target_bound_media_urls_from_payload(payload, target_id)
+        if not urls:
+            return None
+        return TargetBoundMediaGroup("detail_json", tuple(urls[:MAX_EARLY_MEDIA_CANDIDATES]))
+
+    @staticmethod
     def _referer_matches_target(referer: str | None, target_url: str) -> bool:
         if referer is None:
             return False
@@ -295,6 +348,19 @@ class PlaywrightSessionAdapter:
         unique = list(dict.fromkeys(accepted))
         return unique[0] if len(unique) == 1 else None
 
+    async def _validated_group_urls(
+        self,
+        urls: tuple[str, ...] | list[str],
+        validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
+    ) -> tuple[str, ...]:
+        """Keep only safe media mirrors; raw addresses stay task-local."""
+        valid: list[str] = []
+        for url in urls[:MAX_EARLY_MEDIA_CANDIDATES]:
+            checked = await self._validate_direct_url(url, validator)
+            if checked is not None and checked not in valid:
+                valid.append(checked)
+        return tuple(valid)
+
     async def _validate_direct_url(
         self,
         url: str | None,
@@ -310,17 +376,28 @@ class PlaywrightSessionAdapter:
         return url
 
     @staticmethod
-    async def _close_safely(resource: Any, *, resource_name: str) -> None:
+    async def _close_safely(resource: Any, *, resource_name: str, phase: str) -> None:
         if resource is None:
             return
         try:
             await resource.close()
-        except Exception:
+        except Exception as error:
+            # Playwright may have closed a context while its page or browser
+            # was being torn down.  That is a normal terminal state, not a
+            # second failure that should obscure the useful capture result.
+            if error.__class__.__name__ == "TargetClosedError" or "closed" in str(error).lower():
+                logger.debug(
+                    "douyin_session_cleanup outcome=already_closed resource=%s phase=%s",
+                    resource_name,
+                    phase,
+                )
+                return
             # Closing must never replace the useful page/player error.  Do not
             # include exception text because browser errors can echo URLs.
             logger.warning(
-                "douyin_session_cleanup outcome=failed resource=%s internal_reason=close_failed",
+                "douyin_session_cleanup outcome=failed resource=%s internal_reason=close_failed phase=%s",
                 resource_name,
+                phase,
             )
 
     @staticmethod
@@ -345,6 +422,10 @@ class PlaywrightSessionAdapter:
         has_src: bool = False,
         has_source_child: bool = False,
         has_blob_url: bool = False,
+        target_bound_candidate_count: int = 0,
+        unbound_candidate_count: int = 0,
+        candidate_group_count: int = 0,
+        candidate_source: str | None = None,
     ) -> PlayerDiagnostics:
         snapshot = snapshot or {}
         playback_media = playback_media or []
@@ -371,6 +452,10 @@ class PlaywrightSessionAdapter:
             ),
             last_phase=phase,
             phase_ms=tuple(phase_copy.items()),
+            target_bound_candidate_count=target_bound_candidate_count,
+            unbound_candidate_count=unbound_candidate_count,
+            candidate_group_count=candidate_group_count,
+            candidate_source=candidate_source,
         )
         self.last_diagnostics = diagnostics
         return diagnostics
@@ -433,6 +518,8 @@ class PlaywrightSessionAdapter:
         snapshot: dict[str, Any] = {}
         playback_media: list[tuple[str, str]] = []
         early_candidates: list[CachedMediaCandidate] = []
+        detail_tasks: list[asyncio.Task[TargetBoundMediaGroup | None]] = []
+        target_groups: list[TargetBoundMediaGroup] = []
         try:
             async with manager as playwright:
                 try:
@@ -457,6 +544,17 @@ class PlaywrightSessionAdapter:
                 try:
                         def observe_response(response: Any) -> None:
                             request = response.request
+                            # A detail response is stronger evidence than a CDN URL:
+                            # both its request and its parsed JSON must name the exact
+                            # target aweme.  Do this before navigation without logging
+                            # either response URL or body.
+                            if (
+                                self._is_target_detail_request(request, target_id)
+                                and len(detail_tasks) < MAX_DETAIL_RESPONSE_TASKS
+                            ):
+                                detail_tasks.append(
+                                    asyncio.create_task(self._response_target_group(response, target_id))
+                                )
                             content_type = response.headers.get("content-type", "").lower()
                             url = response.url
                             if (
@@ -531,6 +629,59 @@ class PlaywrightSessionAdapter:
                                     target_id=target_id, phase=phase, phase_ms=phase_ms
                                 ),
                             )
+                        # Consume only completed official detail JSON responses after
+                        # target identity is exact. A bad/mismatched JSON simply yields
+                        # no group; it cannot influence naked CDN fallback selection.
+                        if detail_tasks:
+                            done, pending = await asyncio.wait(
+                                detail_tasks,
+                                timeout=min(1, media_capture_timeout_seconds),
+                            )
+                            for task in done:
+                                try:
+                                    group = task.result()
+                                except Exception:
+                                    group = None
+                                if group is not None:
+                                    target_groups.append(group)
+                            for task in pending:
+                                task.cancel()
+                        document = await page.content()
+                        hydration_urls = DouyinParser.target_bound_media_urls_from_document(
+                            document, target_id
+                        )
+                        if hydration_urls:
+                            target_groups.append(
+                                TargetBoundMediaGroup(
+                                    "hydration_json",
+                                    tuple(hydration_urls[:MAX_EARLY_MEDIA_CANDIDATES]),
+                                )
+                            )
+                        # Bound details/hydration are deterministic: their URL list is
+                        # one exact work object, ordered by H.264, play, bitrate,
+                        # download. Do not wait for a blob player or reload when present.
+                        for group in target_groups:
+                            bound_urls = await self._validated_group_urls(group.urls, public_url_validator)
+                            if bound_urls:
+                                move_to("structured_media")
+                                complete_phase()
+                                diagnostics = self._record_diagnostics(
+                                    target_id=target_id,
+                                    phase=phase,
+                                    phase_ms=phase_ms,
+                                    playback_media=playback_media,
+                                    target_bound_candidate_count=len(bound_urls),
+                                    unbound_candidate_count=len(early_candidates),
+                                    candidate_group_count=len(target_groups),
+                                    candidate_source=group.source,
+                                )
+                                return CapturedMedia(
+                                    target_id=target_id,
+                                    media_url=bound_urls[0],
+                                    media_urls=bound_urls,
+                                    candidate_source=group.source,
+                                    diagnostics=diagnostics,
+                                )
                         move_to("player_mount")
                         if not await self._wait_for_primary_player(page, player_timeout_seconds):
                             snapshot = await self._player_snapshot(page)
@@ -571,27 +722,19 @@ class PlaywrightSessionAdapter:
                             has_source_child,
                             has_blob_url,
                         ) = self._snapshot_urls(snapshot)
-                        # The final route is exact; only then can public structured
-                        # metadata from this page be associated with the target work.
-                        # The final route is exact; only then can public structured
-                        # metadata from this page be associated with the target work.
-                        from ..parsers.douyin import DouyinParser
-
-                        document = await page.content()
-                        _title, media_urls, _covers = DouyinParser._structured_metadata(document)
                         direct_media_url = await self._validate_direct_url(
                             _first_public_url(direct_urls), public_url_validator
                         )
-                        structured_media_url = await self._validate_direct_url(
-                            _first_public_url(media_urls), public_url_validator
-                        )
-                        media_url = direct_media_url or structured_media_url
+                        media_url = direct_media_url
+                        candidate_source = "main_player_network" if media_url else None
                         if media_url is None and has_blob_url:
                             media_url = await self._select_early_candidate(
                                 early_candidates,
                                 target_url=target_url,
                                 validator=public_url_validator,
                             )
+                            if media_url is not None:
+                                candidate_source = "main_player_network"
                         if media_url is None and has_blob_url:
                             # Some MediaSource players fetch their manifest before the
                             # visible video is activated. One controlled reload gives the
@@ -640,12 +783,16 @@ class PlaywrightSessionAdapter:
                                 media_url = await self._validate_direct_url(
                                     _first_public_url(replay_urls), public_url_validator
                                 )
+                                if media_url is not None:
+                                    candidate_source = "main_player_network"
                                 if media_url is None:
                                     media_url = await self._select_early_candidate(
                                         early_candidates,
                                         target_url=target_url,
                                         validator=public_url_validator,
                                     )
+                                    if media_url is not None:
+                                        candidate_source = "main_player_network"
                         complete_phase()
                         diagnostics = self._record_diagnostics(
                             target_id=target_id,
@@ -665,12 +812,18 @@ class PlaywrightSessionAdapter:
                             has_src=has_src,
                             has_source_child=has_source_child,
                             has_blob_url=has_blob_url,
+                            target_bound_candidate_count=0,
+                            unbound_candidate_count=len(early_candidates),
+                            candidate_group_count=len(target_groups),
+                            candidate_source=candidate_source,
                         )
                         return CapturedMedia(
                             target_id=target_id,
                             media_url=media_url,
                             state="ok" if media_url else "media_missing",
                             diagnostics=diagnostics,
+                            media_urls=(media_url,) if media_url else (),
+                            candidate_source=candidate_source,
                         )
                 except TimeoutError as error:
                     log_phase_failure()
@@ -719,10 +872,17 @@ class PlaywrightSessionAdapter:
             # releasing browser resources so they cannot survive into another job.
             early_candidates.clear()
             playback_media.clear()
+            for task in detail_tasks:
+                if not task.done():
+                    task.cancel()
+            if detail_tasks:
+                await asyncio.gather(*detail_tasks, return_exceptions=True)
+            detail_tasks.clear()
+            target_groups.clear()
             self._active_candidate_count = 0
-            await self._close_safely(page, resource_name="page")
-            await self._close_safely(context, resource_name="context")
-            await self._close_safely(browser, resource_name="browser")
+            await self._close_safely(page, resource_name="page", phase=phase)
+            await self._close_safely(context, resource_name="context", phase=phase)
+            await self._close_safely(browser, resource_name="browser", phase=phase)
 
 
 class DouyinSessionWorker:
@@ -808,7 +968,8 @@ class DouyinSessionWorker:
                 logger.info(
                     "douyin_session_player target_id=%s page=%s videos=%d visible=%d "
                     "current_src=%s src=%s source_child=%s blob=%s media_responses=%d "
-                    "content_types=%s media_domains=%s last_phase=%s phase_ms=%s",
+                    "content_types=%s media_domains=%s bound=%d unbound=%d groups=%d source=%s "
+                    "last_phase=%s phase_ms=%s",
                     diagnostics.target_id,
                     diagnostics.page_route,
                     diagnostics.video_count,
@@ -820,6 +981,10 @@ class DouyinSessionWorker:
                     diagnostics.media_response_count,
                     ",".join(diagnostics.media_content_types) or "none",
                     ",".join(diagnostics.media_domains) or "none",
+                    diagnostics.target_bound_candidate_count,
+                    diagnostics.unbound_candidate_count,
+                    diagnostics.candidate_group_count,
+                    diagnostics.candidate_source or "none",
                     diagnostics.last_phase,
                     ",".join(f"{name}:{elapsed}" for name, elapsed in diagnostics.phase_ms),
                 )
@@ -838,47 +1003,58 @@ class DouyinSessionWorker:
             if capture.state != "ok" or capture.target_id != target_id:
                 self.last_internal_reason = "target_mismatch"
                 raise target_mismatch()
-            if not capture.media_url:
+            media_urls = capture.media_urls or ((capture.media_url,) if capture.media_url else ())
+            if not media_urls:
                 self.last_internal_reason = "player_media_missing"
                 raise session_media_not_found()
-            try:
-                logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)
-                async with asyncio.timeout(self.settings.douyin_session_media_verify_timeout_seconds):
-                    # No session headers are supplied: a candidate must be independently
-                    # public before it can be used by the existing media pipeline.
-                    public_headers = {**PUBLIC_MEDIA_HEADERS, "Referer": target_url}
-                    probe = await self.http.probe_media(capture.media_url, headers=public_headers)
-                    stream = await self.http.open_stream(
-                        capture.media_url,
-                        headers=public_headers,
-                        range_header="bytes=0-1023",
-                        media_kind="video",
+            probe: dict[str, Any] | None = None
+            bytes_read = 0
+            verified_url: str | None = None
+            last_error: AppError | None = None
+            for candidate_url in media_urls:
+                try:
+                    logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)
+                    async with asyncio.timeout(self.settings.douyin_session_media_verify_timeout_seconds):
+                        public_headers = {**PUBLIC_MEDIA_HEADERS, "Referer": target_url}
+                        candidate_probe = await self.http.probe_media(candidate_url, headers=public_headers)
+                        stream = await self.http.open_stream(
+                            candidate_url,
+                            headers=public_headers,
+                            range_header="bytes=0-1023",
+                            media_kind="video",
+                        )
+                        try:
+                            candidate_bytes = 0
+                            async for chunk in stream.response.aiter_bytes():
+                                candidate_bytes += len(chunk)
+                                if candidate_bytes >= 1024:
+                                    break
+                        finally:
+                            await stream.close()
+                    if candidate_bytes >= 1024:
+                        verified_url, probe, bytes_read = candidate_url, candidate_probe, candidate_bytes
+                        break
+                    last_error = AppError("DOWNLOAD_FAILED", "公开媒体无法读取足够的视频数据", retryable=True)
+                except TimeoutError as error:
+                    last_error = AppError(
+                        "DOUYIN_SESSION_MEDIA_VERIFY_TIMEOUT", "媒体公开复验超时", retryable=True
                     )
-                    try:
-                        bytes_read = 0
-                        async for chunk in stream.response.aiter_bytes():
-                            bytes_read += len(chunk)
-                            if bytes_read >= 1024:
-                                break
-                    finally:
-                        await stream.close()
-            except TimeoutError as error:
-                self.last_internal_reason = "media_verify_timeout"
-                raise AppError(
-                    "DOUYIN_SESSION_MEDIA_VERIFY_TIMEOUT", "媒体公开复验超时", retryable=True
-                ) from error
-            except AppError as error:
-                if error.code == "CONTENT_NOT_PUBLIC":
+                    last_error.__cause__ = error
+                except AppError as error:
+                    last_error = error
+            if verified_url is None:
+                if last_error is not None and last_error.code == "CONTENT_NOT_PUBLIC":
                     self.last_internal_reason = "session_bound_media"
-                    raise session_bound_media() from error
-                raise
-            if bytes_read < 1024:
+                    raise session_bound_media() from last_error
+                if last_error is not None:
+                    self.last_internal_reason = "media_verify_failed"
+                    raise last_error
                 self.last_internal_reason = "public_media_too_short"
                 raise AppError("DOWNLOAD_FAILED", "公开媒体无法读取足够的视频数据", retryable=True)
             result = SessionWorkerResult(
                 target_id=target_id,
-                media_origin=_sanitise_media_origin(capture.media_url),
-                size_bytes=probe.get("size"),
+                media_origin=_sanitise_media_origin(verified_url),
+                size_bytes=probe.get("size") if probe is not None else None,
                 bytes_read=bytes_read,
                 elapsed_ms=int((time.monotonic() - started) * 1000),
             )

@@ -259,6 +259,10 @@ async def test_smoke_failure_emits_safe_phase_diagnostics_without_media_route_or
         media_domains=("https://cdn.example.com/private/signed?token=never-log",),
         last_phase="player_mount",
         phase_ms=(("page_navigation", 17), ("player_mount", 31)),
+        target_bound_candidate_count=1,
+        unbound_candidate_count=4,
+        candidate_group_count=1,
+        candidate_source="hydration_json",
     )
     output = await run_smoke(
         Settings(app_env="test", douyin_session_enabled=True),
@@ -276,6 +280,10 @@ async def test_smoke_failure_emits_safe_phase_diagnostics_without_media_route_or
     assert output.final_page_path == f"/video/{WORK_ID}"
     assert output.media_domains == ("https://cdn.example.com",)
     assert output.media_mime_types == ("video/mp4",)
+    assert output.target_bound_candidate_count == 1
+    assert output.unbound_candidate_count == 4
+    assert output.candidate_group_count == 1
+    assert output.candidate_source == "hydration_json"
     assert "private" not in payload
     assert "token" not in payload.lower()
     assert "never-log" not in payload
@@ -302,4 +310,8 @@ def test_smoke_output_schema_only_contains_safe_diagnostic_fields() -> None:
         "media_response_count",
         "media_mime_types",
         "media_domains",
+        "target_bound_candidate_count",
+        "unbound_candidate_count",
+        "candidate_group_count",
+        "candidate_source",
     }

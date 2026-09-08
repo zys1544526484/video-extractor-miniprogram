@@ -27,6 +27,7 @@
 - 本轮本地门禁：全量 backend pytest（2 条依赖弃用 warning）、`ruff check app tests alembic`、`compileall app alembic`、`npm test`（49 passed）、小程序常规/合成 production 校验（各 80 files）与 `git diff --check` 均通过。Docker CLI 仍不可用，Docker build 本地为 `NOT VERIFIED`；远程 CI 必须以本次 push 的 run 为准。
 - P3 blob 早期媒体捕获修正（2026-09-08）：response listener 在 `goto` 前安装；video/HLS 候选只保留于当前任务内存（最多 4 条、4096 字符、15 秒），任务结束清空，不进入日志、文件、异常或结果模型。目标 ID 和可见主播放器确认后，只有主框架、目标 Referer、MIME 合格且通过 `SafeHttpClient.validate_url` 的唯一候选才可用于无 Cookie 复验；多候选、广告/推荐/子框架均失败而非猜选。blob 无候选时只 reload 一次并再次确认目标 ID。Player 等待为有界条件等待；关闭顺序为 Page → Context → Browser，关闭异常仅记录 `resource` 和 `close_failed`。新增 navigation/mount 早期候选、唯一性、候选清空、一次 reload、关闭顺序与现有脱敏回归。真实 Headed 复测仍为 `NOT VERIFIED`，不需要重新 bootstrap。
 - `064ebfbf57788309200a22a14099a01e759caafa` 已推送；[GitHub Actions CI #85](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34194264980) 成功。它覆盖自动化门禁，不代表真实 Headed blob 媒体已重新捕获；下一步仅需使用既有运营者会话执行一次 Headed smoke。
+- P3 目标媒体归属收紧：详情 JSON 监听仍在 `goto` 前安装，但只接受官方 `douyin.com`/`iesdouyin.com` 明确 detail path，且请求与响应的 `aweme_id` 都严格等于目标；页面 hydration/JSON-LD 也只从匹配目标对象的 H.264、play、按码率排序的 bit-rate 和最后 download 字段读取。CDN 镜像是同一已绑定组，按顺序无 Cookie 复验；没有绑定组时，多条裸 MP4 继续拒绝猜选。结构化候选会跳过 player wait/reload；smoke JSON 增加安全的 bound/unbound/group/source 枚举字段，Context 已关闭不再被记成 cleanup failed。真实 Windows Headed smoke 仍未复跑，保持 `NOT VERIFIED`，不需要重新 bootstrap。
 
 ### 当前请求：P2 抖音公开内容解析 PoC（2026-09-07）
 
