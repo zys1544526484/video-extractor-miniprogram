@@ -288,6 +288,10 @@ async def test_session_worker_serialises_concurrent_browser_access(tmp_path: Pat
 class AdapterRequest:
     resource_type = "media"
 
+    def __init__(self, *, frame: object | None = None, referer: str | None = TARGET_URL) -> None:
+        self.frame = frame
+        self.headers = {} if referer is None else {"referer": referer}
+
 
 class AdapterResponse:
     def __init__(
@@ -295,10 +299,12 @@ class AdapterResponse:
         url: str,
         content_type: str = "video/mp4",
         resource_type: str = "media",
+        frame: object | None = None,
+        referer: str | None = TARGET_URL,
     ) -> None:
         self.url = url
         self.headers = {"content-type": content_type}
-        self.request = AdapterRequest()
+        self.request = AdapterRequest(frame=frame, referer=referer)
         self.request.resource_type = resource_type
 
 
@@ -324,7 +330,9 @@ class AdapterPage:
         document: str = "<html></html>",
         risk_visible: bool = False,
         responses: list[AdapterResponse] | None = None,
+        mount_responses: list[AdapterResponse] | None = None,
         play_responses: list[AdapterResponse] | None = None,
+        reload_responses: list[AdapterResponse] | None = None,
         visible: bool = True,
     ) -> None:
         self.url = final_url
@@ -335,10 +343,16 @@ class AdapterPage:
         self.document = document
         self.risk_visible = risk_visible
         self.responses = responses or []
+        self.mount_responses = mount_responses or []
         self.play_responses = play_responses or []
+        self.reload_responses = reload_responses or []
         self.visible = visible
         self.callbacks: list = []
         self.waited = False
+        self.listener_before_goto = False
+        self.reload_calls = 0
+        self.closed = False
+        self.main_frame = object()
 
     def on(self, event: str, callback) -> None:
         assert event == "response"
@@ -347,7 +361,15 @@ class AdapterPage:
     async def goto(self, _url: str, **kwargs: object) -> None:
         assert kwargs["wait_until"] == "domcontentloaded"
         assert isinstance(kwargs["timeout"], int) and kwargs["timeout"] > 0
+        self.listener_before_goto = bool(self.callbacks)
         for response in self.responses:
+            for callback in self.callbacks:
+                callback(response)
+
+    async def reload(self, **kwargs: object) -> None:
+        assert kwargs["wait_until"] == "domcontentloaded"
+        self.reload_calls += 1
+        for response in self.reload_responses:
             for callback in self.callbacks:
                 callback(response)
 
@@ -360,6 +382,10 @@ class AdapterPage:
         if "rect.width > 120" in _script and not self.visible:
             timeout_error = type("TimeoutError", (Exception,), {})
             raise timeout_error()
+        if "rect.width > 120" in _script:
+            for response in self.mount_responses:
+                for callback in self.callbacks:
+                    callback(response)
         if self.delayed_src:
             self.current_src = self.delayed_src
         if "currentSrc || video.src" in _script and not (
@@ -392,6 +418,9 @@ class AdapterPage:
 
     async def content(self) -> str:
         return self.document
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class AdapterContext:
@@ -547,6 +576,125 @@ async def test_playwright_adapter_uses_single_post_playback_response_for_blob_pl
     assert captured.diagnostics.has_blob_url is True
     assert captured.diagnostics.media_domains == ("https://cdn.example.com",)
     assert captured.diagnostics.media_content_types == ("application/vnd.apple.mpegurl",)
+
+
+@pytest.mark.asyncio
+async def test_blob_player_uses_one_public_media_response_seen_during_navigation() -> None:
+    early_url = "https://cdn.example.com/navigation-manifest.m3u8?signature=never-log"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse(early_url, "application/vnd.apple.mpegurl", referer=TARGET_URL)],
+    )
+    validated: list[str] = []
+
+    async def validator(url: str) -> tuple[str, list[str]]:
+        validated.append(url)
+        return url, ["93.184.216.34"]
+
+    adapter = adapter_for(page)
+    captured = await adapter.capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_url_validator=validator,
+    )
+
+    assert page.listener_before_goto is True
+    assert captured.media_url == early_url
+    assert validated == [early_url]
+    assert page.reload_calls == 0
+    assert adapter._active_candidate_count == 0
+
+
+@pytest.mark.asyncio
+async def test_session_worker_validates_early_blob_candidate_before_public_probe(tmp_path: Path) -> None:
+    early_url = "https://cdn.example.com/worker-navigation.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse(early_url, referer=TARGET_URL)],
+    )
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(video_handler),
+        browser=adapter_for(page),
+    )
+
+    result = await worker.inspect(TARGET_URL)
+
+    assert result.bytes_read == 1024
+    assert result.media_origin == "https://cdn.example.com"
+    assert page.listener_before_goto is True
+
+
+@pytest.mark.asyncio
+async def test_blob_player_accepts_unique_candidate_seen_during_player_mount() -> None:
+    early_url = "https://cdn.example.com/mount.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        mount_responses=[AdapterResponse(early_url, referer=TARGET_URL)],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == early_url
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.media_response_count == 1
+
+
+@pytest.mark.asyncio
+async def test_blob_player_rejects_ambiguous_or_non_main_frame_early_candidates() -> None:
+    ambiguous = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse("https://cdn.example.com/one.mp4", referer=TARGET_URL),
+            AdapterResponse("https://cdn.example.com/two.mp4", referer=TARGET_URL),
+        ],
+    )
+    non_main = AdapterPage(current_src="blob:https://www.douyin.com/opaque")
+    non_main_response = AdapterResponse("https://ads.example.com/ad.mp4", referer=TARGET_URL)
+    non_main_response.request.frame = object()
+    non_main.responses = [non_main_response]
+
+    first = await adapter_for(ambiguous).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+    second = await adapter_for(non_main).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert first.state == "media_missing"
+    assert second.state == "media_missing"
+
+
+@pytest.mark.asyncio
+async def test_blob_player_reloads_once_when_first_capture_has_no_attributable_media() -> None:
+    replay_url = "https://cdn.example.com/reload.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        reload_responses=[AdapterResponse(replay_url, referer=TARGET_URL)],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == replay_url
+    assert page.reload_calls == 1
 
 
 @pytest.mark.asyncio
@@ -773,3 +921,77 @@ async def test_cleanup_failures_do_not_override_player_result_or_leak_between_mo
     assert first_page.headless is False
     assert second_page.headless is True
     assert caplog.text.count("douyin_session_cleanup outcome=failed") == 4
+
+
+class OrderedClosePage(AdapterPage):
+    def __init__(self, events: list[str], **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self.events = events
+
+    async def close(self) -> None:
+        self.events.append("page")
+
+
+class OrderedCloseContext(AdapterContext):
+    def __init__(self, page: AdapterPage, events: list[str]) -> None:
+        super().__init__(page)
+        self.events = events
+
+    async def close(self) -> None:
+        self.events.append("context")
+
+
+class OrderedCloseBrowser(AdapterBrowser):
+    def __init__(self, page: AdapterPage, events: list[str]) -> None:
+        super().__init__(page)
+        self.events = events
+
+    async def new_context(self, *, storage_state: str) -> AdapterContext:
+        assert storage_state.endswith("operator-state.json")
+        return OrderedCloseContext(self.page, self.events)
+
+    async def close(self) -> None:
+        self.events.append("browser")
+
+
+class OrderedCloseChromium(AdapterChromium):
+    def __init__(self, page: AdapterPage, events: list[str]) -> None:
+        super().__init__(page)
+        self.events = events
+
+    async def launch(self, *, headless: bool) -> AdapterBrowser:
+        self.page.headless = headless
+        return OrderedCloseBrowser(self.page, self.events)
+
+
+class OrderedClosePlaywright(AdapterPlaywright):
+    def __init__(self, page: AdapterPage, events: list[str]) -> None:
+        self.chromium = OrderedCloseChromium(page, events)
+
+
+class OrderedCloseManager(AdapterManager):
+    def __init__(self, page: AdapterPage, events: list[str]) -> None:
+        super().__init__(page)
+        self.events = events
+
+    async def __aenter__(self) -> AdapterPlaywright:
+        return OrderedClosePlaywright(self.page, self.events)
+
+
+@pytest.mark.asyncio
+async def test_page_context_and_browser_close_in_order_after_capture() -> None:
+    events: list[str] = []
+    page = OrderedClosePage(events, current_src=MEDIA_URL)
+    adapter = PlaywrightSessionAdapter(
+        playwright_factory=lambda: OrderedCloseManager(page, events)
+    )
+
+    captured = await adapter.capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "ok"
+    assert events == ["page", "context", "browser"]

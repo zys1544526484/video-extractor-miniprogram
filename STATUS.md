@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- P3 blob/MediaSource 早期响应捕获（2026-09-08）：response 监听现在在 `page.goto` 前安装，导航和播放器挂载期间的 video/HLS 响应仅作为当前任务内存中的有界候选（最多 4 条、单条最多 4096 字符、最长 15 秒），不写日志、磁盘或异常。确认 canonical 目标页及可见主播放器后，候选还必须是主框架请求、Referer 对应目标作品、video/HLS MIME 并通过 `SafeHttpClient.validate_url`；只有唯一候选才能用于无 Cookie 复验，广告/推荐/子框架和多候选均拒绝。blob 无归属候选时最多受控 reload 一次并重新确认目标 ID。播放器等待为 100ms 有界条件轮询，没有固定 sleep。Page、Context、Browser 依序关闭，清理失败仅记录安全资源类型和 `close_failed` 枚举。真实 Headed 新 smoke 仍待执行，不能将本轮代码或旧结果写为下载成功。
+
 - P3 诊断可见性与异常分类（2026-09-08）：`python -m app.douyin_session.smoke` 的最后一行 JSON 现在直接包含安全的 `last_phase`、阶段毫秒数、规范作品路径、主播放器 video/来源状态、媒体响应 MIME 和仅含 scheme+hostname 的媒体域名；不包含媒体路径/查询串、签名、Cookie、Token、Authorization 或 storage-state 路径。`DOUYIN_SESSION_UNAVAILABLE` 仅用于 Playwright 导入、浏览器启动或浏览器已断连；页面导航/播放器问题分别返回 `DOUYIN_SESSION_PAGE_FAILED`、`DOUYIN_SESSION_PLAYER_NOT_FOUND` 或既有媒体错误。Worker 在清理 Page/Context/Browser 时不会让清理异常覆盖业务错误，连续 headed/headless 运行使用独立对象。真实 Windows 复测尚未执行，因此当前两个模式的实际阶段 JSON 与成功率仍为 `NOT VERIFIED`。
 
 - 本轮本地门禁（2026-09-08）：全量后端 pytest（2 条依赖弃用 warning）、Ruff、compileall、前端 Node `49 passed`、小程序静态与合成 production 校验（各 80 files）及 `git diff --check` 均通过。Docker CLI 本机不可用；push 后的远程 CI 尚待确认。

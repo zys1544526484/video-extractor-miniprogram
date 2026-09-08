@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -109,6 +110,20 @@ PUBLIC_MEDIA_HEADERS = {
     "User-Agent": "VideoExtractor/0.1 (+public-media-parser)",
     "Accept": "video/*,application/octet-stream;q=0.9,*/*;q=0.8",
 }
+MAX_EARLY_MEDIA_CANDIDATES = 4
+MAX_EARLY_MEDIA_URL_LENGTH = 4096
+MAX_EARLY_MEDIA_AGE_SECONDS = 15
+
+
+@dataclass(frozen=True)
+class CachedMediaCandidate:
+    """Ephemeral browser response evidence; never log or persist the URL."""
+
+    url: str
+    content_type: str
+    captured_at: float
+    main_frame: bool
+    referer: str | None
 
 
 class SessionBrowserAdapter(Protocol):
@@ -124,6 +139,7 @@ class SessionBrowserAdapter(Protocol):
         navigation_timeout_seconds: int,
         player_timeout_seconds: int,
         media_capture_timeout_seconds: int,
+        public_url_validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None = None,
     ) -> CapturedMedia: ...
 
 
@@ -169,6 +185,7 @@ class PlaywrightSessionAdapter:
     def __init__(self, playwright_factory: Callable[[], Any] | None = None) -> None:
         self.playwright_factory = playwright_factory
         self.last_diagnostics: PlayerDiagnostics | None = None
+        self._active_candidate_count = 0
 
     @staticmethod
     async def _has_visible_risk_component(page: Any) -> bool:
@@ -191,7 +208,11 @@ class PlaywrightSessionAdapter:
     @staticmethod
     async def _wait_for_primary_player(page: Any, timeout_seconds: int) -> bool:
         try:
-            await page.wait_for_function(PRIMARY_VIDEO_MOUNTED_SCRIPT, timeout=timeout_seconds * 1000)
+            await page.wait_for_function(
+                PRIMARY_VIDEO_MOUNTED_SCRIPT,
+                timeout=timeout_seconds * 1000,
+                polling=100,
+            )
         except Exception as error:
             if error.__class__.__name__ == "TimeoutError":
                 return False
@@ -225,6 +246,70 @@ class PlaywrightSessionAdapter:
         )
 
     @staticmethod
+    def _request_is_main_frame(request: Any, page: Any) -> bool:
+        frame = getattr(request, "frame", None)
+        main_frame = getattr(page, "main_frame", None)
+        return frame is None or main_frame is None or frame is main_frame
+
+    @staticmethod
+    def _request_referer(request: Any) -> str | None:
+        headers = getattr(request, "headers", {}) or {}
+        value = headers.get("referer") or headers.get("Referer")
+        return value if isinstance(value, str) and len(value) <= MAX_EARLY_MEDIA_URL_LENGTH else None
+
+    @staticmethod
+    def _referer_matches_target(referer: str | None, target_url: str) -> bool:
+        if referer is None:
+            return False
+        referer_parts = urlsplit(referer)
+        target_parts = urlsplit(target_url)
+        return (
+            referer_parts.scheme == target_parts.scheme
+            and referer_parts.hostname == target_parts.hostname
+            and referer_parts.path == target_parts.path
+        )
+
+    async def _select_early_candidate(
+        self,
+        candidates: list[CachedMediaCandidate],
+        *,
+        target_url: str,
+        validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
+    ) -> str | None:
+        """Select exactly one public, target-page candidate after identity is verified."""
+        now = time.monotonic()
+        accepted: list[str] = []
+        for candidate in candidates:
+            if (
+                not candidate.main_frame
+                or now - candidate.captured_at > MAX_EARLY_MEDIA_AGE_SECONDS
+                or not self._referer_matches_target(candidate.referer, target_url)
+            ):
+                continue
+            if validator is not None:
+                try:
+                    await validator(candidate.url)
+                except AppError:
+                    continue
+            accepted.append(candidate.url)
+        unique = list(dict.fromkeys(accepted))
+        return unique[0] if len(unique) == 1 else None
+
+    async def _validate_direct_url(
+        self,
+        url: str | None,
+        validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
+    ) -> str | None:
+        if url is None or len(url) > MAX_EARLY_MEDIA_URL_LENGTH:
+            return None
+        if validator is not None:
+            try:
+                await validator(url)
+            except AppError:
+                return None
+        return url
+
+    @staticmethod
     async def _close_safely(resource: Any, *, resource_name: str) -> None:
         if resource is None:
             return
@@ -233,7 +318,10 @@ class PlaywrightSessionAdapter:
         except Exception:
             # Closing must never replace the useful page/player error.  Do not
             # include exception text because browser errors can echo URLs.
-            logger.warning("douyin_session_cleanup outcome=failed resource=%s", resource_name)
+            logger.warning(
+                "douyin_session_cleanup outcome=failed resource=%s internal_reason=close_failed",
+                resource_name,
+            )
 
     @staticmethod
     def _browser_disconnected(browser: Any | None) -> bool:
@@ -299,6 +387,7 @@ class PlaywrightSessionAdapter:
         navigation_timeout_seconds: int | None = None,
         player_timeout_seconds: int | None = None,
         media_capture_timeout_seconds: int | None = None,
+        public_url_validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None = None,
     ) -> CapturedMedia:
         # The lazy loader returns Playwright's async_playwright factory, not
         # the async context manager itself.
@@ -308,6 +397,7 @@ class PlaywrightSessionAdapter:
         player_timeout_seconds = player_timeout_seconds or timeout_seconds
         media_capture_timeout_seconds = media_capture_timeout_seconds or timeout_seconds
         self.last_diagnostics = None
+        self._active_candidate_count = 0
         phase_started = time.monotonic()
         phase_ms: dict[str, int] = {}
         phase = "browser_launch"
@@ -339,8 +429,10 @@ class PlaywrightSessionAdapter:
 
         browser: Any | None = None
         context: Any | None = None
+        page: Any | None = None
         snapshot: dict[str, Any] = {}
         playback_media: list[tuple[str, str]] = []
+        early_candidates: list[CachedMediaCandidate] = []
         try:
             async with manager as playwright:
                 try:
@@ -363,21 +455,34 @@ class PlaywrightSessionAdapter:
                     self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
                     raise session_page_failed() from error
                 try:
-                        playback_media: list[tuple[str, str]] = []
-                        capture_playback_responses = False
-
                         def observe_response(response: Any) -> None:
                             request = response.request
                             content_type = response.headers.get("content-type", "").lower()
-                            # Only collect media responses after the verified primary player
-                            # has been started.  Preloads, ads and recommendation responses
-                            # are intentionally excluded.
+                            url = response.url
                             if (
-                                capture_playback_responses
-                                and _is_media_response(content_type, request.resource_type)
-                                and response.url not in [candidate[0] for candidate in playback_media]
+                                not _is_media_response(content_type, request.resource_type)
+                                or not isinstance(url, str)
+                                or len(url) > MAX_EARLY_MEDIA_URL_LENGTH
+                                or len(early_candidates) >= MAX_EARLY_MEDIA_CANDIDATES
+                                or any(candidate.url == url for candidate in early_candidates)
                             ):
-                                playback_media.append((response.url, content_type.split(";", 1)[0].lower()))
+                                return
+                            # This listener is intentionally installed before goto. The raw URL
+                            # remains only in task memory until target identity is confirmed.
+                            early_candidates.append(
+                                CachedMediaCandidate(
+                                    url=url,
+                                    content_type=content_type.split(";", 1)[0].lower(),
+                                    captured_at=time.monotonic(),
+                                    main_frame=self._request_is_main_frame(request, page),
+                                    referer=self._request_referer(request),
+                                )
+                            )
+                            self._active_candidate_count = len(early_candidates)
+                            playback_media[:] = [
+                                (candidate.url, candidate.content_type)
+                                for candidate in early_candidates
+                            ]
 
                         page.on("response", observe_response)
                         move_to("page_navigation")
@@ -443,7 +548,6 @@ class PlaywrightSessionAdapter:
                             )
                         before_start = await self._player_snapshot(page)
                         move_to("player_activation")
-                        capture_playback_responses = True
                         await asyncio.wait_for(
                             page.evaluate(PRIMARY_VIDEO_START_SCRIPT), timeout=player_timeout_seconds
                         )
@@ -475,16 +579,73 @@ class PlaywrightSessionAdapter:
 
                         document = await page.content()
                         _title, media_urls, _covers = DouyinParser._structured_metadata(document)
-                        direct_media_url = _first_public_url(direct_urls)
-                        structured_media_url = _first_public_url(media_urls)
-                        network_urls = [candidate[0] for candidate in playback_media]
+                        direct_media_url = await self._validate_direct_url(
+                            _first_public_url(direct_urls), public_url_validator
+                        )
+                        structured_media_url = await self._validate_direct_url(
+                            _first_public_url(media_urls), public_url_validator
+                        )
                         media_url = direct_media_url or structured_media_url
-                        if media_url is None and has_blob_url and len(network_urls) == 1:
-                            # A blob player has no directly probeable URL.  A single response
-                            # produced only after starting the verified primary player is a
-                            # bounded candidate; multiple responses stay unresolved to avoid
-                            # choosing ads or recommendations.
-                            media_url = network_urls[0]
+                        if media_url is None and has_blob_url:
+                            media_url = await self._select_early_candidate(
+                                early_candidates,
+                                target_url=target_url,
+                                validator=public_url_validator,
+                            )
+                        if media_url is None and has_blob_url:
+                            # Some MediaSource players fetch their manifest before the
+                            # visible video is activated. One controlled reload gives the
+                            # already-installed listener a single fresh chance; never loop.
+                            move_to("player_reload")
+                            await page.reload(
+                                wait_until="domcontentloaded",
+                                timeout=navigation_timeout_seconds * 1000,
+                            )
+                            if target_id_from_url(page.url) != target_id:
+                                return CapturedMedia(
+                                    target_id=None,
+                                    media_url=None,
+                                    state="mismatch",
+                                    diagnostics=self._record_diagnostics(
+                                        target_id=target_id,
+                                        phase=phase,
+                                        phase_ms=phase_ms,
+                                        playback_media=playback_media,
+                                    ),
+                                )
+                            if await self._wait_for_primary_player(page, player_timeout_seconds):
+                                await asyncio.wait_for(
+                                    page.evaluate(PRIMARY_VIDEO_START_SCRIPT),
+                                    timeout=player_timeout_seconds,
+                                )
+                                try:
+                                    await page.wait_for_function(
+                                        """() => Array.from(document.querySelectorAll('video')).some(
+                                            (video) => Boolean(video.currentSrc || video.src
+                                                || video.querySelector('source[src]'))
+                                        )""",
+                                        timeout=media_capture_timeout_seconds * 1000,
+                                    )
+                                except Exception as error:
+                                    if error.__class__.__name__ != "TimeoutError":
+                                        raise
+                                snapshot = await self._player_snapshot(page)
+                                (
+                                    replay_urls,
+                                    has_current_src,
+                                    has_src,
+                                    has_source_child,
+                                    has_blob_url,
+                                ) = self._snapshot_urls(snapshot)
+                                media_url = await self._validate_direct_url(
+                                    _first_public_url(replay_urls), public_url_validator
+                                )
+                                if media_url is None:
+                                    media_url = await self._select_early_candidate(
+                                        early_candidates,
+                                        target_url=target_url,
+                                        validator=public_url_validator,
+                                    )
                         complete_phase()
                         diagnostics = self._record_diagnostics(
                             target_id=target_id,
@@ -554,6 +715,12 @@ class PlaywrightSessionAdapter:
             # page/context error is not an unavailable Playwright environment.
             raise session_page_failed() from error
         finally:
+            # Candidate URLs are task-local evidence only. Clear them before
+            # releasing browser resources so they cannot survive into another job.
+            early_candidates.clear()
+            playback_media.clear()
+            self._active_candidate_count = 0
+            await self._close_safely(page, resource_name="page")
             await self._close_safely(context, resource_name="context")
             await self._close_safely(browser, resource_name="browser")
 
@@ -619,6 +786,7 @@ class DouyinSessionWorker:
                         navigation_timeout_seconds=self.settings.douyin_session_navigation_timeout_seconds,
                         player_timeout_seconds=self.settings.douyin_session_player_timeout_seconds,
                         media_capture_timeout_seconds=self.settings.douyin_session_media_capture_timeout_seconds,
+                        public_url_validator=self.http.validate_url,
                     ),
                     timeout=(
                         self.settings.douyin_session_launch_timeout_seconds
