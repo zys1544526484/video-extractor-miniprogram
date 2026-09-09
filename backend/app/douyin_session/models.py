@@ -172,6 +172,24 @@ class PlayerDiagnostics:
     ambiguous_resource: int = 0
     hidden_player_possible: int = 0
     equivalent_group_count: int = 0
+    mse_observed_candidate_count: int = 0
+    mse_eligible_candidate_count: int = 0
+    mse_video_buffer_count: int = 0
+    mse_append_sample_count: int = 0
+    mse_bound_group_count: int = 0
+    mse_trace_unavailable: int = 0
+    mse_no_video_buffer: int = 0
+    mse_no_append_sample: int = 0
+    mse_direct_url_unobserved: int = 0
+    mse_candidate_stale: int = 0
+    mse_candidate_wrong_frame: int = 0
+    mse_candidate_referer_rejected: int = 0
+    mse_candidate_ssrf_rejected: int = 0
+    mse_sample_attempted: int = 0
+    mse_sample_failed: int = 0
+    mse_sample_mismatch: int = 0
+    mse_sample_matched: int = 0
+    mse_ambiguous_buffer: int = 0
 
 
 @dataclass(frozen=True)

@@ -230,9 +230,7 @@ async def test_smoke_keeps_resolved_work_id_when_session_media_capture_fails() -
         Settings(app_env="test", douyin_session_enabled=True),
         CANONICAL_URL,
         http=safe_http(handler),
-        worker=FakeWorker(
-            AppError("DOUYIN_SESSION_MEDIA_NOT_FOUND", "主播放器没有可验证媒体")
-        ),  # type: ignore[arg-type]
+        worker=FakeWorker(AppError("DOUYIN_SESSION_MEDIA_NOT_FOUND", "主播放器没有可验证媒体")),  # type: ignore[arg-type]
     )
 
     assert output.outcome == "failure"
@@ -263,14 +261,20 @@ async def test_smoke_failure_emits_safe_phase_diagnostics_without_media_route_or
         unbound_candidate_count=4,
         candidate_group_count=1,
         candidate_source="hydration_json",
+        mse_observed_candidate_count=4,
+        mse_eligible_candidate_count=4,
+        mse_video_buffer_count=1,
+        mse_append_sample_count=2,
+        mse_sample_attempted=4,
+        mse_sample_mismatch=3,
+        mse_sample_matched=1,
+        mse_bound_group_count=1,
     )
     output = await run_smoke(
         Settings(app_env="test", douyin_session_enabled=True),
         CANONICAL_URL,
         http=safe_http(handler),
-        worker=FakeWorker(
-            AppError("DOUYIN_SESSION_PLAYER_NOT_FOUND", "safe message"), diagnostics
-        ),  # type: ignore[arg-type]
+        worker=FakeWorker(AppError("DOUYIN_SESSION_PLAYER_NOT_FOUND", "safe message"), diagnostics),  # type: ignore[arg-type]
     )
 
     payload = json.dumps(output.__dict__)
@@ -284,6 +288,9 @@ async def test_smoke_failure_emits_safe_phase_diagnostics_without_media_route_or
     assert output.unbound_candidate_count == 4
     assert output.candidate_group_count == 1
     assert output.candidate_source == "hydration_json"
+    assert output.mse_observed_candidate_count == 4
+    assert output.mse_sample_attempted == 4
+    assert output.mse_sample_matched == 1
     assert "private" not in payload
     assert "token" not in payload.lower()
     assert "never-log" not in payload
@@ -326,4 +333,22 @@ def test_smoke_output_schema_only_contains_safe_diagnostic_fields() -> None:
         "ambiguous_resource",
         "hidden_player_possible",
         "equivalent_group_count",
+        "mse_observed_candidate_count",
+        "mse_eligible_candidate_count",
+        "mse_video_buffer_count",
+        "mse_append_sample_count",
+        "mse_bound_group_count",
+        "mse_trace_unavailable",
+        "mse_no_video_buffer",
+        "mse_no_append_sample",
+        "mse_direct_url_unobserved",
+        "mse_candidate_stale",
+        "mse_candidate_wrong_frame",
+        "mse_candidate_referer_rejected",
+        "mse_candidate_ssrf_rejected",
+        "mse_sample_attempted",
+        "mse_sample_failed",
+        "mse_sample_mismatch",
+        "mse_sample_matched",
+        "mse_ambiguous_buffer",
     }

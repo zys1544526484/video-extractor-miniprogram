@@ -23,13 +23,7 @@ REMOTE_HEAD = "a" * 40
 def valid_environment(tmp_path: Path) -> dict[str, str]:
     state_path = tmp_path / "operator-state.json"
     state_path.write_text(
-        json.dumps(
-            {
-                "cookies": [
-                    {"domain": ".douyin.com", "name": "operator", "value": "present"}
-                ]
-            }
-        ),
+        json.dumps({"cookies": [{"domain": ".douyin.com", "name": "operator", "value": "present"}]}),
         encoding="utf-8",
     )
     return {
@@ -80,9 +74,7 @@ def test_porcelain_status_keeps_the_first_path_when_it_starts_with_space() -> No
 
     status = " M backend/wechat_video_extractor_backend.egg-info/PKG-INFO\n"
 
-    assert _status_paths(status) == {
-        "backend/wechat_video_extractor_backend.egg-info/PKG-INFO"
-    }
+    assert _status_paths(status) == {"backend/wechat_video_extractor_backend.egg-info/PKG-INFO"}
 
 
 def test_preflight_rejects_unexpected_worktree_change(tmp_path: Path) -> None:
@@ -154,6 +146,11 @@ def test_smoke_output_is_rebuilt_from_safe_allow_list() -> None:
             "media_mime_types": ["video/mp4", "text/html?secret"],
             "media_domains": ["https://cdn.example.com/private/signature?token=secret"],
             "candidate_source": "main_player_network",
+            "mse_observed_candidate_count": 4,
+            "mse_sample_attempted": 4,
+            "mse_sample_matched": 1,
+            "mse_sample_hash": "must-not-pass-through",
+            "mse_sample_bytes": [1, 2, 3],
             "unexpected": "cookie=secret",
         }
     )
@@ -163,6 +160,10 @@ def test_smoke_output_is_rebuilt_from_safe_allow_list() -> None:
     assert payload["final_page_path"] is None
     assert payload["phases_ms"] == {"media_capture": 10}
     assert payload["media_mime_types"] == ["video/mp4"]
+    assert payload["mse_observed_candidate_count"] == 4
+    assert payload["mse_sample_attempted"] == 4
+    assert "mse_sample_hash" not in payload
+    assert "mse_sample_bytes" not in payload
     assert "unexpected" not in payload
     assert "secret" not in encoded
 
@@ -181,9 +182,9 @@ def test_smoke_output_allows_only_safe_main_player_mse_source_name() -> None:
 
 
 def test_powershell_wrapper_invokes_only_verifier_and_emits_last_json_line() -> None:
-    script = (
-        Path(__file__).resolve().parents[2] / "scripts" / "verify_douyin_session.ps1"
-    ).read_text(encoding="utf-8")
+    script = (Path(__file__).resolve().parents[2] / "scripts" / "verify_douyin_session.ps1").read_text(
+        encoding="utf-8"
+    )
 
     assert script.count("-m app.douyin_session.verify") == 1
     assert "app.douyin_session.smoke" not in script

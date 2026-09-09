@@ -66,11 +66,27 @@ INTEGER_FIELDS = frozenset(
         "ambiguous_resource",
         "hidden_player_possible",
         "equivalent_group_count",
+        "mse_observed_candidate_count",
+        "mse_eligible_candidate_count",
+        "mse_video_buffer_count",
+        "mse_append_sample_count",
+        "mse_bound_group_count",
+        "mse_trace_unavailable",
+        "mse_no_video_buffer",
+        "mse_no_append_sample",
+        "mse_direct_url_unobserved",
+        "mse_candidate_stale",
+        "mse_candidate_wrong_frame",
+        "mse_candidate_referer_rejected",
+        "mse_candidate_ssrf_rejected",
+        "mse_sample_attempted",
+        "mse_sample_failed",
+        "mse_sample_mismatch",
+        "mse_sample_matched",
+        "mse_ambiguous_buffer",
     }
 )
-BOOLEAN_FIELDS = frozenset(
-    {"has_current_src", "has_src", "has_source_child", "has_blob_source"}
-)
+BOOLEAN_FIELDS = frozenset({"has_current_src", "has_src", "has_source_child", "has_blob_source"})
 ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 WORK_ID_PATTERN = re.compile(r"^\d{6,32}$")
 
@@ -258,8 +274,7 @@ def sanitise_smoke_output(output: SmokeOutput | Mapping[str, Any]) -> dict[str, 
                 if isinstance(value, str)
                 and (
                     value.lower().startswith("video/")
-                    or value.lower()
-                    in {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
+                    or value.lower() in {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
                 )
             }
         )

@@ -52,14 +52,18 @@ LOGIN_COMPONENT_SELECTOR = (
 HLS_CONTENT_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
 MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
 (() => {
-  if (window.__videoExtractorReadPrimaryMseUrls) return;
+  if (window.__videoExtractorReadPrimaryMseEvidence) return;
   const MAX_URLS = 4;
   const MAX_URL_LENGTH = 4096;
+  const MAX_SOURCE_BUFFERS = 4;
+  const MAX_SAMPLES_PER_BUFFER = 8;
+  const MAX_SAMPLE_BYTES = 1024;
   let active = true;
+  let nextSourceBufferId = 1;
   const blobToMediaSource = new Map();
   const blobToDirectUrls = new Map();
-  const mediaSourceUrls = new WeakMap();
-  const sourceBufferMediaSource = new WeakMap();
+  const mediaSourceBuffers = new WeakMap();
+  const sourceBufferRecords = new WeakMap();
   const payloadUrls = new WeakMap();
   const streamUrls = new WeakMap();
   const readerUrls = new WeakMap();
@@ -77,11 +81,29 @@ MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
     const key = payloadKey(payload);
     if (active && key && boundedUrl(url)) payloadUrls.set(key, url);
   };
-  const rememberMediaUrl = (mediaSource, url) => {
-    if (!active || !mediaSource || !boundedUrl(url)) return;
-    const values = mediaSourceUrls.get(mediaSource) || [];
-    if (!values.includes(url) && values.length < MAX_URLS) values.push(url);
-    mediaSourceUrls.set(mediaSource, values);
+  const samplePayload = (payload) => {
+    try {
+      let bytes;
+      if (payload instanceof ArrayBuffer) bytes = new Uint8Array(payload);
+      else if (ArrayBuffer.isView(payload)) {
+        bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+      } else return null;
+      if (!bytes.byteLength) return null;
+      return Array.from(bytes.subarray(0, Math.min(bytes.byteLength, MAX_SAMPLE_BYTES)));
+    } catch (_) { return null; }
+  };
+  const rememberSourceBuffer = (mediaSource, sourceBuffer, mime) => {
+    const record = {
+      id: nextSourceBufferId,
+      mime: typeof mime === 'string' ? mime.slice(0, 128).toLowerCase() : '',
+      urls: [],
+      samples: [],
+    };
+    nextSourceBufferId += 1;
+    sourceBufferRecords.set(sourceBuffer, record);
+    const records = mediaSourceBuffers.get(mediaSource) || [];
+    if (records.length < MAX_SOURCE_BUFFERS) records.push(record);
+    mediaSourceBuffers.set(mediaSource, records);
   };
 
   try {
@@ -104,7 +126,7 @@ MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
     if (typeof originalAddSourceBuffer !== 'function') return;
     constructor.prototype.addSourceBuffer = function(...args) {
       const sourceBuffer = originalAddSourceBuffer.apply(this, args);
-      sourceBufferMediaSource.set(sourceBuffer, this);
+      rememberSourceBuffer(this, sourceBuffer, args[0]);
       return sourceBuffer;
     };
   };
@@ -116,9 +138,17 @@ MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
   try {
     const originalAppendBuffer = SourceBuffer.prototype.appendBuffer;
     SourceBuffer.prototype.appendBuffer = function(payload) {
-      const mediaSource = sourceBufferMediaSource.get(this);
       const url = payloadUrls.get(payloadKey(payload));
-      rememberMediaUrl(mediaSource, url);
+      const record = sourceBufferRecords.get(this);
+      if (active && record) {
+        if (boundedUrl(url) && !record.urls.includes(url) && record.urls.length < MAX_URLS) {
+          record.urls.push(url);
+        }
+        const bytes = samplePayload(payload);
+        if (bytes && record.samples.length < MAX_SAMPLES_PER_BUFFER) {
+          record.samples.push(bytes);
+        }
+      }
       return originalAppendBuffer.call(this, payload);
     };
   } catch (_) {}
@@ -190,17 +220,27 @@ MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
     };
   } catch (_) {}
 
-  Object.defineProperty(window, '__videoExtractorReadPrimaryMseUrls', {
+  Object.defineProperty(window, '__videoExtractorReadPrimaryMseEvidence', {
     configurable: false,
     enumerable: false,
     writable: false,
     value: (blobUrl) => {
-      if (!active || typeof blobUrl !== 'string' || !blobUrl.startsWith('blob:')) return [];
+      if (!active || typeof blobUrl !== 'string' || !blobUrl.startsWith('blob:')) {
+        return { trace_available: false, direct_urls: [], buffers: [] };
+      }
       const direct = blobToDirectUrls.get(blobUrl);
-      if (Array.isArray(direct)) return direct.slice(0, MAX_URLS);
       const mediaSource = blobToMediaSource.get(blobUrl);
-      const values = mediaSource ? mediaSourceUrls.get(mediaSource) : null;
-      return Array.isArray(values) ? values.slice(0, MAX_URLS) : [];
+      const records = mediaSource ? mediaSourceBuffers.get(mediaSource) : null;
+      return {
+        trace_available: true,
+        direct_urls: Array.isArray(direct) ? direct.slice(0, MAX_URLS) : [],
+        buffers: Array.isArray(records) ? records.slice(0, MAX_SOURCE_BUFFERS).map((record) => ({
+          id: record.id,
+          mime: record.mime,
+          urls: Array.from(new Set(Array.isArray(record.urls) ? record.urls : [])).slice(0, MAX_URLS),
+          samples: record.samples.slice(0, MAX_SAMPLES_PER_BUFFER).map((bytes) => bytes.slice()),
+        })) : [],
+      };
     },
   });
   Object.defineProperty(window, '__videoExtractorClearMseTrace', {
@@ -322,9 +362,11 @@ PRIMARY_VIDEO_MSE_URLS_SCRIPT = """
     return !excluded && style.visibility !== 'hidden' && style.display !== 'none'
       && rect.width > 120 && rect.height > 120;
   });
-  if (!video || typeof window.__videoExtractorReadPrimaryMseUrls !== 'function') return [];
+  if (!video || typeof window.__videoExtractorReadPrimaryMseEvidence !== 'function') {
+    return { trace_available: false, direct_urls: [], buffers: [] };
+  }
   const blobUrl = video.currentSrc || video.src || '';
-  return window.__videoExtractorReadPrimaryMseUrls(blobUrl);
+  return window.__videoExtractorReadPrimaryMseEvidence(blobUrl);
 }
 """
 CLEAR_MEDIA_SOURCE_TRACE_SCRIPT = """
@@ -342,6 +384,8 @@ PUBLIC_MEDIA_HEADERS = {
 MAX_EARLY_MEDIA_CANDIDATES = 4
 MAX_EARLY_MEDIA_URL_LENGTH = 4096
 MAX_EARLY_MEDIA_AGE_SECONDS = 15
+MIN_MSE_SAMPLE_BYTES = 128
+MAX_MSE_SAMPLE_BYTES = 1024
 MAX_DETAIL_RESPONSE_TASKS = 2
 CONTROLLED_CAPTURE_SECONDS = 1
 DETAIL_PATH_MARKERS = (
@@ -363,6 +407,8 @@ class CachedMediaCandidate:
     capture_phase: str
     controlled_window: bool
     resource_type: str
+    range_start: int | None
+    range_end: int | None
     range_total: int | None
     content_length: int | None
     etag_fingerprint: str | None
@@ -382,6 +428,24 @@ class CandidateRejectionCounts:
     ssrf_rejected: int = 0
     ambiguous_resource: int = 0
     hidden_player_possible: int = 0
+    mse_observed_candidate_count: int = 0
+    mse_eligible_candidate_count: int = 0
+    mse_video_buffer_count: int = 0
+    mse_append_sample_count: int = 0
+    mse_bound_group_count: int = 0
+    mse_trace_unavailable: int = 0
+    mse_no_video_buffer: int = 0
+    mse_no_append_sample: int = 0
+    mse_direct_url_unobserved: int = 0
+    mse_candidate_stale: int = 0
+    mse_candidate_wrong_frame: int = 0
+    mse_candidate_referer_rejected: int = 0
+    mse_candidate_ssrf_rejected: int = 0
+    mse_sample_attempted: int = 0
+    mse_sample_failed: int = 0
+    mse_sample_mismatch: int = 0
+    mse_sample_matched: int = 0
+    mse_ambiguous_buffer: int = 0
 
 
 @dataclass(frozen=True)
@@ -406,6 +470,7 @@ class SessionBrowserAdapter(Protocol):
         player_timeout_seconds: int,
         media_capture_timeout_seconds: int,
         public_url_validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None = None,
+        public_media_sampler: Callable[[str, int, int], Awaitable[bytes]] | None = None,
     ) -> CapturedMedia: ...
 
 
@@ -532,17 +597,35 @@ class PlaywrightSessionAdapter:
         return value if value >= 0 else None
 
     @classmethod
-    def _response_evidence(cls, response: Any) -> tuple[int | None, int | None, str | None, str]:
+    def _response_evidence(
+        cls, response: Any
+    ) -> tuple[int | None, int | None, int | None, int | None, str | None, str]:
         """Return bounded in-memory equivalence evidence, never diagnostic values."""
         headers = getattr(response, "headers", {}) or {}
         content_range = str(headers.get("content-range", ""))
-        match = re.search(r"/([0-9]+)$", content_range)
-        range_total = int(match.group(1)) if match else None
+        match = re.fullmatch(r"bytes\s+([0-9]+)-([0-9]+)/([0-9]+|\*)", content_range.strip())
+        range_start = int(match.group(1)) if match else None
+        range_end = int(match.group(2)) if match else None
+        range_total = int(match.group(3)) if match and match.group(3) != "*" else None
+        if range_start is None:
+            request_headers = getattr(getattr(response, "request", None), "headers", {}) or {}
+            request_range = str(request_headers.get("range", request_headers.get("Range", "")))
+            request_match = re.fullmatch(r"bytes=([0-9]+)-([0-9]*)", request_range.strip())
+            if request_match:
+                range_start = int(request_match.group(1))
+                range_end = int(request_match.group(2)) if request_match.group(2) else None
         etag = str(headers.get("etag", ""))
         etag_fingerprint = hashlib.sha256(etag.encode()).hexdigest() if etag else None
         path = urlsplit(str(getattr(response, "url", ""))).path
         path_fingerprint = hashlib.sha256(path.encode()).hexdigest()
-        return range_total, cls._header_int(headers, "content-length"), etag_fingerprint, path_fingerprint
+        return (
+            range_start,
+            range_end,
+            range_total,
+            cls._header_int(headers, "content-length"),
+            etag_fingerprint,
+            path_fingerprint,
+        )
 
     @staticmethod
     def _candidate_groups(candidates: list[CachedMediaCandidate]) -> list[list[CachedMediaCandidate]]:
@@ -642,33 +725,174 @@ class PlaywrightSessionAdapter:
         observed_candidates: list[CachedMediaCandidate],
         target_url: str,
         validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
+        sampler: Callable[[str, int, int], Awaitable[bytes]] | None,
+        counts: CandidateRejectionCounts,
     ) -> tuple[str, ...]:
-        """Resolve only URLs actually appended to the unique visible blob player."""
-        values = await page.evaluate(PRIMARY_VIDEO_MSE_URLS_SCRIPT)
-        if not isinstance(values, list):
+        """Bind public responses to the visible MediaSource by exact byte provenance.
+
+        Raw URLs, appended bytes, and their hashes are task-local only. Diagnostics
+        expose counts, never evidence values.
+        """
+        evidence = await page.evaluate(PRIMARY_VIDEO_MSE_URLS_SCRIPT)
+        counts.mse_observed_candidate_count = len(observed_candidates)
+        if not isinstance(evidence, dict) or evidence.get("trace_available") is not True:
+            counts.mse_trace_unavailable += 1
             return ()
         now = time.monotonic()
-        observed = {
-            candidate.url: candidate
-            for candidate in observed_candidates
-            if now - candidate.captured_at <= MAX_EARLY_MEDIA_AGE_SECONDS
-        }
-        bound: list[str] = []
-        for value in values[:MAX_EARLY_MEDIA_CANDIDATES]:
-            if not isinstance(value, str) or value in bound:
+        eligible: list[CachedMediaCandidate] = []
+        for candidate in observed_candidates:
+            if now - candidate.captured_at > MAX_EARLY_MEDIA_AGE_SECONDS:
+                counts.mse_candidate_stale += 1
                 continue
-            candidate = observed.get(value)
-            if candidate is None or not candidate.main_frame:
+            if not candidate.main_frame:
+                counts.mse_candidate_wrong_frame += 1
                 continue
             if self._referer_kind(candidate.referer, target_url) not in {
                 "exact_target_path",
                 "douyin_origin_only",
             }:
+                counts.mse_candidate_referer_rejected += 1
                 continue
-            checked = await self._validate_direct_url(value, validator)
-            if checked is not None:
-                bound.append(checked)
-        return tuple(bound)
+            checked = await self._validate_direct_url(candidate.url, validator)
+            if checked is None:
+                counts.mse_candidate_ssrf_rejected += 1
+                continue
+            eligible.append(candidate)
+        counts.mse_eligible_candidate_count = len(eligible)
+
+        buffers_value = evidence.get("buffers")
+        buffers = buffers_value if isinstance(buffers_value, list) else []
+        video_buffers: list[tuple[str, tuple[str, ...], tuple[bytes, ...]]] = []
+        for index, value in enumerate(buffers[:4]):
+            if not isinstance(value, dict):
+                continue
+            mime = str(value.get("mime", "")).split(";", 1)[0].strip().lower()
+            if not (mime.startswith("video/") or mime in HLS_CONTENT_TYPES):
+                continue
+            buffer_id_value = value.get("id")
+            buffer_id = str(buffer_id_value) if isinstance(buffer_id_value, (str, int)) else str(index)
+            urls_value = value.get("urls")
+            urls = tuple(
+                item
+                for item in (urls_value if isinstance(urls_value, list) else [])[:MAX_EARLY_MEDIA_CANDIDATES]
+                if isinstance(item, str) and len(item) <= MAX_EARLY_MEDIA_URL_LENGTH
+            )
+            samples_value = value.get("samples")
+            samples: list[bytes] = []
+            for item in (samples_value if isinstance(samples_value, list) else [])[:8]:
+                if (
+                    isinstance(item, list)
+                    and MIN_MSE_SAMPLE_BYTES <= len(item) <= MAX_MSE_SAMPLE_BYTES
+                    and all(
+                        isinstance(byte, int) and not isinstance(byte, bool) and 0 <= byte <= 255
+                        for byte in item
+                    )
+                ):
+                    samples.append(bytes(item))
+            video_buffers.append((buffer_id, urls, tuple(samples)))
+        counts.mse_video_buffer_count = len(video_buffers)
+        counts.mse_append_sample_count = sum(len(samples) for _buffer_id, _urls, samples in video_buffers)
+        if not video_buffers:
+            counts.mse_no_video_buffer += 1
+            return ()
+        if not any(samples for _buffer_id, _urls, samples in video_buffers):
+            counts.mse_no_append_sample += 1
+
+        groups: dict[str, list[CachedMediaCandidate]] = {}
+        observed_by_url = {candidate.url: candidate for candidate in eligible}
+        for buffer_id, urls, _samples in video_buffers:
+            for url in urls:
+                candidate = observed_by_url.get(url)
+                if candidate is None:
+                    counts.mse_direct_url_unobserved += 1
+                    continue
+                groups.setdefault(buffer_id, [])
+                if candidate not in groups[buffer_id]:
+                    groups[buffer_id].append(candidate)
+
+        sample_proofs: dict[CachedMediaCandidate, tuple[str, int]] = {}
+        if sampler is not None:
+            for candidate in eligible:
+                comparable = [
+                    (buffer_id, sample) for buffer_id, _urls, samples in video_buffers for sample in samples
+                ]
+                if not comparable:
+                    continue
+                matched_buffers: set[str] = set()
+                starts = [candidate.range_start] if candidate.range_start is not None else [0]
+                if starts[0] != 0:
+                    starts.append(0)
+                requested_length = max(len(sample) for _buffer_id, sample in comparable)
+                for start in starts:
+                    counts.mse_sample_attempted += 1
+                    try:
+                        public_bytes = await sampler(
+                            candidate.url,
+                            start,
+                            start + requested_length - 1,
+                        )
+                    except (AppError, TimeoutError):
+                        counts.mse_sample_failed += 1
+                        continue
+                    if len(public_bytes) < MIN_MSE_SAMPLE_BYTES:
+                        counts.mse_sample_failed += 1
+                        continue
+                    public_hashes = {
+                        length: hashlib.sha256(public_bytes[:length]).digest()
+                        for length in {len(sample) for _buffer_id, sample in comparable}
+                        if len(public_bytes) >= length
+                    }
+                    before_matches = len(matched_buffers)
+                    for buffer_id, sample in comparable:
+                        if public_hashes.get(len(sample)) == hashlib.sha256(sample).digest():
+                            matched_buffers.add(buffer_id)
+                            if len(sample) >= MAX_MSE_SAMPLE_BYTES:
+                                sample_proofs[candidate] = (
+                                    hashlib.sha256(sample).hexdigest(),
+                                    len(sample),
+                                )
+                    if len(matched_buffers) > before_matches:
+                        counts.mse_sample_matched += len(matched_buffers) - before_matches
+                    else:
+                        counts.mse_sample_mismatch += 1
+                    if matched_buffers:
+                        break
+                if len(matched_buffers) > 1:
+                    counts.mse_ambiguous_buffer += 1
+                    continue
+                if len(matched_buffers) == 1:
+                    buffer_id = next(iter(matched_buffers))
+                    groups.setdefault(buffer_id, [])
+                    if candidate not in groups[buffer_id]:
+                        groups[buffer_id].append(candidate)
+
+        equivalent_groups: dict[tuple[str, str, int | None], list[CachedMediaCandidate]] = {}
+        populated_buffers = [candidates for candidates in groups.values() if candidates]
+        if len(populated_buffers) > 1:
+            counts.mse_ambiguous_buffer += len(populated_buffers)
+            return ()
+        if not populated_buffers:
+            return ()
+        for candidate in populated_buffers[0]:
+            if candidate.etag_fingerprint:
+                key = ("etag", candidate.etag_fingerprint, candidate.range_total)
+            elif candidate.range_total is not None:
+                key = ("path", candidate.path_fingerprint, candidate.range_total)
+            elif candidate in sample_proofs:
+                sample_fingerprint, sample_length = sample_proofs[candidate]
+                key = ("sample", sample_fingerprint, sample_length)
+            else:
+                # Without ETag or a total length, path equality across signed
+                # requests is insufficient. Keep each exact in-memory URL as
+                # its own opaque group rather than guessing CDN equivalence.
+                key = ("url", hashlib.sha256(candidate.url.encode()).hexdigest(), None)
+            equivalent_groups.setdefault(key, []).append(candidate)
+        counts.mse_bound_group_count = len(equivalent_groups)
+        if len(equivalent_groups) != 1:
+            counts.mse_ambiguous_buffer += len(equivalent_groups)
+            return ()
+        selected = next(iter(equivalent_groups.values()))
+        return tuple(candidate.url for candidate in selected[:MAX_EARLY_MEDIA_CANDIDATES])
 
     @staticmethod
     async def _wait_for_controlled_capture(page: Any, timeout_seconds: int) -> None:
@@ -763,13 +987,7 @@ class PlaywrightSessionAdapter:
             media_response_count=len(playback_media),
             media_content_types=tuple(sorted({mime for _url, mime in playback_media})),
             media_domains=tuple(
-                sorted(
-                    {
-                        domain
-                        for url, _mime in playback_media
-                        if (domain := _safe_media_domain(url))
-                    }
-                )
+                sorted({domain for url, _mime in playback_media if (domain := _safe_media_domain(url))})
             ),
             last_phase=phase,
             phase_ms=tuple(phase_copy.items()),
@@ -789,6 +1007,24 @@ class PlaywrightSessionAdapter:
             ambiguous_resource=rejection_counts.ambiguous_resource,
             hidden_player_possible=rejection_counts.hidden_player_possible,
             equivalent_group_count=equivalent_group_count,
+            mse_observed_candidate_count=rejection_counts.mse_observed_candidate_count,
+            mse_eligible_candidate_count=rejection_counts.mse_eligible_candidate_count,
+            mse_video_buffer_count=rejection_counts.mse_video_buffer_count,
+            mse_append_sample_count=rejection_counts.mse_append_sample_count,
+            mse_bound_group_count=rejection_counts.mse_bound_group_count,
+            mse_trace_unavailable=rejection_counts.mse_trace_unavailable,
+            mse_no_video_buffer=rejection_counts.mse_no_video_buffer,
+            mse_no_append_sample=rejection_counts.mse_no_append_sample,
+            mse_direct_url_unobserved=rejection_counts.mse_direct_url_unobserved,
+            mse_candidate_stale=rejection_counts.mse_candidate_stale,
+            mse_candidate_wrong_frame=rejection_counts.mse_candidate_wrong_frame,
+            mse_candidate_referer_rejected=rejection_counts.mse_candidate_referer_rejected,
+            mse_candidate_ssrf_rejected=rejection_counts.mse_candidate_ssrf_rejected,
+            mse_sample_attempted=rejection_counts.mse_sample_attempted,
+            mse_sample_failed=rejection_counts.mse_sample_failed,
+            mse_sample_mismatch=rejection_counts.mse_sample_mismatch,
+            mse_sample_matched=rejection_counts.mse_sample_matched,
+            mse_ambiguous_buffer=rejection_counts.mse_ambiguous_buffer,
         )
         self.last_diagnostics = diagnostics
         return diagnostics
@@ -806,6 +1042,7 @@ class PlaywrightSessionAdapter:
         player_timeout_seconds: int | None = None,
         media_capture_timeout_seconds: int | None = None,
         public_url_validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None = None,
+        public_media_sampler: Callable[[str, int, int], Awaitable[bytes]] | None = None,
     ) -> CapturedMedia:
         # The lazy loader returns Playwright's async_playwright factory, not
         # the async context manager itself.
@@ -881,365 +1118,368 @@ class PlaywrightSessionAdapter:
                     self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
                     raise session_page_failed() from error
                 try:
-                        def observe_response(response: Any) -> None:
-                            request = response.request
-                            # A detail response is stronger evidence than a CDN URL:
-                            # both its request and its parsed JSON must name the exact
-                            # target aweme.  Do this before navigation without logging
-                            # either response URL or body.
-                            is_target_detail = self._is_target_detail_request(request, target_id)
-                            if is_target_detail:
-                                if len(detail_tasks) < MAX_DETAIL_RESPONSE_TASKS:
-                                    detail_tasks.append(
-                                        asyncio.create_task(self._response_target_group(response, target_id))
-                                    )
-                                return
-                            content_type = response.headers.get("content-type", "").lower()
-                            url = response.url
-                            resource_type = str(getattr(request, "resource_type", ""))
-                            if not _is_media_response(content_type, resource_type):
-                                rejection_counts.wrong_mime += 1
-                                return
-                            if not isinstance(url, str) or len(url) > MAX_EARLY_MEDIA_URL_LENGTH:
-                                rejection_counts.ssrf_rejected += 1
-                                return
-                            main_frame = self._request_is_main_frame(request, page)
-                            referer = self._request_referer(request)
-                            referer_kind = self._referer_kind(referer, target_url)
-                            self._count_referer_kind(rejection_counts, referer_kind)
-                            if not main_frame:
-                                rejection_counts.wrong_frame += 1
-                                return
-                            if referer_kind not in {"exact_target_path", "douyin_origin_only"}:
-                                return
-                            if (
-                                controlled_capture
-                                and len(controlled_candidates) >= MAX_EARLY_MEDIA_CANDIDATES
-                            ):
-                                rejection_counts.ambiguous_resource += 1
-                                return
-                            range_total, content_length, etag_fingerprint, path_fingerprint = (
-                                self._response_evidence(response)
-                            )
-                            candidate = CachedMediaCandidate(
-                                url=url,
-                                content_type=content_type.split(";", 1)[0].lower(),
-                                captured_at=time.monotonic(),
-                                main_frame=main_frame,
-                                referer=referer,
-                                capture_phase=phase,
-                                controlled_window=controlled_capture,
-                                resource_type=resource_type,
-                                range_total=range_total,
-                                content_length=content_length,
-                                etag_fingerprint=etag_fingerprint,
-                                path_fingerprint=path_fingerprint,
-                            )
-                            observed_candidates.append(candidate)
-                            if len(observed_candidates) > MAX_EARLY_MEDIA_CANDIDATES:
-                                del observed_candidates[0]
-                            playback_media[:] = [
-                                (item.url, item.content_type) for item in observed_candidates
-                            ]
-                            if not target_verified:
-                                rejection_counts.before_target_verified += 1
-                                return
-                            if controlled_capture:
-                                controlled_candidates.append(candidate)
-                            else:
-                                early_candidates.append(candidate)
-                            self._active_candidate_count = len(controlled_candidates)
 
-                        page.on("response", observe_response)
-                        move_to("page_navigation")
-                        try:
-                            await page.goto(
-                                target_url,
-                                wait_until="domcontentloaded",
-                                timeout=navigation_timeout_seconds * 1000,
-                            )
-                        except TimeoutError as error:
-                            log_phase_failure()
-                            self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
-                            raise session_timeout() from error
-                        except Exception as error:
-                            log_phase_failure()
-                            self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
-                            raise session_page_failed() from error
-                        move_to("target_identity")
-                        if await self._has_visible_risk_component(page):
-                            complete_phase()
-                            return CapturedMedia(
-                                target_id=None,
-                                media_url=None,
-                                state="risk",
-                                diagnostics=self._record_diagnostics(
-                                    target_id=target_id, phase=phase, phase_ms=phase_ms
-                                ),
-                            )
-                        if await self._has_visible_login_component(page):
-                            complete_phase()
-                            return CapturedMedia(
-                                target_id=None,
-                                media_url=None,
-                                state="expired",
-                                diagnostics=self._record_diagnostics(
-                                    target_id=target_id, phase=phase, phase_ms=phase_ms
-                                ),
-                            )
-                        if target_id_from_url(page.url) != target_id:
-                            complete_phase()
-                            return CapturedMedia(
-                                target_id=None,
-                                media_url=None,
-                                state="mismatch",
-                                diagnostics=self._record_diagnostics(
-                                    target_id=target_id, phase=phase, phase_ms=phase_ms
-                                ),
-                            )
-                        target_verified = True
-                        # Consume only completed official detail JSON responses after
-                        # target identity is exact. A bad/mismatched JSON simply yields
-                        # no group; it cannot influence naked CDN fallback selection.
-                        if detail_tasks:
-                            done, pending = await asyncio.wait(
-                                detail_tasks,
-                                timeout=min(1, media_capture_timeout_seconds),
-                            )
-                            for task in done:
-                                try:
-                                    group = task.result()
-                                except Exception:
-                                    group = None
-                                if group is not None:
-                                    target_groups.append(group)
-                            for task in pending:
-                                task.cancel()
-                        document = await page.content()
-                        hydration_urls = DouyinParser.target_bound_media_urls_from_document(
-                            document, target_id
+                    def observe_response(response: Any) -> None:
+                        request = response.request
+                        # A detail response is stronger evidence than a CDN URL:
+                        # both its request and its parsed JSON must name the exact
+                        # target aweme.  Do this before navigation without logging
+                        # either response URL or body.
+                        is_target_detail = self._is_target_detail_request(request, target_id)
+                        if is_target_detail:
+                            if len(detail_tasks) < MAX_DETAIL_RESPONSE_TASKS:
+                                detail_tasks.append(
+                                    asyncio.create_task(self._response_target_group(response, target_id))
+                                )
+                            return
+                        content_type = response.headers.get("content-type", "").lower()
+                        url = response.url
+                        resource_type = str(getattr(request, "resource_type", ""))
+                        if not _is_media_response(content_type, resource_type):
+                            rejection_counts.wrong_mime += 1
+                            return
+                        if not isinstance(url, str) or len(url) > MAX_EARLY_MEDIA_URL_LENGTH:
+                            rejection_counts.ssrf_rejected += 1
+                            return
+                        main_frame = self._request_is_main_frame(request, page)
+                        referer = self._request_referer(request)
+                        referer_kind = self._referer_kind(referer, target_url)
+                        self._count_referer_kind(rejection_counts, referer_kind)
+                        if not main_frame:
+                            rejection_counts.wrong_frame += 1
+                            return
+                        if referer_kind not in {"exact_target_path", "douyin_origin_only"}:
+                            return
+                        if controlled_capture and len(controlled_candidates) >= MAX_EARLY_MEDIA_CANDIDATES:
+                            rejection_counts.ambiguous_resource += 1
+                            return
+                        (
+                            range_start,
+                            range_end,
+                            range_total,
+                            content_length,
+                            etag_fingerprint,
+                            path_fingerprint,
+                        ) = self._response_evidence(response)
+                        candidate = CachedMediaCandidate(
+                            url=url,
+                            content_type=content_type.split(";", 1)[0].lower(),
+                            captured_at=time.monotonic(),
+                            main_frame=main_frame,
+                            referer=referer,
+                            capture_phase=phase,
+                            controlled_window=controlled_capture,
+                            resource_type=resource_type,
+                            range_start=range_start,
+                            range_end=range_end,
+                            range_total=range_total,
+                            content_length=content_length,
+                            etag_fingerprint=etag_fingerprint,
+                            path_fingerprint=path_fingerprint,
                         )
-                        if hydration_urls:
-                            target_groups.append(
-                                TargetBoundMediaGroup(
-                                    "hydration_json",
-                                    tuple(hydration_urls[:MAX_EARLY_MEDIA_CANDIDATES]),
-                                )
-                            )
-                        # Bound details/hydration are deterministic: their URL list is
-                        # one exact work object, ordered by H.264, play, bitrate,
-                        # download. Do not wait for a blob player or reload when present.
-                        for group in target_groups:
-                            bound_urls = await self._validated_group_urls(group.urls, public_url_validator)
-                            if bound_urls:
-                                move_to("structured_media")
-                                complete_phase()
-                                diagnostics = self._record_diagnostics(
-                                    target_id=target_id,
-                                    phase=phase,
-                                    phase_ms=phase_ms,
-                                    playback_media=playback_media,
-                                    target_bound_candidate_count=len(bound_urls),
-                                    unbound_candidate_count=len(early_candidates),
-                                    candidate_group_count=len(target_groups),
-                                    candidate_source=group.source,
-                                )
-                                return CapturedMedia(
-                                    target_id=target_id,
-                                    media_url=bound_urls[0],
-                                    media_urls=bound_urls,
-                                    candidate_source=group.source,
-                                    diagnostics=diagnostics,
-                                )
-                        move_to("player_mount")
-                        if not await self._wait_for_primary_player(page, player_timeout_seconds):
-                            snapshot = await self._player_snapshot(page)
-                            complete_phase()
-                            return CapturedMedia(
-                                target_id=target_id,
-                                media_url=None,
-                                state="player_missing",
-                                diagnostics=self._record_diagnostics(
-                                    target_id=target_id,
-                                    phase=phase,
-                                    phase_ms=phase_ms,
-                                    snapshot=snapshot,
-                                ),
-                            )
-                        before_start = await self._player_snapshot(page)
-                        if int(before_start.get("visible_video_count", 0)) != 1:
-                            complete_phase()
-                            return CapturedMedia(
-                                target_id=target_id,
-                                media_url=None,
-                                state="player_missing",
-                                diagnostics=self._record_diagnostics(
-                                    target_id=target_id,
-                                    phase=phase,
-                                    phase_ms=phase_ms,
-                                    snapshot=before_start,
-                                    rejection_counts=rejection_counts,
-                                ),
-                            )
-                        groups: list[list[CachedMediaCandidate]] = []
-                        selected_urls: tuple[str, ...] = ()
-                        # The target page and exactly one visible main player now exist.
-                        # Discard all prior anonymous traffic and create a narrow capture
-                        # window that is attributable only to this player activation.
-                        paused_hidden = await page.evaluate(PAUSE_HIDDEN_VIDEOS_SCRIPT)
-                        if isinstance(paused_hidden, int) and paused_hidden > 0:
-                            rejection_counts.hidden_player_possible += paused_hidden
-                        mse_urls = await self._target_bound_mse_urls(
-                            page,
-                            observed_candidates,
+                        observed_candidates.append(candidate)
+                        if len(observed_candidates) > MAX_EARLY_MEDIA_CANDIDATES:
+                            del observed_candidates[0]
+                        playback_media[:] = [(item.url, item.content_type) for item in observed_candidates]
+                        if not target_verified:
+                            rejection_counts.before_target_verified += 1
+                            return
+                        if controlled_capture:
+                            controlled_candidates.append(candidate)
+                        else:
+                            early_candidates.append(candidate)
+                        self._active_candidate_count = len(controlled_candidates)
+
+                    page.on("response", observe_response)
+                    move_to("page_navigation")
+                    try:
+                        await page.goto(
                             target_url,
-                            public_url_validator,
+                            wait_until="domcontentloaded",
+                            timeout=navigation_timeout_seconds * 1000,
                         )
-                        if mse_urls:
-                            (
-                                _direct_urls,
-                                has_current_src,
-                                has_src,
-                                has_source_child,
-                                has_blob_url,
-                            ) = self._snapshot_urls(before_start)
-                            move_to("media_capture")
+                    except TimeoutError as error:
+                        log_phase_failure()
+                        self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                        raise session_timeout() from error
+                    except Exception as error:
+                        log_phase_failure()
+                        self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
+                        raise session_page_failed() from error
+                    move_to("target_identity")
+                    if await self._has_visible_risk_component(page):
+                        complete_phase()
+                        return CapturedMedia(
+                            target_id=None,
+                            media_url=None,
+                            state="risk",
+                            diagnostics=self._record_diagnostics(
+                                target_id=target_id, phase=phase, phase_ms=phase_ms
+                            ),
+                        )
+                    if await self._has_visible_login_component(page):
+                        complete_phase()
+                        return CapturedMedia(
+                            target_id=None,
+                            media_url=None,
+                            state="expired",
+                            diagnostics=self._record_diagnostics(
+                                target_id=target_id, phase=phase, phase_ms=phase_ms
+                            ),
+                        )
+                    if target_id_from_url(page.url) != target_id:
+                        complete_phase()
+                        return CapturedMedia(
+                            target_id=None,
+                            media_url=None,
+                            state="mismatch",
+                            diagnostics=self._record_diagnostics(
+                                target_id=target_id, phase=phase, phase_ms=phase_ms
+                            ),
+                        )
+                    target_verified = True
+                    # Consume only completed official detail JSON responses after
+                    # target identity is exact. A bad/mismatched JSON simply yields
+                    # no group; it cannot influence naked CDN fallback selection.
+                    if detail_tasks:
+                        done, pending = await asyncio.wait(
+                            detail_tasks,
+                            timeout=min(1, media_capture_timeout_seconds),
+                        )
+                        for task in done:
+                            try:
+                                group = task.result()
+                            except Exception:
+                                group = None
+                            if group is not None:
+                                target_groups.append(group)
+                        for task in pending:
+                            task.cancel()
+                    document = await page.content()
+                    hydration_urls = DouyinParser.target_bound_media_urls_from_document(document, target_id)
+                    if hydration_urls:
+                        target_groups.append(
+                            TargetBoundMediaGroup(
+                                "hydration_json",
+                                tuple(hydration_urls[:MAX_EARLY_MEDIA_CANDIDATES]),
+                            )
+                        )
+                    # Bound details/hydration are deterministic: their URL list is
+                    # one exact work object, ordered by H.264, play, bitrate,
+                    # download. Do not wait for a blob player or reload when present.
+                    for group in target_groups:
+                        bound_urls = await self._validated_group_urls(group.urls, public_url_validator)
+                        if bound_urls:
+                            move_to("structured_media")
                             complete_phase()
                             diagnostics = self._record_diagnostics(
                                 target_id=target_id,
                                 phase=phase,
                                 phase_ms=phase_ms,
-                                snapshot=before_start,
                                 playback_media=playback_media,
-                                has_current_src=has_current_src,
-                                has_src=has_src,
-                                has_source_child=has_source_child,
-                                has_blob_url=has_blob_url,
-                                target_bound_candidate_count=len(mse_urls),
+                                target_bound_candidate_count=len(bound_urls),
                                 unbound_candidate_count=len(early_candidates),
-                                candidate_group_count=1,
-                                candidate_source="main_player_mse",
-                                rejection_counts=rejection_counts,
-                                equivalent_group_count=1,
+                                candidate_group_count=len(target_groups),
+                                candidate_source=group.source,
                             )
                             return CapturedMedia(
                                 target_id=target_id,
-                                media_url=mse_urls[0],
-                                media_urls=mse_urls,
-                                candidate_source="main_player_mse",
+                                media_url=bound_urls[0],
+                                media_urls=bound_urls,
+                                candidate_source=group.source,
                                 diagnostics=diagnostics,
                             )
-                        early_candidates.clear()
-                        controlled_candidates.clear()
-                        controlled_capture = True
-                        move_to("player_activation")
-                        await asyncio.wait_for(
-                            page.evaluate(PRIMARY_VIDEO_START_SCRIPT), timeout=player_timeout_seconds
-                        )
-                        move_to("media_capture")
-                        await self._wait_for_controlled_capture(page, media_capture_timeout_seconds)
+                    move_to("player_mount")
+                    if not await self._wait_for_primary_player(page, player_timeout_seconds):
                         snapshot = await self._player_snapshot(page)
+                        complete_phase()
+                        return CapturedMedia(
+                            target_id=target_id,
+                            media_url=None,
+                            state="player_missing",
+                            diagnostics=self._record_diagnostics(
+                                target_id=target_id,
+                                phase=phase,
+                                phase_ms=phase_ms,
+                                snapshot=snapshot,
+                            ),
+                        )
+                    before_start = await self._player_snapshot(page)
+                    if int(before_start.get("visible_video_count", 0)) != 1:
+                        complete_phase()
+                        return CapturedMedia(
+                            target_id=target_id,
+                            media_url=None,
+                            state="player_missing",
+                            diagnostics=self._record_diagnostics(
+                                target_id=target_id,
+                                phase=phase,
+                                phase_ms=phase_ms,
+                                snapshot=before_start,
+                                rejection_counts=rejection_counts,
+                            ),
+                        )
+                    groups: list[list[CachedMediaCandidate]] = []
+                    selected_urls: tuple[str, ...] = ()
+                    # The target page and exactly one visible main player now exist.
+                    # Prior traffic remains only as bounded diagnostic/MSE evidence;
+                    # it is never consumed by the later controlled-network fallback.
+                    paused_hidden = await page.evaluate(PAUSE_HIDDEN_VIDEOS_SCRIPT)
+                    if isinstance(paused_hidden, int) and paused_hidden > 0:
+                        rejection_counts.hidden_player_possible += paused_hidden
+                    mse_urls = await self._target_bound_mse_urls(
+                        page,
+                        observed_candidates,
+                        target_url,
+                        public_url_validator,
+                        public_media_sampler,
+                        rejection_counts,
+                    )
+                    if mse_urls:
                         (
-                            direct_urls,
+                            _direct_urls,
                             has_current_src,
                             has_src,
                             has_source_child,
                             has_blob_url,
-                        ) = self._snapshot_urls(snapshot)
-                        direct_media_url = await self._validate_direct_url(
-                            _first_public_url(direct_urls), public_url_validator
-                        )
-                        media_url = direct_media_url
-                        candidate_source = "main_player_network" if media_url else None
-                        if media_url is None and has_blob_url:
-                            groups = self._candidate_groups(controlled_candidates)
-                            if len(groups) == 1:
-                                grouped_urls = await self._validated_group_urls(
-                                    tuple(candidate.url for candidate in groups[0]), public_url_validator
-                                )
-                                if grouped_urls:
-                                    media_url = grouped_urls[0]
-                                    selected_urls = grouped_urls
-                                    candidate_source = "main_player_network"
-                            elif len(groups) > 1:
-                                rejection_counts.ambiguous_resource += len(groups)
-                        if media_url is None and has_blob_url:
-                            # A single bounded seek can create a fresh Range request for
-                            # an already-buffered MediaSource player. It never clicks any
-                            # other UI and is not retried.
-                            move_to("player_seek")
-                            controlled_candidates.clear()
-                            seek_result = await asyncio.wait_for(
-                                page.evaluate(PRIMARY_VIDEO_SEEK_SCRIPT), timeout=player_timeout_seconds
-                            )
-                            if isinstance(seek_result, dict) and seek_result.get("buffered"):
-                                move_to("player_reload")
-                                await page.reload(
-                                    wait_until="domcontentloaded",
-                                    timeout=navigation_timeout_seconds * 1000,
-                                )
-                            await self._wait_for_controlled_capture(page, media_capture_timeout_seconds)
-                            if target_id_from_url(page.url) != target_id:
-                                return CapturedMedia(
-                                    target_id=None,
-                                    media_url=None,
-                                    state="mismatch",
-                                    diagnostics=self._record_diagnostics(
-                                        target_id=target_id,
-                                        phase=phase,
-                                        phase_ms=phase_ms,
-                                        playback_media=playback_media,
-                                    ),
-                                )
-                            groups = self._candidate_groups(controlled_candidates)
-                            if len(groups) == 1:
-                                grouped_urls = await self._validated_group_urls(
-                                    tuple(candidate.url for candidate in groups[0]), public_url_validator
-                                )
-                                if grouped_urls:
-                                    media_url = grouped_urls[0]
-                                    selected_urls = grouped_urls
-                                    candidate_source = "main_player_network"
-                            elif len(groups) > 1:
-                                rejection_counts.ambiguous_resource += len(groups)
+                        ) = self._snapshot_urls(before_start)
+                        move_to("media_capture")
                         complete_phase()
                         diagnostics = self._record_diagnostics(
                             target_id=target_id,
                             phase=phase,
                             phase_ms=phase_ms,
-                            snapshot={
-                                "video_count": snapshot.get(
-                                    "video_count", before_start.get("video_count", 0)
-                                ),
-                                "visible_video_count": snapshot.get(
-                                    "visible_video_count",
-                                    before_start.get("visible_video_count", 0),
-                                ),
-                            },
+                            snapshot=before_start,
                             playback_media=playback_media,
                             has_current_src=has_current_src,
                             has_src=has_src,
                             has_source_child=has_source_child,
                             has_blob_url=has_blob_url,
-                            target_bound_candidate_count=0,
+                            target_bound_candidate_count=len(mse_urls),
                             unbound_candidate_count=len(early_candidates),
-                            candidate_group_count=len(target_groups),
-                            candidate_source=candidate_source,
+                            candidate_group_count=1,
+                            candidate_source="main_player_mse",
                             rejection_counts=rejection_counts,
-                            equivalent_group_count=len(groups),
+                            equivalent_group_count=1,
                         )
                         return CapturedMedia(
                             target_id=target_id,
-                            media_url=media_url,
-                            state="ok" if media_url else "media_missing",
+                            media_url=mse_urls[0],
+                            media_urls=mse_urls,
+                            candidate_source="main_player_mse",
                             diagnostics=diagnostics,
-                            media_urls=selected_urls or ((media_url,) if media_url else ()),
-                            candidate_source=candidate_source,
                         )
+                        controlled_candidates.clear()
+                    controlled_capture = True
+                    move_to("player_activation")
+                    await asyncio.wait_for(
+                        page.evaluate(PRIMARY_VIDEO_START_SCRIPT), timeout=player_timeout_seconds
+                    )
+                    move_to("media_capture")
+                    await self._wait_for_controlled_capture(page, media_capture_timeout_seconds)
+                    snapshot = await self._player_snapshot(page)
+                    (
+                        direct_urls,
+                        has_current_src,
+                        has_src,
+                        has_source_child,
+                        has_blob_url,
+                    ) = self._snapshot_urls(snapshot)
+                    direct_media_url = await self._validate_direct_url(
+                        _first_public_url(direct_urls), public_url_validator
+                    )
+                    media_url = direct_media_url
+                    candidate_source = "main_player_network" if media_url else None
+                    if media_url is None and has_blob_url:
+                        groups = self._candidate_groups(controlled_candidates)
+                        if len(groups) == 1:
+                            grouped_urls = await self._validated_group_urls(
+                                tuple(candidate.url for candidate in groups[0]), public_url_validator
+                            )
+                            if grouped_urls:
+                                media_url = grouped_urls[0]
+                                selected_urls = grouped_urls
+                                candidate_source = "main_player_network"
+                        elif len(groups) > 1:
+                            rejection_counts.ambiguous_resource += len(groups)
+                    if media_url is None and has_blob_url:
+                        # A single bounded seek can create a fresh Range request for
+                        # an already-buffered MediaSource player. It never clicks any
+                        # other UI and is not retried.
+                        move_to("player_seek")
+                        controlled_candidates.clear()
+                        seek_result = await asyncio.wait_for(
+                            page.evaluate(PRIMARY_VIDEO_SEEK_SCRIPT), timeout=player_timeout_seconds
+                        )
+                        if isinstance(seek_result, dict) and seek_result.get("buffered"):
+                            move_to("player_reload")
+                            await page.reload(
+                                wait_until="domcontentloaded",
+                                timeout=navigation_timeout_seconds * 1000,
+                            )
+                        await self._wait_for_controlled_capture(page, media_capture_timeout_seconds)
+                        if target_id_from_url(page.url) != target_id:
+                            return CapturedMedia(
+                                target_id=None,
+                                media_url=None,
+                                state="mismatch",
+                                diagnostics=self._record_diagnostics(
+                                    target_id=target_id,
+                                    phase=phase,
+                                    phase_ms=phase_ms,
+                                    playback_media=playback_media,
+                                ),
+                            )
+                        groups = self._candidate_groups(controlled_candidates)
+                        if len(groups) == 1:
+                            grouped_urls = await self._validated_group_urls(
+                                tuple(candidate.url for candidate in groups[0]), public_url_validator
+                            )
+                            if grouped_urls:
+                                media_url = grouped_urls[0]
+                                selected_urls = grouped_urls
+                                candidate_source = "main_player_network"
+                        elif len(groups) > 1:
+                            rejection_counts.ambiguous_resource += len(groups)
+                    complete_phase()
+                    diagnostics = self._record_diagnostics(
+                        target_id=target_id,
+                        phase=phase,
+                        phase_ms=phase_ms,
+                        snapshot={
+                            "video_count": snapshot.get("video_count", before_start.get("video_count", 0)),
+                            "visible_video_count": snapshot.get(
+                                "visible_video_count",
+                                before_start.get("visible_video_count", 0),
+                            ),
+                        },
+                        playback_media=playback_media,
+                        has_current_src=has_current_src,
+                        has_src=has_src,
+                        has_source_child=has_source_child,
+                        has_blob_url=has_blob_url,
+                        target_bound_candidate_count=0,
+                        unbound_candidate_count=len(early_candidates),
+                        candidate_group_count=len(target_groups),
+                        candidate_source=candidate_source,
+                        rejection_counts=rejection_counts,
+                        equivalent_group_count=len(groups),
+                    )
+                    return CapturedMedia(
+                        target_id=target_id,
+                        media_url=media_url,
+                        state="ok" if media_url else "media_missing",
+                        diagnostics=diagnostics,
+                        media_urls=selected_urls or ((media_url,) if media_url else ()),
+                        candidate_source=candidate_source,
+                    )
                 except TimeoutError as error:
                     log_phase_failure()
                     self._record_diagnostics(
-                        target_id=target_id, phase=phase, phase_ms=phase_ms, snapshot=snapshot,
+                        target_id=target_id,
+                        phase=phase,
+                        phase_ms=phase_ms,
+                        snapshot=snapshot,
                         playback_media=playback_media,
                     )
                     raise session_timeout() from error
@@ -1248,7 +1488,10 @@ class PlaywrightSessionAdapter:
                 except Exception as error:
                     log_phase_failure()
                     self._record_diagnostics(
-                        target_id=target_id, phase=phase, phase_ms=phase_ms, snapshot=snapshot,
+                        target_id=target_id,
+                        phase=phase,
+                        phase_ms=phase_ms,
+                        snapshot=snapshot,
                         playback_media=playback_media,
                     )
                     raise session_page_failed() from error
@@ -1332,6 +1575,38 @@ class DouyinSessionWorker:
         if isinstance(diagnostics, PlayerDiagnostics):
             self.last_diagnostics = diagnostics
 
+    async def _sample_public_media(
+        self,
+        target_url: str,
+        media_url: str,
+        start: int,
+        end: int,
+    ) -> bytes:
+        """Read one bounded public Range without browser-session credentials."""
+        if start < 0 or end < start or end - start + 1 > MAX_MSE_SAMPLE_BYTES:
+            raise AppError("URL_INVALID", "媒体采样范围无效")
+        public_headers = {**PUBLIC_MEDIA_HEADERS, "Referer": target_url}
+        async with asyncio.timeout(self.settings.douyin_session_media_verify_timeout_seconds):
+            stream = await self.http.open_stream(
+                media_url,
+                headers=public_headers,
+                range_header=f"bytes={start}-{end}",
+                media_kind="video",
+            )
+            try:
+                response_range = stream.response.headers.get("content-range", "")
+                if start > 0 and not response_range.lower().startswith(f"bytes {start}-"):
+                    raise AppError("DOWNLOAD_FAILED", "媒体未按请求范围响应", retryable=True)
+                limit = end - start + 1
+                content = bytearray()
+                async for chunk in stream.response.aiter_bytes():
+                    content.extend(chunk[: limit - len(content)])
+                    if len(content) >= limit:
+                        break
+                return bytes(content)
+            finally:
+                await stream.close()
+
     async def inspect(self, target_url: str) -> SessionWorkerResult:
         self.last_diagnostics = None
         self.last_internal_reason = None
@@ -1370,6 +1645,9 @@ class DouyinSessionWorker:
                         player_timeout_seconds=self.settings.douyin_session_player_timeout_seconds,
                         media_capture_timeout_seconds=self.settings.douyin_session_media_capture_timeout_seconds,
                         public_url_validator=self.http.validate_url,
+                        public_media_sampler=lambda url, start, end: self._sample_public_media(
+                            target_url, url, start, end
+                        ),
                     ),
                     timeout=(
                         self.settings.douyin_session_launch_timeout_seconds
@@ -1435,9 +1713,7 @@ class DouyinSessionWorker:
             verified_url: str | None = None
             last_error: AppError | None = None
             content_fingerprints: set[str] = set()
-            compare_group_content = (
-                capture.candidate_source == "main_player_network" and len(media_urls) > 1
-            )
+            compare_group_content = capture.candidate_source == "main_player_network" and len(media_urls) > 1
             for candidate_url in media_urls:
                 try:
                     logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)

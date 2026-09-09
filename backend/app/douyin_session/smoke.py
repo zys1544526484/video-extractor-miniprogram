@@ -52,6 +52,24 @@ class SmokeOutput:
     ambiguous_resource: int | None
     hidden_player_possible: int | None
     equivalent_group_count: int | None
+    mse_observed_candidate_count: int | None
+    mse_eligible_candidate_count: int | None
+    mse_video_buffer_count: int | None
+    mse_append_sample_count: int | None
+    mse_bound_group_count: int | None
+    mse_trace_unavailable: int | None
+    mse_no_video_buffer: int | None
+    mse_no_append_sample: int | None
+    mse_direct_url_unobserved: int | None
+    mse_candidate_stale: int | None
+    mse_candidate_wrong_frame: int | None
+    mse_candidate_referer_rejected: int | None
+    mse_candidate_ssrf_rejected: int | None
+    mse_sample_attempted: int | None
+    mse_sample_failed: int | None
+    mse_sample_mismatch: int | None
+    mse_sample_matched: int | None
+    mse_ambiguous_buffer: int | None
 
 
 logger = logging.getLogger(__name__)
@@ -108,6 +126,24 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
             "ambiguous_resource": None,
             "hidden_player_possible": None,
             "equivalent_group_count": None,
+            "mse_observed_candidate_count": None,
+            "mse_eligible_candidate_count": None,
+            "mse_video_buffer_count": None,
+            "mse_append_sample_count": None,
+            "mse_bound_group_count": None,
+            "mse_trace_unavailable": None,
+            "mse_no_video_buffer": None,
+            "mse_no_append_sample": None,
+            "mse_direct_url_unobserved": None,
+            "mse_candidate_stale": None,
+            "mse_candidate_wrong_frame": None,
+            "mse_candidate_referer_rejected": None,
+            "mse_candidate_ssrf_rejected": None,
+            "mse_sample_attempted": None,
+            "mse_sample_failed": None,
+            "mse_sample_mismatch": None,
+            "mse_sample_matched": None,
+            "mse_ambiguous_buffer": None,
         }
     phases = {name: int(elapsed) for name, elapsed in diagnostics.phase_ms}
     return {
@@ -142,6 +178,24 @@ def _diagnostic_fields(diagnostics: PlayerDiagnostics | None, work_id: str | Non
         "ambiguous_resource": diagnostics.ambiguous_resource,
         "hidden_player_possible": diagnostics.hidden_player_possible,
         "equivalent_group_count": diagnostics.equivalent_group_count,
+        "mse_observed_candidate_count": diagnostics.mse_observed_candidate_count,
+        "mse_eligible_candidate_count": diagnostics.mse_eligible_candidate_count,
+        "mse_video_buffer_count": diagnostics.mse_video_buffer_count,
+        "mse_append_sample_count": diagnostics.mse_append_sample_count,
+        "mse_bound_group_count": diagnostics.mse_bound_group_count,
+        "mse_trace_unavailable": diagnostics.mse_trace_unavailable,
+        "mse_no_video_buffer": diagnostics.mse_no_video_buffer,
+        "mse_no_append_sample": diagnostics.mse_no_append_sample,
+        "mse_direct_url_unobserved": diagnostics.mse_direct_url_unobserved,
+        "mse_candidate_stale": diagnostics.mse_candidate_stale,
+        "mse_candidate_wrong_frame": diagnostics.mse_candidate_wrong_frame,
+        "mse_candidate_referer_rejected": diagnostics.mse_candidate_referer_rejected,
+        "mse_candidate_ssrf_rejected": diagnostics.mse_candidate_ssrf_rejected,
+        "mse_sample_attempted": diagnostics.mse_sample_attempted,
+        "mse_sample_failed": diagnostics.mse_sample_failed,
+        "mse_sample_mismatch": diagnostics.mse_sample_mismatch,
+        "mse_sample_matched": diagnostics.mse_sample_matched,
+        "mse_ambiguous_buffer": diagnostics.mse_ambiguous_buffer,
     }
 
 
@@ -161,12 +215,7 @@ def validate_douyin_redirect_hop(url: str) -> None:
     except ValueError as error:
         raise _resolve_failed() from error
     hostname = (parsed.hostname or "").lower().rstrip(".")
-    if (
-        parsed.scheme not in {"http", "https"}
-        or parsed.username
-        or parsed.password
-        or port is not None
-    ):
+    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or port is not None:
         raise _resolve_failed()
     if hostname == SHORT_LINK_HOST and parsed.path.strip("/"):
         return
@@ -255,7 +304,12 @@ async def async_main() -> int:
             json.dumps(
                 asdict(
                     SmokeOutput(
-                        "failure", "SMOKE_URL_REQUIRED", None, None, None, 0,
+                        "failure",
+                        "SMOKE_URL_REQUIRED",
+                        None,
+                        None,
+                        None,
+                        0,
                         **_diagnostic_fields(None, None),
                     )
                 )

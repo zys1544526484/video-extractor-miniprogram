@@ -294,10 +294,13 @@ class AdapterRequest:
         url: str = TARGET_URL,
         frame: object | None = None,
         referer: str | None = TARGET_URL,
+        range_header: str | None = None,
     ) -> None:
         self.url = url
         self.frame = frame
         self.headers = {} if referer is None else {"referer": referer}
+        if range_header is not None:
+            self.headers["range"] = range_header
 
 
 class AdapterResponse:
@@ -310,10 +313,17 @@ class AdapterResponse:
         referer: str | None = TARGET_URL,
         request_url: str = TARGET_URL,
         payload: object | None = None,
+        response_headers: dict[str, str] | None = None,
+        range_header: str | None = None,
     ) -> None:
         self.url = url
-        self.headers = {"content-type": content_type}
-        self.request = AdapterRequest(url=request_url, frame=frame, referer=referer)
+        self.headers = {"content-type": content_type, **(response_headers or {})}
+        self.request = AdapterRequest(
+            url=request_url,
+            frame=frame,
+            referer=referer,
+            range_header=range_header,
+        )
         self.request.resource_type = resource_type
         self.payload = payload
 
@@ -353,6 +363,7 @@ class AdapterPage:
         visible: bool = True,
         paused_hidden: int = 0,
         mse_bound_urls: list[str] | None = None,
+        mse_evidence: dict[str, object] | None = None,
     ) -> None:
         self.url = final_url
         self.current_src = current_src
@@ -370,6 +381,7 @@ class AdapterPage:
         self.visible = visible
         self.paused_hidden = paused_hidden
         self.mse_bound_urls = list(mse_bound_urls or [])
+        self.mse_evidence = mse_evidence
         self.callbacks: list = []
         self.waited = False
         self.listener_before_goto = False
@@ -385,7 +397,7 @@ class AdapterPage:
         self.callbacks.append(callback)
 
     async def add_init_script(self, script: str) -> None:
-        assert "__videoExtractorReadPrimaryMseUrls" in script
+        assert "__videoExtractorReadPrimaryMseEvidence" in script
         self.init_script_calls += 1
 
     async def goto(self, _url: str, **kwargs: object) -> None:
@@ -419,9 +431,7 @@ class AdapterPage:
                     callback(response)
         if self.delayed_src:
             self.current_src = self.delayed_src
-        if "currentSrc || video.src" in _script and not (
-            self.current_src or self.src or self.source_urls
-        ):
+        if "currentSrc || video.src" in _script and not (self.current_src or self.src or self.source_urls):
             timeout_error = type("TimeoutError", (Exception,), {})
             raise timeout_error()
 
@@ -430,8 +440,21 @@ class AdapterPage:
             self.mse_trace_cleared = True
             self.mse_bound_urls.clear()
             return None
-        if "__videoExtractorReadPrimaryMseUrls" in script:
-            return list(self.mse_bound_urls)
+        if "__videoExtractorReadPrimaryMseEvidence" in script:
+            if self.mse_evidence is not None:
+                return self.mse_evidence
+            return {
+                "trace_available": True,
+                "direct_urls": [],
+                "buffers": [
+                    {
+                        "id": 1,
+                        "mime": "video/mp4",
+                        "urls": list(self.mse_bound_urls),
+                        "samples": [],
+                    }
+                ],
+            }
         if "video.preload = 'none'" in script:
             return self.paused_hidden
         if "currentTime" in script:
@@ -603,9 +626,7 @@ async def test_playwright_adapter_uses_single_post_playback_response_for_blob_pl
     network_url = "https://cdn.example.com/blob-backed.mp4?signature=hidden"
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        play_responses=[
-            AdapterResponse(network_url, "application/vnd.apple.mpegurl", resource_type="fetch")
-        ],
+        play_responses=[AdapterResponse(network_url, "application/vnd.apple.mpegurl", resource_type="fetch")],
     )
 
     captured = await adapter_for(page).capture(
@@ -702,9 +723,17 @@ async def test_blob_player_binds_media_loaded_during_mount_through_mse_provenanc
         current_src="blob:https://www.douyin.com/opaque",
         paused_hidden=1,
         mount_responses=[
-            AdapterResponse(target_urls[0], referer="https://www.douyin.com/"),
+            AdapterResponse(
+                target_urls[0],
+                referer="https://www.douyin.com/",
+                response_headers={"content-range": "bytes 0-2047/4096"},
+            ),
             AdapterResponse(recommendation, referer="https://www.douyin.com/"),
-            AdapterResponse(target_urls[1], referer="https://www.douyin.com/"),
+            AdapterResponse(
+                target_urls[1],
+                referer="https://www.douyin.com/",
+                response_headers={"content-range": "bytes 2048-4095/4096"},
+            ),
         ],
         mse_bound_urls=target_urls,
     )
@@ -755,6 +784,276 @@ async def test_blob_player_can_bind_mse_media_observed_before_target_check_finis
 
 
 @pytest.mark.asyncio
+async def test_blob_player_binds_copied_sourcebuffer_bytes_to_public_range() -> None:
+    media_url = "https://v11-web.example.com/object/copied.mp4?signature=never-log"
+    sample = bytes(index % 251 for index in range(1024))
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse(
+                media_url,
+                referer="https://www.douyin.com/",
+                response_headers={"content-range": "bytes 4096-8191/32768"},
+            )
+        ],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [{"id": 7, "mime": "video/mp4", "urls": [], "samples": [list(sample)]}],
+        },
+    )
+    sampled_ranges: list[tuple[int, int]] = []
+
+    async def sampler(_url: str, start: int, end: int) -> bytes:
+        sampled_ranges.append((start, end))
+        return sample
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_media_sampler=sampler,
+    )
+
+    assert captured.media_url == media_url
+    assert captured.candidate_source == "main_player_mse"
+    assert sampled_ranges == [(4096, 5119)]
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_observed_candidate_count == 1
+    assert captured.diagnostics.mse_eligible_candidate_count == 1
+    assert captured.diagnostics.mse_video_buffer_count == 1
+    assert captured.diagnostics.mse_append_sample_count == 1
+    assert captured.diagnostics.mse_sample_attempted == 1
+    assert captured.diagnostics.mse_sample_matched == 1
+    assert captured.diagnostics.mse_bound_group_count == 1
+    assert "copied.mp4" not in repr(captured.diagnostics)
+    assert "signature" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_blob_player_reports_mse_sample_mismatch_without_guessing() -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse(
+                "https://v11-web.example.com/object/not-target.mp4?token=never-log",
+                referer="https://www.douyin.com/",
+            )
+        ],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [{"id": 1, "mime": "video/mp4", "urls": [], "samples": [[1] * 256]}],
+        },
+    )
+
+    async def sampler(_url: str, _start: int, _end: int) -> bytes:
+        return bytes([2] * 256)
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_media_sampler=sampler,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_sample_mismatch == 1
+    assert captured.diagnostics.mse_sample_matched == 0
+    assert captured.diagnostics.mse_bound_group_count == 0
+    assert "not-target" not in repr(captured.diagnostics)
+    assert "token" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("evidence", "field"),
+    [
+        ({"trace_available": False, "direct_urls": [], "buffers": []}, "mse_trace_unavailable"),
+        ({"trace_available": True, "direct_urls": [], "buffers": []}, "mse_no_video_buffer"),
+        (
+            {
+                "trace_available": True,
+                "direct_urls": [],
+                "buffers": [{"id": 1, "mime": "video/mp4", "urls": [], "samples": []}],
+            },
+            "mse_no_append_sample",
+        ),
+    ],
+)
+async def test_blob_player_reports_exact_mse_trace_drop_stage(
+    evidence: dict[str, object], field: str
+) -> None:
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse(
+                "https://v11-web.example.com/object/diagnostic.mp4",
+                referer="https://www.douyin.com/",
+            )
+        ],
+        mse_evidence=evidence,
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_observed_candidate_count == 1
+    assert getattr(captured.diagnostics, field) == 1
+
+
+@pytest.mark.asyncio
+async def test_blob_player_rejects_sample_that_matches_multiple_video_sourcebuffers() -> None:
+    sample = [3] * 256
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse(
+                "https://v11-web.example.com/object/ambiguous.mp4",
+                referer="https://www.douyin.com/",
+            )
+        ],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [
+                {"id": 1, "mime": "video/mp4", "urls": [], "samples": [sample]},
+                {"id": 2, "mime": "video/mp4", "urls": [], "samples": [sample]},
+                {"id": 3, "mime": "audio/mp4", "urls": [], "samples": [sample]},
+            ],
+        },
+    )
+
+    async def sampler(_url: str, _start: int, _end: int) -> bytes:
+        return bytes(sample)
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_media_sampler=sampler,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_video_buffer_count == 2
+    assert captured.diagnostics.mse_ambiguous_buffer == 1
+    assert captured.diagnostics.mse_bound_group_count == 0
+
+
+@pytest.mark.asyncio
+async def test_blob_player_rejects_multiple_non_equivalent_resources_in_one_sourcebuffer() -> None:
+    sample = bytes([9] * 256)
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[
+            AdapterResponse(
+                "https://v11-web.example.com/quality-a/video.mp4",
+                referer="https://www.douyin.com/",
+            ),
+            AdapterResponse(
+                "https://v11-web.example.com/quality-b/video.mp4",
+                referer="https://www.douyin.com/",
+            ),
+        ],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [{"id": 1, "mime": "video/mp4", "urls": [], "samples": [list(sample)]}],
+        },
+    )
+
+    async def sampler(_url: str, _start: int, _end: int) -> bytes:
+        return sample
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_media_sampler=sampler,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_bound_group_count == 2
+    assert captured.diagnostics.mse_ambiguous_buffer == 2
+    assert captured.diagnostics.unbound_candidate_count == 0
+    assert captured.diagnostics.mse_observed_candidate_count == 2
+
+
+@pytest.mark.asyncio
+async def test_blob_player_groups_two_cdn_mirrors_by_full_public_content_sample() -> None:
+    sample = bytes([11] * 1024)
+    urls = [
+        "https://v11-web.example.com/object-a/video.mp4?signature=one",
+        "https://v26-web.example.com/object-b/video.mp4?signature=two",
+    ]
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse(url, referer="https://www.douyin.com/") for url in urls],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [{"id": 1, "mime": "video/mp4", "urls": [], "samples": [list(sample)]}],
+        },
+    )
+
+    async def sampler(_url: str, _start: int, _end: int) -> bytes:
+        return sample
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_media_sampler=sampler,
+    )
+
+    assert captured.media_urls == tuple(urls)
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_bound_group_count == 1
+    assert captured.diagnostics.mse_sample_matched == 2
+    assert "signature" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_session_worker_uses_cookie_free_range_to_bind_copied_mse_payload(tmp_path: Path) -> None:
+    media_url = "https://cdn.example.com/copied-source.mp4?signature=never-log"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse(media_url, referer="https://www.douyin.com/")],
+        mse_evidence={
+            "trace_available": True,
+            "direct_urls": [],
+            "buffers": [{"id": 1, "mime": "video/mp4", "urls": [], "samples": [[118] * 1024]}],
+        },
+    )
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(video_handler),
+        browser=adapter_for(page),
+    )
+
+    result = await worker.inspect(TARGET_URL)
+
+    assert result.bytes_read == 1024
+    assert result.media_origin == "https://cdn.example.com"
+    assert worker.last_diagnostics is not None
+    assert worker.last_diagnostics.mse_sample_matched == 1
+
+
+@pytest.mark.asyncio
 async def test_blob_player_rejects_unobserved_url_claimed_by_page_trace() -> None:
     forged_url = "https://attacker.example.com/forged.mp4?token=must-not-leak"
     page = AdapterPage(
@@ -773,6 +1072,7 @@ async def test_blob_player_rejects_unobserved_url_claimed_by_page_trace() -> Non
     assert captured.media_url is None
     assert captured.diagnostics is not None
     assert captured.diagnostics.candidate_source is None
+    assert captured.diagnostics.mse_direct_url_unobserved == 1
     assert "attacker" not in repr(captured.diagnostics)
     assert "must-not-leak" not in repr(captured.diagnostics)
 
@@ -800,6 +1100,7 @@ async def test_blob_player_mse_binding_still_requires_public_url_validation() ->
     assert captured.state == "media_missing"
     assert captured.media_url is None
     assert captured.diagnostics is not None
+    assert captured.diagnostics.mse_candidate_ssrf_rejected == 1
     assert "/private.mp4" not in repr(captured.diagnostics)
 
 
@@ -911,7 +1212,9 @@ async def test_non_matching_referer_categories_are_rejected(referer: str | None,
 async def test_origin_only_before_controlled_window_is_not_accepted() -> None:
     page = AdapterPage(
         current_src="blob:https://www.douyin.com/opaque",
-        responses=[AdapterResponse("https://cdn.example.com/too-early.mp4", referer="https://www.douyin.com/")],
+        responses=[
+            AdapterResponse("https://cdn.example.com/too-early.mp4", referer="https://www.douyin.com/")
+        ],
     )
     captured = await adapter_for(page).capture(
         target_url=TARGET_URL,
@@ -1141,7 +1444,10 @@ async def test_hydration_target_media_uses_mirrors_in_order_without_guessing_net
     document = json.dumps(
         {
             "aweme_list": [
-                {"aweme_id": "7999999999999999999", "video": {"play_addr": {"url_list": ["https://ads.example.com/ad.mp4"]}}},
+                {
+                    "aweme_id": "7999999999999999999",
+                    "video": {"play_addr": {"url_list": ["https://ads.example.com/ad.mp4"]}},
+                },
                 {"aweme_id": WORK_ID, "video": {"play_addr_h264": {"url_list": [first, second]}}},
             ]
         }
@@ -1517,9 +1823,7 @@ class OrderedCloseManager(AdapterManager):
 async def test_page_context_and_browser_close_in_order_after_capture() -> None:
     events: list[str] = []
     page = OrderedClosePage(events, current_src=MEDIA_URL)
-    adapter = PlaywrightSessionAdapter(
-        playwright_factory=lambda: OrderedCloseManager(page, events)
-    )
+    adapter = PlaywrightSessionAdapter(playwright_factory=lambda: OrderedCloseManager(page, events))
 
     captured = await adapter.capture(
         target_url=TARGET_URL,
