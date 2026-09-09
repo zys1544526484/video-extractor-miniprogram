@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### M1：P3 SourceBuffer 字节归属修正（2026-09-09）
+
+- 权威真实样本来自分支 `codex/p3-douyin-session-poc` / `e548e6d6dbfd76a8236b1f59ee3f1466530e3f68`：目标 ID `7678969660380843304` 与最终作品路径一致，页面有唯一可见 blob 主播放器，捕获 4 个 origin-only `video/mp4` 响应；但 `target_bound_candidate_count`、候选组和等价组均为 0，最后在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。该结果覆盖此前历史成功，不能写成真实下载 PASS。
+- 根因：4 条响应通过 MIME、Referer 和主框架过滤后进入 `observed_candidates`，但旧页面溯源只在网络 payload 对象与 `SourceBuffer.appendBuffer` 参数保持同一 JavaScript 对象时记录 URL。真实播放器复制、切片或经 stream 转交后对象身份消失；这些请求又早于目标身份确认，不属于后置候选，后续 play/seek 没有新请求，最终所有绑定组为空。
+- `935c13b0cc26c0f6bd9feda7a590705c6bae2847` 在 `goto` 前安装有界 SourceBuffer 追踪：只对当前唯一可见主播放器 Blob 所属 MediaSource 的视频 SourceBuffer 记录最多 8 个、每个最多 1024 bytes 的任务内样本。后端仅对已观察且通过主框架、允许 Referer、SSRF/public URL 校验的候选做无 Cookie 精确 Range 采样并在内存比较；多个视频缓冲、多个无法强等价的资源、样本不匹配、SSRF 或公开读取失败均保持拒绝。跨 CDN 只有 ETag/总长度+路径或完整 1024-byte 公共内容样本形成强等价时才可归为同组，不按域名、时间或首条响应猜选。
+- 诊断只增加整数计数：观察/合格候选、视频 SourceBuffer、追加样本、直接 URL 未观察、陈旧/框架/Referer/SSRF 拒绝、采样尝试/失败/不匹配/匹配、歧义缓冲和最终绑定组。字节、哈希、媒体路径、查询、签名、Cookie、Token、Authorization 与 storage-state 路径均不进入日志或 JSON；任务 finally 仍清理页面追踪与候选。
+- 本地全量验证：backend pytest `236 passed`（2 warnings）；Ruff、compileall、Alembic 空 SQLite 升级/head、backend production 配置、Node `49 passed`、小程序常规与合成 production 各 `80 files checked`、`git diff --check` 均 PASS。[GitHub Actions run 34305162529](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34305162529) 已成功并包含 Docker build 与 Caddy validate。真实修复结果仍为 `NOT VERIFIED`，不创建或合并 PR。
+
 ### M1：P3 blob 主播放器数据流归属（2026-09-09）
 
 - 用户在 `5307c3ec3948543679000aa763476314ecdd6908` 上完成一次真实 Headed 一键验收：目标作品路径与 ID 正确，页面有 2 个 video、1 个可见主播放器，`currentSrc/src` 为 blob，捕获 4 个 `video/mp4` 响应且 Referer 均为抖音 origin-only；结构化目标候选和受控等价组均为 0，最终在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。这证明阻塞是已缓冲 MSE 请求与后置捕获窗口错位，不是登录、短链或播放器缺失。

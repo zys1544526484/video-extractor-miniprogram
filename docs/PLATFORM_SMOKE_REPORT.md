@@ -20,6 +20,8 @@ P3 主播放器捕获已扩展并具有自动回归：直接 `currentSrc`、`src
 
 2026-09-09 用户完成首次 M1 一键 Headed 验收：短链进入正确作品 `7678969660380843304`，最终页为对应 `/video/{id}`，2 个 video 中只有 1 个可见主播放器，播放器为 blob/MediaSource；网络观察到 4 个 `video/mp4` 响应和单一脱敏 douyinvod 域名，但没有结构化目标媒体或受控等价组，最后在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。该结果是真实失败，未取得媒体地址、未执行成功的无 Cookie 1024-byte 读取，不能计入抖音 3/3 样例。随后 `de34af6` 增加导航前的数据流归属，把实际追加到当前主播放器 MediaSource 的 payload 与已观察视频响应交叉验证；自动测试和无会话合成 Chromium 验证通过，但该新版本尚未对真实作品复测，状态仍为 `NOT VERIFIED`。按 M1 约束只再允许一次一键 Headed 验收；如仍失败则保持功能关闭并记录阻塞。
 
+随后用户将 `e548e6d6dbfd76a8236b1f59ee3f1466530e3f68` 的 Headed 结果指定为新的权威真实样本：同一作品 ID 与 canonical 路径、唯一可见 blob 主播放器、4 个 origin-only `video/mp4` 响应均成立，但 13.702 秒后仍在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`；没有形成候选组或等价组，也没有完成公开 1024-byte 读取。审计确认旧版只按 JavaScript payload 对象身份关联 SourceBuffer，真实复制/切片后关联丢失。`935c13b0cc26c0f6bd9feda7a590705c6bae2847` 改为记录当前视频 SourceBuffer 的有界追加字节，并用无 Cookie 精确 Range 内容指纹、SSRF/public URL、主框架、允许 Referer、唯一视频缓冲和唯一强等价组共同证明归属；[CI 34305162529](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34305162529) 已成功。该提交尚无新的真实 Headed 结果；抖音仍为 `0/3`、`NOT VERIFIED`。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。
