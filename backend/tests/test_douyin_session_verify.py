@@ -167,6 +167,19 @@ def test_smoke_output_is_rebuilt_from_safe_allow_list() -> None:
     assert "secret" not in encoded
 
 
+def test_smoke_output_allows_only_safe_main_player_mse_source_name() -> None:
+    payload = sanitise_smoke_output(
+        {
+            "outcome": "success",
+            "error_code": "NONE",
+            "work_id": "7678969660380843304",
+            "candidate_source": "main_player_mse",
+        }
+    )
+
+    assert payload["candidate_source"] == "main_player_mse"
+
+
 def test_powershell_wrapper_invokes_only_verifier_and_emits_last_json_line() -> None:
     script = (
         Path(__file__).resolve().parents[2] / "scripts" / "verify_douyin_session.ps1"

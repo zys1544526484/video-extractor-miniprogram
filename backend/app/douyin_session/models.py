@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -179,13 +179,13 @@ class CapturedMedia:
     """Internal browser capture; never serialise or log its URL."""
 
     target_id: str | None
-    media_url: str | None
+    media_url: str | None = field(repr=False)
     state: str = "ok"
     diagnostics: PlayerDiagnostics | None = None
     # Mirror URLs from one exact target-bound structured source remain only in
     # memory for this capture; the worker independently probes them without
     # browser session credentials.
-    media_urls: tuple[str, ...] = ()
+    media_urls: tuple[str, ...] = field(default=(), repr=False)
     candidate_source: str | None = None
 
 

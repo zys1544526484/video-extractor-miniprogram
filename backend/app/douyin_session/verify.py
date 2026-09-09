@@ -41,7 +41,7 @@ SAFE_PHASES = frozenset(
     }
 )
 SAFE_CANDIDATE_SOURCES = frozenset(
-    {"detail_json", "hydration_json", "main_player_network"}
+    {"detail_json", "hydration_json", "main_player_network", "main_player_mse"}
 )
 INTEGER_FIELDS = frozenset(
     {

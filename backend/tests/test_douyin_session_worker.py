@@ -352,6 +352,7 @@ class AdapterPage:
         reload_responses: list[AdapterResponse] | None = None,
         visible: bool = True,
         paused_hidden: int = 0,
+        mse_bound_urls: list[str] | None = None,
     ) -> None:
         self.url = final_url
         self.current_src = current_src
@@ -368,9 +369,13 @@ class AdapterPage:
         self.reload_responses = reload_responses or []
         self.visible = visible
         self.paused_hidden = paused_hidden
+        self.mse_bound_urls = list(mse_bound_urls or [])
         self.callbacks: list = []
         self.waited = False
         self.listener_before_goto = False
+        self.init_script_before_goto = False
+        self.init_script_calls = 0
+        self.mse_trace_cleared = False
         self.reload_calls = 0
         self.closed = False
         self.main_frame = object()
@@ -379,10 +384,15 @@ class AdapterPage:
         assert event == "response"
         self.callbacks.append(callback)
 
+    async def add_init_script(self, script: str) -> None:
+        assert "__videoExtractorReadPrimaryMseUrls" in script
+        self.init_script_calls += 1
+
     async def goto(self, _url: str, **kwargs: object) -> None:
         assert kwargs["wait_until"] == "domcontentloaded"
         assert isinstance(kwargs["timeout"], int) and kwargs["timeout"] > 0
         self.listener_before_goto = bool(self.callbacks)
+        self.init_script_before_goto = self.init_script_calls == 1
         for response in self.responses:
             for callback in self.callbacks:
                 callback(response)
@@ -416,6 +426,12 @@ class AdapterPage:
             raise timeout_error()
 
     async def evaluate(self, script: str):
+        if "__videoExtractorClearMseTrace" in script:
+            self.mse_trace_cleared = True
+            self.mse_bound_urls.clear()
+            return None
+        if "__videoExtractorReadPrimaryMseUrls" in script:
+            return list(self.mse_bound_urls)
         if "video.preload = 'none'" in script:
             return self.paused_hidden
         if "currentTime" in script:
@@ -673,6 +689,118 @@ async def test_blob_player_accepts_unique_candidate_seen_during_player_activatio
     assert captured.media_url == early_url
     assert captured.diagnostics is not None
     assert captured.diagnostics.media_response_count == 1
+
+
+@pytest.mark.asyncio
+async def test_blob_player_binds_media_loaded_during_mount_through_mse_provenance() -> None:
+    target_urls = [
+        "https://v11-web.example.com/object/target.mp4?range=0-2047&signature=hidden",
+        "https://v26-web.example.com/object/target.mp4?range=2048-4095&signature=hidden",
+    ]
+    recommendation = "https://v11-web.example.com/object/recommendation.mp4?signature=hidden"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        paused_hidden=1,
+        mount_responses=[
+            AdapterResponse(target_urls[0], referer="https://www.douyin.com/"),
+            AdapterResponse(recommendation, referer="https://www.douyin.com/"),
+            AdapterResponse(target_urls[1], referer="https://www.douyin.com/"),
+        ],
+        mse_bound_urls=target_urls,
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert page.init_script_before_goto is True
+    assert page.listener_before_goto is True
+    assert page.reload_calls == 0
+    assert page.mse_trace_cleared is True
+    assert captured.media_urls == tuple(target_urls)
+    assert captured.candidate_source == "main_player_mse"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.target_bound_candidate_count == 2
+    assert captured.diagnostics.candidate_source == "main_player_mse"
+    assert "player_activation" not in dict(captured.diagnostics.phase_ms)
+    assert "recommendation" not in repr(captured)
+    assert "target.mp4" not in repr(captured)
+    assert "signature" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_blob_player_can_bind_mse_media_observed_before_target_check_finishes() -> None:
+    media_url = "https://v11-web.example.com/object/early-target.mp4?signature=hidden"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        responses=[AdapterResponse(media_url, referer="https://www.douyin.com/")],
+        mse_bound_urls=[media_url],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.media_url == media_url
+    assert captured.candidate_source == "main_player_mse"
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.before_target_verified == 1
+    assert captured.diagnostics.target_bound_candidate_count == 1
+
+
+@pytest.mark.asyncio
+async def test_blob_player_rejects_unobserved_url_claimed_by_page_trace() -> None:
+    forged_url = "https://attacker.example.com/forged.mp4?token=must-not-leak"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        mse_bound_urls=[forged_url],
+    )
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.media_url is None
+    assert captured.diagnostics is not None
+    assert captured.diagnostics.candidate_source is None
+    assert "attacker" not in repr(captured.diagnostics)
+    assert "must-not-leak" not in repr(captured.diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_blob_player_mse_binding_still_requires_public_url_validation() -> None:
+    private_url = "http://127.0.0.1/private.mp4"
+    page = AdapterPage(
+        current_src="blob:https://www.douyin.com/opaque",
+        mount_responses=[AdapterResponse(private_url, referer=TARGET_URL)],
+        mse_bound_urls=[private_url],
+    )
+
+    async def validator(_url: str) -> tuple[str, list[str]]:
+        raise AppError("URL_INVALID", "地址不可用")
+
+    captured = await adapter_for(page).capture(
+        target_url=TARGET_URL,
+        target_id=WORK_ID,
+        storage_state_path="C:/outside/operator-state.json",
+        timeout_seconds=3,
+        public_url_validator=validator,
+    )
+
+    assert captured.state == "media_missing"
+    assert captured.media_url is None
+    assert captured.diagnostics is not None
+    assert "/private.mp4" not in repr(captured.diagnostics)
 
 
 @pytest.mark.asyncio

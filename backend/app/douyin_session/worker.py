@@ -50,6 +50,171 @@ LOGIN_COMPONENT_SELECTOR = (
     '[class*="login"][role="dialog"], [role="dialog"] [data-e2e*="qrcode"]'
 )
 HLS_CONTENT_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
+MEDIA_SOURCE_TRACE_INIT_SCRIPT = r"""
+(() => {
+  if (window.__videoExtractorReadPrimaryMseUrls) return;
+  const MAX_URLS = 4;
+  const MAX_URL_LENGTH = 4096;
+  let active = true;
+  const blobToMediaSource = new Map();
+  const blobToDirectUrls = new Map();
+  const mediaSourceUrls = new WeakMap();
+  const sourceBufferMediaSource = new WeakMap();
+  const payloadUrls = new WeakMap();
+  const streamUrls = new WeakMap();
+  const readerUrls = new WeakMap();
+
+  const boundedUrl = (value) => typeof value === 'string'
+    && value.length <= MAX_URL_LENGTH
+    && (value.startsWith('https://') || value.startsWith('http://'));
+  const payloadKey = (value) => {
+    if (value instanceof ArrayBuffer) return value;
+    if (ArrayBuffer.isView(value)) return value.buffer;
+    if (typeof Blob !== 'undefined' && value instanceof Blob) return value;
+    return null;
+  };
+  const rememberPayload = (payload, url) => {
+    const key = payloadKey(payload);
+    if (active && key && boundedUrl(url)) payloadUrls.set(key, url);
+  };
+  const rememberMediaUrl = (mediaSource, url) => {
+    if (!active || !mediaSource || !boundedUrl(url)) return;
+    const values = mediaSourceUrls.get(mediaSource) || [];
+    if (!values.includes(url) && values.length < MAX_URLS) values.push(url);
+    mediaSourceUrls.set(mediaSource, values);
+  };
+
+  try {
+    const originalCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (object) => {
+      const blobUrl = originalCreateObjectURL(object);
+      if (!active) return blobUrl;
+      const isMediaSource = (typeof MediaSource !== 'undefined' && object instanceof MediaSource)
+        || (typeof ManagedMediaSource !== 'undefined' && object instanceof ManagedMediaSource);
+      if (isMediaSource) blobToMediaSource.set(blobUrl, object);
+      const directUrl = payloadUrls.get(object);
+      if (boundedUrl(directUrl)) blobToDirectUrls.set(blobUrl, [directUrl]);
+      return blobUrl;
+    };
+  } catch (_) {}
+
+  const instrumentMediaSource = (constructor) => {
+    if (!constructor || !constructor.prototype) return;
+    const originalAddSourceBuffer = constructor.prototype.addSourceBuffer;
+    if (typeof originalAddSourceBuffer !== 'function') return;
+    constructor.prototype.addSourceBuffer = function(...args) {
+      const sourceBuffer = originalAddSourceBuffer.apply(this, args);
+      sourceBufferMediaSource.set(sourceBuffer, this);
+      return sourceBuffer;
+    };
+  };
+  try { instrumentMediaSource(typeof MediaSource === 'undefined' ? null : MediaSource); } catch (_) {}
+  try {
+    instrumentMediaSource(typeof ManagedMediaSource === 'undefined' ? null : ManagedMediaSource);
+  } catch (_) {}
+
+  try {
+    const originalAppendBuffer = SourceBuffer.prototype.appendBuffer;
+    SourceBuffer.prototype.appendBuffer = function(payload) {
+      const mediaSource = sourceBufferMediaSource.get(this);
+      const url = payloadUrls.get(payloadKey(payload));
+      rememberMediaUrl(mediaSource, url);
+      return originalAppendBuffer.call(this, payload);
+    };
+  } catch (_) {}
+
+  try {
+    const originalArrayBuffer = Response.prototype.arrayBuffer;
+    Response.prototype.arrayBuffer = async function() {
+      const payload = await originalArrayBuffer.call(this);
+      rememberPayload(payload, this.url);
+      return payload;
+    };
+    const originalBlob = Response.prototype.blob;
+    Response.prototype.blob = async function() {
+      const payload = await originalBlob.call(this);
+      rememberPayload(payload, this.url);
+      return payload;
+    };
+  } catch (_) {}
+
+  try {
+    const bodyDescriptor = Object.getOwnPropertyDescriptor(Response.prototype, 'body');
+    if (bodyDescriptor && typeof bodyDescriptor.get === 'function') {
+      Object.defineProperty(Response.prototype, 'body', {
+        ...bodyDescriptor,
+        get: function() {
+          const stream = bodyDescriptor.get.call(this);
+          if (active && stream && boundedUrl(this.url)) streamUrls.set(stream, this.url);
+          return stream;
+        },
+      });
+    }
+    const originalGetReader = ReadableStream.prototype.getReader;
+    ReadableStream.prototype.getReader = function(...args) {
+      const reader = originalGetReader.apply(this, args);
+      const url = streamUrls.get(this);
+      if (boundedUrl(url)) readerUrls.set(reader, url);
+      return reader;
+    };
+    const instrumentReader = (constructor) => {
+      if (!constructor || !constructor.prototype || typeof constructor.prototype.read !== 'function') {
+        return;
+      }
+      const originalRead = constructor.prototype.read;
+      constructor.prototype.read = async function(...args) {
+        const result = await originalRead.apply(this, args);
+        if (result && result.value) rememberPayload(result.value, readerUrls.get(this));
+        return result;
+      };
+    };
+    instrumentReader(
+      typeof ReadableStreamDefaultReader === 'undefined' ? null : ReadableStreamDefaultReader
+    );
+    instrumentReader(
+      typeof ReadableStreamBYOBReader === 'undefined' ? null : ReadableStreamBYOBReader
+    );
+  } catch (_) {}
+
+  try {
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(...args) {
+      const requestedUrl = args[1];
+      const result = originalOpen.apply(this, args);
+      this.addEventListener('readystatechange', () => {
+        if (this.readyState === 4) {
+          rememberPayload(this.response, this.responseURL || requestedUrl);
+        }
+      });
+      return result;
+    };
+  } catch (_) {}
+
+  Object.defineProperty(window, '__videoExtractorReadPrimaryMseUrls', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: (blobUrl) => {
+      if (!active || typeof blobUrl !== 'string' || !blobUrl.startsWith('blob:')) return [];
+      const direct = blobToDirectUrls.get(blobUrl);
+      if (Array.isArray(direct)) return direct.slice(0, MAX_URLS);
+      const mediaSource = blobToMediaSource.get(blobUrl);
+      const values = mediaSource ? mediaSourceUrls.get(mediaSource) : null;
+      return Array.isArray(values) ? values.slice(0, MAX_URLS) : [];
+    },
+  });
+  Object.defineProperty(window, '__videoExtractorClearMseTrace', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: () => {
+      active = false;
+      blobToMediaSource.clear();
+      blobToDirectUrls.clear();
+    },
+  });
+})();
+"""
 PRIMARY_VIDEO_MOUNTED_SCRIPT = """
 () => Array.from(document.querySelectorAll('video')).some((video) => {
   const rect = video.getBoundingClientRect();
@@ -145,6 +310,28 @@ PRIMARY_VIDEO_SEEK_SCRIPT = """
   const result = video.play();
   if (result && typeof result.catch === 'function') result.catch(() => {});
   return { triggered: true, buffered: false };
+}
+"""
+PRIMARY_VIDEO_MSE_URLS_SCRIPT = """
+() => {
+  const video = Array.from(document.querySelectorAll('video')).find((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+    const style = getComputedStyle(candidate);
+    const excluded = candidate.closest('[data-e2e*="ad"], [class*="advert"], [class*="ad-"], '
+      + '[data-e2e*="recommend"], [class*="recommend"], [class*="related"]');
+    return !excluded && style.visibility !== 'hidden' && style.display !== 'none'
+      && rect.width > 120 && rect.height > 120;
+  });
+  if (!video || typeof window.__videoExtractorReadPrimaryMseUrls !== 'function') return [];
+  const blobUrl = video.currentSrc || video.src || '';
+  return window.__videoExtractorReadPrimaryMseUrls(blobUrl);
+}
+"""
+CLEAR_MEDIA_SOURCE_TRACE_SCRIPT = """
+() => {
+  if (typeof window.__videoExtractorClearMseTrace === 'function') {
+    window.__videoExtractorClearMseTrace();
+  }
 }
 """
 PUBLIC_MEDIA_HEADERS = {
@@ -449,6 +636,40 @@ class PlaywrightSessionAdapter:
                 valid.append(checked)
         return tuple(valid)
 
+    async def _target_bound_mse_urls(
+        self,
+        page: Any,
+        observed_candidates: list[CachedMediaCandidate],
+        target_url: str,
+        validator: Callable[[str], Awaitable[tuple[str, list[str]]]] | None,
+    ) -> tuple[str, ...]:
+        """Resolve only URLs actually appended to the unique visible blob player."""
+        values = await page.evaluate(PRIMARY_VIDEO_MSE_URLS_SCRIPT)
+        if not isinstance(values, list):
+            return ()
+        now = time.monotonic()
+        observed = {
+            candidate.url: candidate
+            for candidate in observed_candidates
+            if now - candidate.captured_at <= MAX_EARLY_MEDIA_AGE_SECONDS
+        }
+        bound: list[str] = []
+        for value in values[:MAX_EARLY_MEDIA_CANDIDATES]:
+            if not isinstance(value, str) or value in bound:
+                continue
+            candidate = observed.get(value)
+            if candidate is None or not candidate.main_frame:
+                continue
+            if self._referer_kind(candidate.referer, target_url) not in {
+                "exact_target_path",
+                "douyin_origin_only",
+            }:
+                continue
+            checked = await self._validate_direct_url(value, validator)
+            if checked is not None:
+                bound.append(checked)
+        return tuple(bound)
+
     @staticmethod
     async def _wait_for_controlled_capture(page: Any, timeout_seconds: int) -> None:
         """Keep a brief real-browser window while fake adapters merely yield."""
@@ -629,6 +850,7 @@ class PlaywrightSessionAdapter:
         page: Any | None = None
         snapshot: dict[str, Any] = {}
         playback_media: list[tuple[str, str]] = []
+        observed_candidates: list[CachedMediaCandidate] = []
         early_candidates: list[CachedMediaCandidate] = []
         controlled_candidates: list[CachedMediaCandidate] = []
         detail_tasks: list[asyncio.Task[TargetBoundMediaGroup | None]] = []
@@ -653,6 +875,7 @@ class PlaywrightSessionAdapter:
                 try:
                     context = await browser.new_context(storage_state=storage_state_path)
                     page = await context.new_page()
+                    await page.add_init_script(MEDIA_SOURCE_TRACE_INIT_SCRIPT)
                 except Exception as error:
                     log_phase_failure()
                     self._record_diagnostics(target_id=target_id, phase=phase, phase_ms=phase_ms)
@@ -684,15 +907,15 @@ class PlaywrightSessionAdapter:
                             referer = self._request_referer(request)
                             referer_kind = self._referer_kind(referer, target_url)
                             self._count_referer_kind(rejection_counts, referer_kind)
-                            if not target_verified:
-                                rejection_counts.before_target_verified += 1
-                                return
                             if not main_frame:
                                 rejection_counts.wrong_frame += 1
                                 return
                             if referer_kind not in {"exact_target_path", "douyin_origin_only"}:
                                 return
-                            if len(controlled_candidates) >= MAX_EARLY_MEDIA_CANDIDATES:
+                            if (
+                                controlled_capture
+                                and len(controlled_candidates) >= MAX_EARLY_MEDIA_CANDIDATES
+                            ):
                                 rejection_counts.ambiguous_resource += 1
                                 return
                             range_total, content_length, etag_fingerprint, path_fingerprint = (
@@ -712,15 +935,20 @@ class PlaywrightSessionAdapter:
                                 etag_fingerprint=etag_fingerprint,
                                 path_fingerprint=path_fingerprint,
                             )
+                            observed_candidates.append(candidate)
+                            if len(observed_candidates) > MAX_EARLY_MEDIA_CANDIDATES:
+                                del observed_candidates[0]
+                            playback_media[:] = [
+                                (item.url, item.content_type) for item in observed_candidates
+                            ]
+                            if not target_verified:
+                                rejection_counts.before_target_verified += 1
+                                return
                             if controlled_capture:
                                 controlled_candidates.append(candidate)
                             else:
                                 early_candidates.append(candidate)
                             self._active_candidate_count = len(controlled_candidates)
-                            playback_media[:] = [
-                                (item.url, item.content_type)
-                                for item in [*early_candidates, *controlled_candidates]
-                            ]
 
                         page.on("response", observe_response)
                         move_to("page_navigation")
@@ -861,6 +1089,46 @@ class PlaywrightSessionAdapter:
                         paused_hidden = await page.evaluate(PAUSE_HIDDEN_VIDEOS_SCRIPT)
                         if isinstance(paused_hidden, int) and paused_hidden > 0:
                             rejection_counts.hidden_player_possible += paused_hidden
+                        mse_urls = await self._target_bound_mse_urls(
+                            page,
+                            observed_candidates,
+                            target_url,
+                            public_url_validator,
+                        )
+                        if mse_urls:
+                            (
+                                _direct_urls,
+                                has_current_src,
+                                has_src,
+                                has_source_child,
+                                has_blob_url,
+                            ) = self._snapshot_urls(before_start)
+                            move_to("media_capture")
+                            complete_phase()
+                            diagnostics = self._record_diagnostics(
+                                target_id=target_id,
+                                phase=phase,
+                                phase_ms=phase_ms,
+                                snapshot=before_start,
+                                playback_media=playback_media,
+                                has_current_src=has_current_src,
+                                has_src=has_src,
+                                has_source_child=has_source_child,
+                                has_blob_url=has_blob_url,
+                                target_bound_candidate_count=len(mse_urls),
+                                unbound_candidate_count=len(early_candidates),
+                                candidate_group_count=1,
+                                candidate_source="main_player_mse",
+                                rejection_counts=rejection_counts,
+                                equivalent_group_count=1,
+                            )
+                            return CapturedMedia(
+                                target_id=target_id,
+                                media_url=mse_urls[0],
+                                media_urls=mse_urls,
+                                candidate_source="main_player_mse",
+                                diagnostics=diagnostics,
+                            )
                         early_candidates.clear()
                         controlled_candidates.clear()
                         controlled_capture = True
@@ -1013,6 +1281,17 @@ class PlaywrightSessionAdapter:
         finally:
             # Candidate URLs are task-local evidence only. Clear them before
             # releasing browser resources so they cannot survive into another job.
+            if page is not None:
+                try:
+                    await page.evaluate(CLEAR_MEDIA_SOURCE_TRACE_SCRIPT)
+                except Exception:
+                    # Page teardown can race with browser shutdown. The page is
+                    # closed immediately below; never include browser text here.
+                    logger.debug(
+                        "douyin_session_trace outcome=already_closed phase=%s",
+                        phase,
+                    )
+            observed_candidates.clear()
             early_candidates.clear()
             controlled_candidates.clear()
             playback_media.clear()
