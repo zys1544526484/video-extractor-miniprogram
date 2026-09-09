@@ -9,6 +9,7 @@ from app.config import Settings
 from app.douyin_session.models import PlayerDiagnostics, SessionWorkerResult
 from app.douyin_session.smoke import (
     SmokeOutput,
+    build_safe_http,
     resolve_smoke_target,
     run_smoke,
     sanitise_redirect_hop,
@@ -41,6 +42,18 @@ def safe_http(handler) -> SafeHttpClient:
         resolver=public_resolver,
         transport=httpx.MockTransport(handler),
     )
+
+
+def test_smoke_http_uses_upstream_source_limit_before_output_processing() -> None:
+    settings = Settings(
+        app_env="test",
+        max_video_bytes=180 * 1024 * 1024,
+        max_source_video_bytes=2 * 1024 * 1024 * 1024,
+    )
+
+    client = build_safe_http(settings)
+
+    assert client.max_video_bytes == settings.max_source_video_bytes
 
 
 class FakeWorker:

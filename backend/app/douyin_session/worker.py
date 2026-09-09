@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
@@ -1575,6 +1575,19 @@ class DouyinSessionWorker:
         if isinstance(diagnostics, PlayerDiagnostics):
             self.last_diagnostics = diagnostics
 
+    def _record_worker_phase(self, phase: str, started: float) -> None:
+        """Append a worker phase without weakening the browser diagnostics."""
+        diagnostics = self.last_diagnostics
+        if diagnostics is None:
+            return
+        phases = dict(diagnostics.phase_ms)
+        phases[phase] = max(0, int((time.monotonic() - started) * 1000))
+        self.last_diagnostics = replace(
+            diagnostics,
+            last_phase=phase,
+            phase_ms=tuple(phases.items()),
+        )
+
     async def _sample_public_media(
         self,
         target_url: str,
@@ -1714,6 +1727,8 @@ class DouyinSessionWorker:
             last_error: AppError | None = None
             content_fingerprints: set[str] = set()
             compare_group_content = capture.candidate_source == "main_player_network" and len(media_urls) > 1
+            verify_started = time.monotonic()
+            self._record_worker_phase("media_verify", verify_started)
             for candidate_url in media_urls:
                 try:
                     logger.info("douyin_session_phase target_id=%s phase=media_verify", target_id)
@@ -1751,6 +1766,8 @@ class DouyinSessionWorker:
                     last_error.__cause__ = error
                 except AppError as error:
                     last_error = error
+                finally:
+                    self._record_worker_phase("media_verify", verify_started)
             if verified_url is None:
                 if last_error is not None and last_error.code == "CONTENT_NOT_PUBLIC":
                     self.last_internal_reason = "session_bound_media"

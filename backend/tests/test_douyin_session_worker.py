@@ -248,6 +248,101 @@ async def test_session_worker_keeps_safe_media_type_and_size_limits(
 
 
 @pytest.mark.asyncio
+async def test_session_worker_accepts_source_above_final_output_limit_for_bounded_verification(
+    tmp_path: Path,
+) -> None:
+    final_limit = 1024
+    source_limit = 4096
+    declared_source_size = 2048
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "video/mp4",
+                    "content-length": str(declared_source_size),
+                },
+            )
+        return httpx.Response(206, headers={"content-type": "video/mp4"}, content=b"v" * 1024)
+
+    settings = session_settings(
+        tmp_path,
+        max_video_bytes=final_limit,
+        max_source_video_bytes=source_limit,
+    )
+    http = SafeHttpClient(
+        timeout_seconds=2,
+        max_redirects=2,
+        max_video_bytes=settings.max_source_video_bytes,
+        resolver=public_resolver,
+        transport=httpx.MockTransport(handler),
+    )
+    worker = DouyinSessionWorker(
+        settings=settings,
+        http=http,
+        browser=FakeBrowser(CapturedMedia(target_id=WORK_ID, media_url=MEDIA_URL)),
+    )
+
+    result = await worker.inspect(TARGET_URL)
+
+    assert result.size_bytes == declared_source_size
+    assert result.bytes_read == 1024
+    assert worker.last_diagnostics is None
+
+
+@pytest.mark.asyncio
+async def test_session_worker_reports_media_verify_phase_when_source_probe_fails(tmp_path: Path) -> None:
+    diagnostics = PlayerDiagnostics(
+        page_route=f"/video/{WORK_ID}",
+        target_id=WORK_ID,
+        video_count=1,
+        visible_video_count=1,
+        has_current_src=True,
+        has_src=True,
+        has_source_child=False,
+        has_blob_url=True,
+        media_response_count=1,
+        media_content_types=("video/mp4",),
+        media_domains=("https://cdn.example.com",),
+        last_phase="media_capture",
+        phase_ms=(("media_capture", 12),),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "video/mp4",
+                    "content-length": str(20 * 1024 * 1024),
+                },
+            )
+        raise AssertionError("oversized source must fail before streaming")
+
+    worker = DouyinSessionWorker(
+        settings=session_settings(tmp_path),
+        http=safe_http(handler),
+        browser=FakeBrowser(
+            CapturedMedia(
+                target_id=WORK_ID,
+                media_url=MEDIA_URL,
+                diagnostics=diagnostics,
+            )
+        ),
+    )
+
+    with pytest.raises(AppError) as caught:
+        await worker.inspect(TARGET_URL)
+
+    assert caught.value.code == "MEDIA_TOO_LARGE"
+    assert worker.last_diagnostics is not None
+    assert worker.last_diagnostics.last_phase == "media_verify"
+    assert dict(worker.last_diagnostics.phase_ms)["media_capture"] == 12
+    assert "media_verify" in dict(worker.last_diagnostics.phase_ms)
+
+
+@pytest.mark.asyncio
 async def test_session_worker_enforces_browser_timeout(tmp_path: Path) -> None:
     worker = DouyinSessionWorker(
         settings=session_settings(tmp_path, douyin_session_timeout_seconds=1),

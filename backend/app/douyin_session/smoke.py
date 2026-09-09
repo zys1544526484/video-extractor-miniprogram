@@ -241,7 +241,11 @@ def build_safe_http(settings: Settings) -> SafeHttpClient:
     return SafeHttpClient(
         timeout_seconds=settings.http_timeout_seconds,
         max_redirects=settings.max_redirects,
-        max_video_bytes=settings.max_video_bytes,
+        # Session verification inspects the upstream source before the normal
+        # media pipeline decides whether it can be passed through or must be
+        # compressed.  Applying the final WeChat output limit here rejects a
+        # valid large source before the bounded, no-cookie Range check runs.
+        max_video_bytes=settings.max_source_video_bytes,
     )
 
 
