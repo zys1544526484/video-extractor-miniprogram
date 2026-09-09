@@ -31,4 +31,6 @@ M1 已把最新 P3 的必要自动检查收敛为 `scripts/verify_douyin_session
 
 新的权威 Headed 样本在 `64a9b1b9bf1f1a1acb3964f2e482f636b429090c` 上已经形成 `main_player_mse` 的唯一绑定组与唯一等价组，说明真实 blob 主播放器媒体归属已生效；失败已后移到公开媒体探测。根因是 session smoke 将微信最终成品 `180MiB` 上限错误用于上游源文件，导致较大的有效源在无 Cookie 1024-byte Range 读取前被拒绝。`6e42163dfd77ef9a2b50de0a309ab9929fe86a7f` 已改用默认 `2GiB` 的源文件处理上限，同时保留最终 `180MiB` 成品约束、SSRF、唯一归属和无 Cookie Range 复验；CI 已通过。修复后的真实字节读取仍未执行，所以抖音仍为 `0/3`、`NOT VERIFIED`，且 P3 继续默认关闭。
 
+M1 最终 Headed 验收现已在 `fc3612c93dd5ed703fd90713f12fca9577268e69` 真实通过：目标作品 ID 与 canonical 路径一致，`main_player_mse` 归属成功，取得脱敏 douyinvod 媒体域名，并在不发送 Cookie、Authorization 或 Token 的情况下读取 `4096` bytes。当前阻塞因此从“是否能安全取得抖音公开媒体”转为 M2 生产化：专用 Worker 尚未接入 Parser Registry、持久任务和媒体会话；Linux Xvfb headed 模式、暖浏览器、健康检查、单并发/失败重建、完整大源下载与压缩、3/3 公开样例以及微信真机预览/保存尚未完成。完成这些项目之前 `DOUYIN_SESSION_ENABLED` 必须继续默认关闭，抖音仍不得作为已上线平台宣传。
+
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。

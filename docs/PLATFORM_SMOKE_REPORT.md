@@ -24,6 +24,8 @@ P3 主播放器捕获已扩展并具有自动回归：直接 `currentSrc`、`src
 
 用户随后在 `64a9b1b9bf1f1a1acb3964f2e482f636b429090c` 上执行的新权威 Headed 样本确认上述归属修复真实生效：`candidate_source=main_player_mse`，4 次安全采样中有 1 次匹配，并形成唯一视频 SourceBuffer、唯一目标绑定组和唯一等价组。流程随后在媒体探测阶段返回 `MEDIA_TOO_LARGE`；这是因为独立 smoke 错误使用 `180MiB` 最终成品上限检查上游源，导致无 Cookie 1024-byte Range 读取尚未开始。`6e42163dfd77ef9a2b50de0a309ab9929fe86a7f` 已将该探测边界改为默认 `2GiB` 源文件上限，最终 `180MiB` 成品限制不变，[CI 34314446345](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34314446345) 成功。修复后尚未产生新的真实读取结果，因此抖音仍为 `0/3`、`NOT VERIFIED`。
 
+`fc3612c93dd5ed703fd90713f12fca9577268e69` 的最终 Headed 验收真实通过：安全输出为 `verification=pass`、`outcome=success`、`error_code=NONE`；目标 ID `7678969660380843304` 与 canonical 路径一致，`candidate_source=main_player_mse`，取得脱敏媒体 origin `https://v26-web.douyinvod.com`，并在不携带 Cookie、Authorization 或 Token 的情况下成功读取 `4096` bytes。该结果计为 1 条“专用会话媒体发现与公开 Range 复验”样例，但尚未接入小程序持久解析任务，也未完成完整文件处理、预览、下载和相册保存，因此不计入平台端到端 3/3 上线样例。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。
@@ -42,7 +44,7 @@ Windows Uvicorn 真实服务回归修复后，再次以同一 Bilibili 样例选
 | Bilibili | 1/3 | PARTIAL | 1 个公开视频的解析、DASH 合并、预览与下载真实链路 PASS；图文解析 NOT VERIFIED；仍缺 2 个样例与真机保存 |
 | 微博 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
 | 小红书 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
-| 抖音 | 0/3 成功；公开 PoC 失败，专用会话归属已实测 | NOT VERIFIED | 真实 Headed 已完成目标主播放器唯一归属，但修复后的无 Cookie Range 读取尚未验证；专用会话默认关闭；未绕过 |
+| 抖音 | 0/3 端到端；1 条 session Range PoC PASS | NOT VERIFIED | Headed 已完成目标主播放器唯一归属与无 Cookie 4096-byte 读取；尚未接入任务/媒体管道或验证完整下载与真机保存；专用会话默认关闭；未绕过 |
 | 快手 | 0/3 | NOT VERIFIED | yt-dlp 未列出 extractor；当前仅 Generic 合规降级路径 |
 
 记录真实样例时只保存页面 URL、测试时间、结果码、媒体大小/时长摘要和 request_id，不保存 Cookie 或私密内容。

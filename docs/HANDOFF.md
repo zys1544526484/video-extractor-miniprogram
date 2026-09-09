@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### M1：P3 唯一 Headed 验收通过（2026-09-09）
+
+- 用户在 `codex/p3-douyin-session-poc` / `fc3612c93dd5ed703fd90713f12fca9577268e69` 执行验收，最终安全 JSON 为 `verification=pass`、`outcome=success`、`error_code=NONE`。
+- 作品 ID `7678969660380843304` 与最终 `/video/{id}` 一致；唯一可见 blob 主播放器通过 `main_player_mse` 形成目标绑定，媒体信息只暴露脱敏 origin `https://v26-web.douyinvod.com`。
+- `SafeHttpClient` 在不携带 Cookie、Authorization 或 Token 的情况下成功 Range 读取 `4096` bytes；最后阶段为 `media_verify`。这满足单条公开作品的 P3 PoC 标准，不需要继续修改 MSE/Referer 归属规则。
+- M1 结论为 `REAL HEADED POC PASS`；产品整体仍为 `NOT READY`。M2 必须完成隔离 Worker 生产化、Linux Xvfb 验证、暖浏览器与安全重建、内部健康检查、Registry/持久任务/媒体会话接入、大源下载及压缩回退，并完成抖音 3/3 真实样例和真机闭环。未完成前保持 `DOUYIN_SESSION_ENABLED=false`。
+- 验收前代码与文档 HEAD 的 [GitHub Actions run 34314980816](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34314980816) 已成功；三个既有 egg-info 修改仍未提交。未创建或合并 PR。
+
 ### M1：P3 大源文件公开复验边界（2026-09-09）
 
 - 最新权威真实 Headed 样本来自 `64a9b1b9bf1f1a1acb3964f2e482f636b429090c`：作品 ID `7678969660380843304` 和 canonical 页面正确，唯一可见主播放器为 blob；4 个 origin-only `video/mp4` 候选中，MSE 字节溯源得到 1 个匹配样本、1 个视频 SourceBuffer、1 个绑定组与 1 个等价组，`candidate_source=main_player_mse`。这证明媒体归属修复在真实页面生效。
