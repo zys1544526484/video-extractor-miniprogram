@@ -1,6 +1,6 @@
 # 真实平台 Smoke Test 记录
 
-更新时间：2026-09-07
+更新时间：2026-09-09
 
 此前两条抖音公开分享短链的失败曾被过宽地归类为 `CONTENT_RESTRICTED`。P2 已修正该语义：Cookie、`unavailable`、跳转首页和 `Unsupported URL` 都不足以证明内容私密。只有公开页面或上游明确证明私密、删除、仅好友或必须登录时才使用该错误码；其余公开短链/平台兼容失败使用可重试 `DOUYIN_RESOLVE_FAILED`。
 
@@ -17,6 +17,8 @@ P3 主播放器捕获已扩展并具有自动回归：直接 `currentSrc`、`src
 用户在本机报告：同一公开作品的 headed Chromium session smoke 已取得 douyinvod 媒体域名并无 Cookie 读取 1024 bytes，耗时 20171ms；headless 仍在约 30546ms 返回 `DOUYIN_SESSION_TIMEOUT`。这证明 headed 路线，不证明 headless 或可部署性。后续 smoke 日志将按 browser launch、页面导航、身份、播放器、媒体捕获、媒体复验分别记录安全阶段耗时；实际 Xvfb/headless 与暖启动结果尚未产生，均为 `NOT VERIFIED`。
 
 2026-09-08 的 M1 未新增真实平台结果：已提供 `scripts/verify_douyin_session.ps1`，用于对最新 P3 只执行一次 Headed smoke。当前 Codex 进程仅验证到安全前置失败 `VERIFY_SESSION_NOT_ENABLED`，没有启动浏览器、读取 storage state 或发送抖音请求。必须等待运营者在原有已配置终端运行该脚本后的单行脱敏 JSON，不能把自动测试或历史单次 headed 成功当作最新版本 PASS。
+
+2026-09-09 用户完成首次 M1 一键 Headed 验收：短链进入正确作品 `7678969660380843304`，最终页为对应 `/video/{id}`，2 个 video 中只有 1 个可见主播放器，播放器为 blob/MediaSource；网络观察到 4 个 `video/mp4` 响应和单一脱敏 douyinvod 域名，但没有结构化目标媒体或受控等价组，最后在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。该结果是真实失败，未取得媒体地址、未执行成功的无 Cookie 1024-byte 读取，不能计入抖音 3/3 样例。随后 `de34af6` 增加导航前的数据流归属，把实际追加到当前主播放器 MediaSource 的 payload 与已观察视频响应交叉验证；自动测试和无会话合成 Chromium 验证通过，但该新版本尚未对真实作品复测，状态仍为 `NOT VERIFIED`。按 M1 约束只再允许一次一键 Headed 验收；如仍失败则保持功能关闭并记录阻塞。
 
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 

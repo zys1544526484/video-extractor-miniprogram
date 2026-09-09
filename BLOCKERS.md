@@ -25,4 +25,6 @@ Referer 现已按完整目标路径、抖音 origin-only、其他抖音路径、
 
 M1 已把最新 P3 的必要自动检查收敛为 `scripts/verify_douyin_session.ps1`。本机自动预检、测试和远程 CI 均已通过，但当前 Codex 进程不读取运营者会话，因此真实 Headed 结果仍是人工 Gate。用户只需在原先已配置会话的 PowerShell 中运行一次脚本；在收到这一次严格脱敏 JSON 前，不进入暖浏览器、Xvfb/headless 选型或正式 Parser 接入。
 
+2026-09-09 的首次 M1 真实一键结果仍为 `DOUYIN_SESSION_MEDIA_NOT_FOUND`：作品页、作品 ID、唯一可见 blob 主播放器均已确认，且观察到 4 个 origin-only Referer 的 MP4 响应，但受控 play/seek 窗口没有产生可归属的新请求。最后一次集中修正改为从导航前追踪媒体 payload 到当前主播放器 Blob/MediaSource 的实际追加关系，并继续要求已观察 MIME/主框架/Referer、SSRF 和无 Cookie Range 复验；不会从 4 个裸响应中猜选。自动与合成 Chromium 验证通过，但修正后的真实 Headed 结果仍为 `NOT VERIFIED`。下一次一键验收若仍失败，P3 必须保持默认关闭并作为平台阻塞记录，不再用新的启发式规则无限延长 PoC。
+
 本次 P0 加固（2026-09-04）增加了媒体 Token 日志脱敏、Token 与媒体保留时间拆分、900 秒 Token TTL、标准端口 SSRF 校验、production Alembic head 门禁和 GitHub Actions 自动检查；最新 CI 已通过生产配置、Docker build 和固定版本 Caddy 语法校验，但未消除任何真实上线阻塞。备案域名、真实微信凭证、服务器、平台样例和真机验证继续保持为 `NOT VERIFIED` / Release Candidate 阻塞项。部署后的 Caddy access log 脱敏仍需人工抽样，Docker Compose 运行和生产部署仍需真实环境验证。
