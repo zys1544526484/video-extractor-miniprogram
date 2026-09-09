@@ -223,14 +223,23 @@ class ParseService:
         if size is None:
             return False
         size = int(size)
-        if size <= 0 or size > self.settings.max_video_bytes:
-            raise AppError("MEDIA_TOO_LARGE", "源视频超过微信可可靠保存上限")
+        if size <= 0:
+            return False
+        if size > self.settings.max_source_video_bytes:
+            raise AppError("MEDIA_TOO_LARGE", "源视频超过服务器可处理上限")
         resolved_url = str(metadata.get("url") or url)
         if urlsplit(resolved_url).scheme.lower() != "https":
             return False
         source.upstream_media_url = resolved_url
         source.mime_type = "video/mp4"
         source.size_bytes = size
+        if size > self.settings.max_video_bytes:
+            # The source is too large for direct WeChat delivery, but it may
+            # still fit inside the bounded source-processing allowance.  Send
+            # it through the existing download/ffmpeg path so MediaProcessor
+            # can produce a compliant final file instead of rejecting it at
+            # metadata-probe time.
+            return False
         return True
 
     def _source_candidates(self, result: ParserResultModel) -> list[ParserSourceModel]:

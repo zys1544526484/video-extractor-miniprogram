@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### M2：大源进入受限处理管道（2026-09-09）
+
+- 当前开发分支为 `codex/m2-douyin-production`，基于已通过真实 Headed 验收的 M1 文档基线 `d59ae471b2e0a8fb30b0054b9787fffee6200f55`；不修改 `main`，不创建或合并 PR。
+- 修复解析服务的元数据快速路径：HTTPS MP4 在声明大小不超过最终 `MAX_VIDEO_BYTES` 时仍按需代理；大于最终上限但不超过 `MAX_SOURCE_VIDEO_BYTES` 时，不再在探测阶段误报 `MEDIA_TOO_LARGE`，而是进入既有分块下载与 `MediaProcessor` 压缩/封装路径。超过源处理上限仍明确拒绝。
+- 探测得到的安全重定向 URL、实际 MIME 和大小会同步回媒体源，再进入慢路径，避免继续使用解析器旧的估算大小或原始 URL。
+- 定向验证：`tests/test_parse_service.py` 4 passed；Ruff、compileall 与 `git diff --check` PASS。新增回归确认超出最终上限但仍在源上限内的媒体确实落盘处理，而不是作为懒代理或被提前拒绝。实际大源下载、ffmpeg 压缩和微信真机保存仍为 `NOT VERIFIED`。
+- 三个任务前已有 egg-info 修改继续只保留在工作区，不暂存、不提交。
+
 ### M1：P3 唯一 Headed 验收通过（2026-09-09）
 
 - 用户在 `codex/p3-douyin-session-poc` / `fc3612c93dd5ed703fd90713f12fca9577268e69` 执行验收，最终安全 JSON 为 `verification=pass`、`outcome=success`、`error_code=NONE`。
