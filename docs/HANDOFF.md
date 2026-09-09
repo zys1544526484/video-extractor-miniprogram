@@ -8,7 +8,7 @@
 
 - 用户在 `5307c3ec3948543679000aa763476314ecdd6908` 上完成一次真实 Headed 一键验收：目标作品路径与 ID 正确，页面有 2 个 video、1 个可见主播放器，`currentSrc/src` 为 blob，捕获 4 个 `video/mp4` 响应且 Referer 均为抖音 origin-only；结构化目标候选和受控等价组均为 0，最终在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。这证明阻塞是已缓冲 MSE 请求与后置捕获窗口错位，不是登录、短链或播放器缺失。
 - `de34af6` 是按接管规范允许的最后一次集中代码修正：页面脚本执行前安装闭包式 MediaSource 溯源，将 `Response.arrayBuffer/blob`、`ReadableStream` 或 XHR payload 与 `SourceBuffer.appendBuffer`、Blob URL 和当前唯一可见主播放器关联。返回地址还必须精确匹配 Playwright 已观察的 video/HLS 响应、主框架和允许 Referer，并通过 `SafeHttpClient.validate_url`；未观察地址、推荐/广告和 SSRF 地址保持失败。地址最多 4 个、单条 4096 字符、15 秒，只驻留本任务内存并在 finally 清空；内部媒体字段已禁止出现在 dataclass repr。
-- 自动验证：backend pytest `227 passed`（2 warnings）、Ruff、compileall、Alembic 空库升级/head、backend production 配置、Node `49 passed`、小程序常规/合成 production 各 `80 files checked`、`git diff --check` 全部 PASS。本机无会话的合成 Chromium 页面还真实验证了 `arrayBuffer` 与流式 `ReadableStream` 两种 payload 均可绑定到对应 MediaSource。Docker CLI 本机不可用，等待该提交的 GitHub Actions 验证镜像与 Caddy。
+- 自动验证：backend pytest `227 passed`（2 warnings）、Ruff、compileall、Alembic 空库升级/head、backend production 配置、Node `49 passed`、小程序常规/合成 production 各 `80 files checked`、`git diff --check` 全部 PASS。本机无会话的合成 Chromium 页面还真实验证了 `arrayBuffer` 与流式 `ReadableStream` 两种 payload 均可绑定到对应 MediaSource。本机 Docker CLI 不可用；[GitHub Actions run 34300779710](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34300779710) 已成功完成远程 Docker build、Caddy validate 和其余 CI 门禁。
 - 本修正尚未读取运营者会话，也未访问真实作品；修正后的真实媒体捕获和无 Cookie 1024-byte 读取继续为 `NOT VERIFIED`。自动工作完成后只再安排一次 `scripts/verify_douyin_session.ps1` 人工验收；若失败则保持 `DOUYIN_SESSION_ENABLED=false` 并结束本 PoC 的启发式修补。
 
 ### M1：P3 一键 Headed 单次验收（2026-09-08）
