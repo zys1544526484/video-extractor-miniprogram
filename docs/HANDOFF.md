@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### M1：P3 大源文件公开复验边界（2026-09-09）
+
+- 最新权威真实 Headed 样本来自 `64a9b1b9bf1f1a1acb3964f2e482f636b429090c`：作品 ID `7678969660380843304` 和 canonical 页面正确，唯一可见主播放器为 blob；4 个 origin-only `video/mp4` 候选中，MSE 字节溯源得到 1 个匹配样本、1 个视频 SourceBuffer、1 个绑定组与 1 个等价组，`candidate_source=main_player_mse`。这证明媒体归属修复在真实页面生效。
+- 该样本随后返回 `MEDIA_TOO_LARGE`，且 `bytes_read=null`。根因不是归属失败，而是独立 smoke 的 `SafeHttpClient` 使用了微信最终成品 `MAX_VIDEO_BYTES=180MiB`，在实际的无 Cookie Range 读取前依据源文件声明大小提前拒绝。
+- `6e42163dfd77ef9a2b50de0a309ab9929fe86a7f` 将 session smoke 客户端改用 `MAX_SOURCE_VIDEO_BYTES`（默认 `2GiB`）。这只允许较大的公开源进入小范围验证；没有提高微信最终成品上限，也不会预先完整下载源文件。后续正式媒体管道仍须把超出 `180MiB` 的源压缩成合规成品，超过 `2GiB` 的源继续返回 `MEDIA_TOO_LARGE`。
+- Worker 会把浏览器返回后的 HEAD/Range 验证准确追加为 `media_verify` 阶段，失败不再停留在旧的 `media_capture` 标记。相关回归覆盖大于成品上限但小于源上限的成功验证、超过源上限的拒绝及失败阶段保留。
+- 本地门禁：backend pytest `239 passed`（2 warnings）；Ruff、compileall、Alembic 空 SQLite 升级/head、backend production 配置、Node `49 passed`、小程序常规/合成 production 各 `80 files checked`、`git diff --check` 均 PASS。[GitHub Actions run 34314446345](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34314446345) 成功，包含 Docker build 与 Caddy validate。修复后的真实无 Cookie 1024-byte 读取仍为 `NOT VERIFIED`；不创建或合并 PR，三个既有 egg-info 修改继续不提交。
+
 ### M1：P3 SourceBuffer 字节归属修正（2026-09-09）
 
 - 权威真实样本来自分支 `codex/p3-douyin-session-poc` / `e548e6d6dbfd76a8236b1f59ee3f1466530e3f68`：目标 ID `7678969660380843304` 与最终作品路径一致，页面有唯一可见 blob 主播放器，捕获 4 个 origin-only `video/mp4` 响应；但 `target_bound_candidate_count`、候选组和等价组均为 0，最后在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`。该结果覆盖此前历史成功，不能写成真实下载 PASS。

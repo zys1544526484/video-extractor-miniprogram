@@ -22,6 +22,8 @@ P3 主播放器捕获已扩展并具有自动回归：直接 `currentSrc`、`src
 
 随后用户将 `e548e6d6dbfd76a8236b1f59ee3f1466530e3f68` 的 Headed 结果指定为新的权威真实样本：同一作品 ID 与 canonical 路径、唯一可见 blob 主播放器、4 个 origin-only `video/mp4` 响应均成立，但 13.702 秒后仍在 `player_seek` 返回 `DOUYIN_SESSION_MEDIA_NOT_FOUND`；没有形成候选组或等价组，也没有完成公开 1024-byte 读取。审计确认旧版只按 JavaScript payload 对象身份关联 SourceBuffer，真实复制/切片后关联丢失。`935c13b0cc26c0f6bd9feda7a590705c6bae2847` 改为记录当前视频 SourceBuffer 的有界追加字节，并用无 Cookie 精确 Range 内容指纹、SSRF/public URL、主框架、允许 Referer、唯一视频缓冲和唯一强等价组共同证明归属；[CI 34305162529](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34305162529) 已成功。该提交尚无新的真实 Headed 结果；抖音仍为 `0/3`、`NOT VERIFIED`。
 
+用户随后在 `64a9b1b9bf1f1a1acb3964f2e482f636b429090c` 上执行的新权威 Headed 样本确认上述归属修复真实生效：`candidate_source=main_player_mse`，4 次安全采样中有 1 次匹配，并形成唯一视频 SourceBuffer、唯一目标绑定组和唯一等价组。流程随后在媒体探测阶段返回 `MEDIA_TOO_LARGE`；这是因为独立 smoke 错误使用 `180MiB` 最终成品上限检查上游源，导致无 Cookie 1024-byte Range 读取尚未开始。`6e42163dfd77ef9a2b50de0a309ab9929fe86a7f` 已将该探测边界改为默认 `2GiB` 源文件上限，最终 `180MiB` 成品限制不变，[CI 34314446345](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/34314446345) 成功。修复后尚未产生新的真实读取结果，因此抖音仍为 `0/3`、`NOT VERIFIED`。
+
 Generic 使用 W3C 公开 MP4 `https://media.w3.org/2010/05/sintel/trailer.mp4` 完成真实解析、短期媒体 token、Range 预览和带认证下载，预览与下载均返回 HTTP 206，分别读取 1024 bytes；媒体大小 4,372,373 bytes，request_id `req_ff35cd74ebd544ad860df5a0bf726f1b`。
 
 Bilibili 使用用户提供的公开视频 `https://www.bilibili.com/video/BV1G7tG6tEwL/` 完成真实解析、DASH 音视频下载与 ffmpeg 合并、短期媒体 token、Range 预览和带认证下载。源视频 43 分 34 秒；解析器在 180MiB 客户端边界内自动选择 480P H.264 + AAC，成品 142,463,085 bytes，预览与下载均返回 HTTP 206 并分别读取 1024 bytes，request_id `req_7e320414bdd64703aaefa1b2607ec959`。ffprobe 复核为 852×480 H.264 视频流与 AAC 音频流。
@@ -40,7 +42,7 @@ Windows Uvicorn 真实服务回归修复后，再次以同一 Bilibili 样例选
 | Bilibili | 1/3 | PARTIAL | 1 个公开视频的解析、DASH 合并、预览与下载真实链路 PASS；图文解析 NOT VERIFIED；仍缺 2 个样例与真机保存 |
 | 微博 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
 | 小红书 | 0/3 | NOT VERIFIED | 公开元数据适配器存在 |
-| 抖音 | 0/3 成功；公开 PoC 失败，专用会话 PoC 未实测 | NOT VERIFIED | 匿名短链未给出可安全使用的媒体地址；运营者专用会话默认关闭且尚未手动登录/实测；未绕过 |
+| 抖音 | 0/3 成功；公开 PoC 失败，专用会话归属已实测 | NOT VERIFIED | 真实 Headed 已完成目标主播放器唯一归属，但修复后的无 Cookie Range 读取尚未验证；专用会话默认关闭；未绕过 |
 | 快手 | 0/3 | NOT VERIFIED | yt-dlp 未列出 extractor；当前仅 Generic 合规降级路径 |
 
 记录真实样例时只保存页面 URL、测试时间、结果码、媒体大小/时长摘要和 request_id，不保存 Cookie 或私密内容。
