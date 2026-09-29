@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### 2026-09-29 交付状态与后续接入
+
+- 代码检查点 `b8058ea78640601cae7e4dd1a51bceed1b4b6bf6` 已普通推送，[对应 CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36575091183) 两个 job 成功：Node `52 passed`，小程序普通/生产各 `80 files checked`；后端 `240 passed, 3 skipped, 2 warnings`（243 项），Ruff、production、compileall、Alembic 空库/head、Docker build 和 Caddy validate 均通过。Windows 本地为 pytest `243 passed`、小程序 82 文件；两个额外工具配置忽略且未提交。
+- 首版推进结论：`LOCAL_BACKEND_VERIFIED / RELEASE_NOT_READY`。本地真实 MP4 的完整媒体闭环已复验；工具界面需用户手动重新登录，服务器、HTTPS 域名、真实微信认证、平台 3/3 样例、真机保存和生产日志抽样继续 NOT VERIFIED。原有三份 egg-info 修改完整保留。
+- Draft PR 状态 `DECISION_NEEDED`：本轮已尝试为 `codex/product-delivery-readiness` 向 `main` 创建 Draft PR，GitHub connector 返回 `403 Resource not accessible by integration`，没有创建成功。可由有权限的用户在[分支比较页](https://github.com/zys1544526484/video-extractor-miniprogram/compare/main...codex/product-delivery-readiness)创建 Draft；该链接不是已存在 PR。
+- 下一步最多三项用户操作：重新登录微信开发者工具；说明服务器/HTTPS 域名及微信凭证是否具备并安排安全接入（不把密钥贴入聊天）；使用有 PR 写权限的账号创建 Draft。代码审查和分支 CI 已完成，不合并 main。
+
+
 ### 成品复审：匿名解析作品归属与发布结论（2026-09-29）
 
 - 发现匿名抖音解析仍遍历所有作品对象，即使页面 URL 正确，也会将推荐作品的视频、标题和封面当成目标结果。复用既有 `_target_work_nodes`，只接受 ID 与请求作品一致的对象；不增加浏览器启发式、不启用会话功能。

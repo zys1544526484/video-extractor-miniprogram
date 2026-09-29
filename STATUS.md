@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- 代码 `b8058ea78640601cae7e4dd1a51bceed1b4b6bf6` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36575091183) 两个 job 成功：Node 52；干净环境普通/production 各 80 文件；pytest 240 passed、3 skipped（共 243）、Ruff/compileall/迁移/Docker/Caddy 均通过。本机 pytest 243 passed。Draft PR 创建被 connector 403 拒绝，代码已推送，详情见交接记录。发布状态仍 NOT READY。
+
 - 本轮最终代码回归：后端 `243 passed`（2 warnings）、Ruff、compileall、Alembic 空库升级/head、合成 production 配置通过。修复匿名抖音页面将推荐作品的视频/标题/封面误认为目标作品的问题，新增 3 项“目标 ID 一致/错误/缺失”回归。不改变会话默认关闭、不绕过平台限制；该修复不代表抖音已生产化。
 
 - 本机成品入口：`npm run start:local` 已实际启动；公开 W3C MP4 真实任务、Range 预览和完整 4,372,373-byte 下载通过（H.264/AAC，52.208 秒），微信身份为开发模拟。开发者工具实际 `open` 要求重新登录（code 10），当前页面与相册保存未验证。Node `52 passed`、普通/合成 production 各 `82 files checked`；本地启动不会覆盖原数据库或配置。

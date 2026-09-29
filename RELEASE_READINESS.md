@@ -8,7 +8,7 @@
 
 2026-09-29 实测公开 W3C Sintel MP4：任务 202、Range 预览 206、完整下载 200/4,372,373 bytes、记录再次读取通过；FFprobe 为 H.264/AAC、854×480、52.208 秒。微信开发者工具实际打开项目返回“需要重新登录（code 10）”，因此本轮界面及手机保存仍未验收。
 
-本地自动门禁：pytest `243 passed`（2 warnings）、Node `52 passed`、小程序普通/合成 production 各 `82 files checked`，Ruff、compileall、Alembic 空库升级/head 与后端合成 production 配置通过。Docker CLI 本机未安装；上一检查点 `be704b8` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36574444496) 已验证 Docker build/Caddy validate，后续提交以对应 Actions 运行结果为准。
+本地自动门禁：pytest `243 passed`（2 warnings）、Node `52 passed`、小程序普通/合成 production 各 `82 files checked`，Ruff、compileall、Alembic 空库升级/head 与后端合成 production 配置通过。Docker CLI 本机未安装；代码检查点 `b8058ea` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36575091183) 两个 job 成功，包含 Docker build/Caddy validate；远程 pytest `240 passed, 3 skipped`（共 243）、Node 52、小程序普通/production 各 80 文件。后续提交以对应 Actions 运行结果为准。
 
 抖音 M1 已有单条真实 Headed 主播放器归属及无 Cookie Range PoC 成功证据；尚未接入正式解析任务、验证 Linux/Xvfb、暖浏览器、完整下载与 3/3 样例，不等于生产能力。
 
