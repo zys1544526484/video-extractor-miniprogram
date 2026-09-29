@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- 本机成品入口：`npm run start:local` 已实际启动；公开 W3C MP4 真实任务、Range 预览和完整 4,372,373-byte 下载通过（H.264/AAC，52.208 秒），微信身份为开发模拟。开发者工具实际 `open` 要求重新登录（code 10），当前页面与相册保存未验证。Node `52 passed`、普通/合成 production 各 `82 files checked`；本地启动不会覆盖原数据库或配置。
+
 - 2026-09-29 成品复审：修复小程序默认 development 配置在 `App.onLaunch` 被误当生产配置而启动失败的问题；新增应用启动回归，Node `52 passed`，小程序普通/合成 production 各 `81 files checked`。体验版/正式版继续禁止 development/Mock。后端审查基线 `240 passed`（2 warnings）、Ruff PASS。真实界面与媒体闭环仍在复验，产品继续 `NOT READY`；以下条目保留为历史证据，不代表本轮全部通过。
 
 - M1 P3 真实 Headed 验收通过（2026-09-09）：用户在 `fc3612c93dd5ed703fd90713f12fca9577268e69` 上执行唯一验收，安全输出为 `verification=pass`、`outcome=success`、`error_code=NONE`。目标作品 ID `7678969660380843304` 与 `/video/{id}` 完全一致，媒体来自 `main_player_mse` 唯一归属链路，最终只记录脱敏域名 `https://v26-web.douyinvod.com`；`SafeHttpClient` 未携带 Cookie、Authorization 或 Token 成功读取 `4096` bytes，最后阶段为 `media_verify`。这满足 M1/P3 单条公开作品 PoC 的成功标准，证明 Windows Headed Chromium 路线可行；不等于小程序端到端或生产部署完成。抖音尚未接入 Parser Registry/持久任务和媒体会话，Linux Xvfb、暖浏览器、健康检查、失败重建、完整下载/压缩、真机保存及 3/3 真实样例仍为 `NOT VERIFIED`。下一阶段进入 M2 抖音生产化，P3 开关在完成这些工作前继续默认关闭。

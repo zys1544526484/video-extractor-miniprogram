@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "start:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_local.ps1",
     "test": "node --test miniprogram/tests/*.test.js",
     "validate:miniprogram": "node scripts/validate_miniprogram.js",
     "validate:production": "node scripts/validate_miniprogram.js --production",

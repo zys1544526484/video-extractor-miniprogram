@@ -1,0 +1,18 @@
+{
+  "description": "Local development project; enter your own AppID in DevTools",
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "video-extractor",
+  "miniprogramRoot": "./",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "urlCheck": false
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "tests" },
+      { "type": "file", "value": "project.config.json.example" }
+    ]
+  }
+}

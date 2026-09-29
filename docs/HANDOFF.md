@@ -4,6 +4,15 @@
 
 ## 当前基线
 
+### 成品复审：可重复本地启动与真实媒体验证（2026-09-29）
+
+- 增加 `npm run start:local`（Windows）和 `-CheckOnly` 预检；复用既有虚拟环境、FFmpeg 和微信工具，不增加项目依赖。仅监听本机，使用独立开发数据库/临时目录，不覆盖 `.env` 或已有小程序配置；已存在的 8000 服务会被明确拒绝，不自动终止。
+- 补回 README 已引用但缺失的 `project.config.json.example`，只含游客 AppID 与本地开发设置，正式发布需自己的 AppID 和 production 配置。
+- 已实际通过新启动入口运行后端并验证公开 W3C Sintel MP4：创建任务 202、Range 预览 206/1024 bytes、完整下载 200/4,372,373 bytes、任务记录读取 PASS；FFprobe 确认为 H.264/AAC、854×480、52.208 秒。微信身份仅为开发模拟；媒体链路是真实网络与文件，未使用 Mock API。
+- 本步骤 Node `52 passed`、普通/合成 production 各 `82 files checked`、启动预检和 `git diff --check` PASS。下载验收产物位于仓库外，未提交。
+- 界面验收被工具登录阻塞：官方 CLI `open` 返回 `code 10: 需要重新登录`，automation socket 请求超时；不能用 `islogin=true` 或 `auto` 命令的成功提示替代真实页面验证。已请求运营者手动登录，继续处理不依赖登录的代码/部署复审。
+
+
 ### 成品复审：修复开发环境启动（2026-09-29）
 
 - 新任务分支 `codex/product-delivery-readiness` 保留当前 M2 已提交历史（起点 `145cfd3`）；fetch 后确认 `origin/main` 是其祖先，未丢弃尚未合并的 48 个提交。原有三个 egg-info 修改继续保留、不提交。

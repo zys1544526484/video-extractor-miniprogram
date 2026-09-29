@@ -12,6 +12,18 @@
 
 ## 本地启动
 
+已安装依赖的 Windows 开发机，在仓库根目录运行：
+
+```powershell
+npm run start:local
+```
+
+该入口检查 Python/FFmpeg，尝试打开微信开发者工具，并在当前终端启动仅监听 `127.0.0.1:8000` 的 API；按 Ctrl+C 停止。首次使用工具需自行扫码登录、配置自己的 AppID。工具路径不同可使用 `powershell -File scripts/start_local.ps1 -DevToolsCli '工具安装目录\cli.bat'`。只检查依赖可加 `-CheckOnly`，只开后端可加 `-SkipDevTools`。
+
+本地入口使用独立 `backend/data/local-preview.db` 和 `backend/tmp/local-preview`，不会覆盖已有数据库或 `.env`。微信身份为开发模拟，媒体提取、预览和下载走真实后端；抖音会话默认关闭。它不是手机可访问的生产服务。
+
+可先在小程序输入公开测试片 `https://media.w3.org/2010/05/sintel/trailer.mp4`，依次检查结果页、视频/图片/标题 Tab 和提取记录；相册保存必须用真机验证。当前能力与上线顺序见 `RELEASE_READINESS.md`。
+
 后端需要 Python 3.12：
 
 ```powershell
