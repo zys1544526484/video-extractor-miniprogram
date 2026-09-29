@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- 本轮最终代码回归：后端 `243 passed`（2 warnings）、Ruff、compileall、Alembic 空库升级/head、合成 production 配置通过。修复匿名抖音页面将推荐作品的视频/标题/封面误认为目标作品的问题，新增 3 项“目标 ID 一致/错误/缺失”回归。不改变会话默认关闭、不绕过平台限制；该修复不代表抖音已生产化。
+
 - 本机成品入口：`npm run start:local` 已实际启动；公开 W3C MP4 真实任务、Range 预览和完整 4,372,373-byte 下载通过（H.264/AAC，52.208 秒），微信身份为开发模拟。开发者工具实际 `open` 要求重新登录（code 10），当前页面与相册保存未验证。Node `52 passed`、普通/合成 production 各 `82 files checked`；本地启动不会覆盖原数据库或配置。
 
 - 2026-09-29 成品复审：修复小程序默认 development 配置在 `App.onLaunch` 被误当生产配置而启动失败的问题；新增应用启动回归，Node `52 passed`，小程序普通/合成 production 各 `81 files checked`。体验版/正式版继续禁止 development/Mock。后端审查基线 `240 passed`（2 warnings）、Ruff PASS。真实界面与媒体闭环仍在复验，产品继续 `NOT READY`；以下条目保留为历史证据，不代表本轮全部通过。

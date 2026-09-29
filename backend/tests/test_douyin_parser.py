@@ -384,3 +384,39 @@ def test_target_bound_structured_urls_require_exact_work_id() -> None:
         "video": {"play_addr": {"url_list": ["https://cdn.example.com/not-target.mp4"]}},
     }
     assert DouyinParser.target_bound_media_urls_from_payload(payload, WORK_ID) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_id", [WORK_ID, "7999999999999999999", None])
+async def test_public_parser_binds_media_title_and_cover_to_the_requested_work(settings, target_id) -> None:
+    # Both objects have valid public media; recommendations must never win just
+    # because the page traversal encounters them before the requested work.
+    payload = [
+        {
+            "aweme_id": target_id,
+            "desc": "目标作品",
+            "video": {"play_addr": {"url_list": ["https://cdn.example.com/target.mp4"]}},
+            "cover": {"url_list": ["https://cdn.example.com/target.jpg"]},
+        },
+        {
+            "aweme_id": "7888888888888888888",
+            "desc": "推荐作品",
+            "video": {"play_addr": {"url_list": ["https://cdn.example.com/recommendation.mp4"]}},
+            "cover": {"url_list": ["https://cdn.example.com/recommendation.jpg"]},
+        },
+    ]
+    document = f'<script type="application/json">{json.dumps(payload)}</script>'
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=document)
+
+    parser = DouyinParser(Fallback())
+    if target_id != WORK_ID:
+        with pytest.raises(AppError) as caught:
+            await parser.parse(CANONICAL_URL, context(settings, safe_http(handler)))
+        assert caught.value.code == "DOUYIN_RESOLVE_FAILED"
+    else:
+        result = await parser.parse(CANONICAL_URL, context(settings, safe_http(handler)))
+        assert result.title == "目标作品"
+        assert result.cover_url == "https://cdn.example.com/target.jpg"
+        assert result.sources[0].upstream_media_url == "https://cdn.example.com/target.mp4"

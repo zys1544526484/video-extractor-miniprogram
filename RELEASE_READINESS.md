@@ -1,10 +1,23 @@
 # Release Readiness — V1
 
-更新时间：2026-09-08
+更新时间：2026-09-29
 
 ## 当前结论
 
-**不可提审（NOT READY）**。M1 最新本地门禁为 backend pytest 222 项、Node 49 项、小程序常规/production 各 80 个文件、Ruff、compileall、Alembic 空库升级/head 和 `git diff --check` 全部通过；代码提交 `ba345f4903fa47afc1d60f1613dc079a54c24ab2` 的 GitHub Actions #93 成功并覆盖 Docker build/Caddy validate。但最新 P3 真实 Headed smoke、标准 headless/Xvfb、暖浏览器、正式解析接入、真实微信能力、部署日志和目标平台 3/3 样例均未验证。
+**本机后端真实链路已验证；不可提审（NOT READY）**。本轮修复了开发版应用启动抛错，以及匿名抖音解析可能拿到推荐作品的缺陷。已交付 `npm run start:local`，使用独立开发数据库、真实解析与下载，微信身份仅为开发模拟。
+
+2026-09-29 实测公开 W3C Sintel MP4：任务 202、Range 预览 206、完整下载 200/4,372,373 bytes、记录再次读取通过；FFprobe 为 H.264/AAC、854×480、52.208 秒。微信开发者工具实际打开项目返回“需要重新登录（code 10）”，因此本轮界面及手机保存仍未验收。
+
+本地自动门禁：pytest `243 passed`（2 warnings）、Node `52 passed`、小程序普通/合成 production 各 `82 files checked`，Ruff、compileall、Alembic 空库升级/head 与后端合成 production 配置通过。Docker CLI 本机未安装；上一检查点 `be704b8` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36574444496) 已验证 Docker build/Caddy validate，后续提交以对应 Actions 运行结果为准。
+
+抖音 M1 已有单条真实 Headed 主播放器归属及无 Cookie Range PoC 成功证据；尚未接入正式解析任务、验证 Linux/Xvfb、暖浏览器、完整下载与 3/3 样例，不等于生产能力。
+
+## 落地顺序
+
+1. **本机可见可用**：手动重新登录微信开发者工具，运行 `npm run start:local`，验收粘贴 → 结果页进度 → 预览 → 提取记录。当前登录是唯一界面验收阻塞。
+2. **确定首版可支持范围**：公开直链和已有 Bilibili 能力优先完成各 3 个真实样例；抖音、小红书、微博、快手逐平台验证，不把适配器存在当成支持，也不承诺“任意链接”。
+3. **接入部署环境**：提供可操作服务器、HTTPS 域名和微信服务端凭证的安全接入方式；凭证仅放服务器环境，不发送到聊天或 Git。按 `deploy/README.md` 迁移、启动、健康检查，再做备份恢复和日志抽样。
+4. **手机交付验收**：真实 `wx.login`、Android/iOS 预览与相册保存、权限拒绝恢复、大文件和网络切换；隐私、主体、类目材料齐全后才能给出 READY。
 
 ## 已完成
 
@@ -20,7 +33,7 @@
 - yt-dlp 独立受限子进程、禁插件/代理和非公网 DNS 阻断。
 - SSRF 公网 IP 固定、逐跳重定向复检、响应大小和 Content-Type 校验。
 - Alembic、Dockerfile、Compose 和 Caddy HTTPS 样例。
-- 自动测试：本地前端 32 passed、后端 99 passed；小程序本地 76 个文件的结构/语法/资源校验通过；Alembic 空库升级到 `0003_parse_jobs_media_sessions`。最新分支 push CI 为 Node 32 passed、小程序 74 files checked、后端 96 passed/3 skipped（共收集 99 项，skipped 不计为 passed），Ruff 通过。
+- 当前自动测试以本文件顶部本轮记录为准；旧 32/99 项是 P0 历史结果。Alembic 当前 head 为 `0004_remote_media_sessions`。本地小程序文件数包含两个忽略的工具配置，干净 Git checkout 少 2 个，跳过的测试不得计为通过。
 - GitHub Actions 已真实运行 `npm run validate:production`，并增加 compileall、Alembic 空库升级/head 校验、Docker build 和固定版本 Caddy `caddy validate`；最新分支 push CI 的前后端两个 job 均成功。Caddy 配置语法通过，但部署环境 access log 脱敏仍需人工抽样。
 - 微信开发者工具 Stable 2.02.2608060 / 基础库 3.17.2 的 362×783 Mock 主流程通过。
 
@@ -37,6 +50,6 @@
 ## 发布红线
 
 - 生产配置不得启用任何 Mock。
-- 不得导入 Cookie、模拟登录或绕过付费、私密、风控、验证码、地域、年龄、DRM。
+- 不得导入用户 Cookie、自动登录或绕过付费、私密、风控、验证码、地域、年龄、DRM。唯一可选运营者专用会话 PoC 以 `AGENTS.md` 的仓库外存储、显式开关和人工登录约束为准，当前不进入默认生产路径。
 - Generic 与全部真实平台均不可用时不得发布。
 - 发布候选不得存在 P0/P1；单平台只能以明确的“维护中/当前受限”降级。

@@ -227,8 +227,7 @@ class DouyinParser(BaseParser):
     def target_bound_media_urls_from_payload(cls, payload: object, target_id: str) -> list[str]:
         """Read media fields from an exact target work object, in safe order.
 
-        This is intentionally narrower than the anonymous P2 metadata helper:
-        callers such as the operator-session PoC must never associate a
+        Public parsing and the operator-session PoC must never associate a
         recommended work, page description, or arbitrary URL-shaped text with
         the requested work.
         """
@@ -275,13 +274,13 @@ class DouyinParser(BaseParser):
         return urls
 
     @classmethod
-    def _structured_metadata(cls, document: str) -> tuple[str, list[str], list[str]]:
-        """Read only explicit public media paths from parsed JSON values."""
+    def _structured_metadata(cls, document: str, work_id: str) -> tuple[str, list[str], list[str]]:
+        """Read metadata only from JSON objects bound to the requested work."""
         title = ""
         media_urls: list[str] = []
         cover_urls: list[str] = []
         for payload in cls._script_json_values(document):
-            for node in cls._walk_dicts(payload):
+            for node in cls._target_work_nodes(payload, work_id):
                 if not title and isinstance(node.get("desc"), str):
                     title = str(node["desc"]).strip()[:200]
                 video = node.get("video")
@@ -315,7 +314,7 @@ class DouyinParser(BaseParser):
         document: str,
         work_id: str,
     ) -> ParserResultModel:
-        structured_title, media_urls, cover_urls = self._structured_metadata(document)
+        structured_title, media_urls, cover_urls = self._structured_metadata(document, work_id)
         if not media_urls:
             raise self._resolve_failed()
         media_url = media_urls[0]

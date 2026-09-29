@@ -4,6 +4,15 @@
 
 ## 当前基线
 
+### 成品复审：匿名解析作品归属与发布结论（2026-09-29）
+
+- 发现匿名抖音解析仍遍历所有作品对象，即使页面 URL 正确，也会将推荐作品的视频、标题和封面当成目标结果。复用既有 `_target_work_nodes`，只接受 ID 与请求作品一致的对象；不增加浏览器启发式、不启用会话功能。
+- 新增端到端 Parser 回归覆盖推荐作品混入、错误 ID、缺失 ID；修复前 3 项失败，修复后全量 pytest `243 passed`（2 个依赖 warning），Ruff/compileall PASS。空库 Alembic 升级至 `0004_remote_media_sessions` 并校验 head 通过；后端安全合成 production 配置通过。
+- 本轮前端 `52 passed`、普通/合成 production 各 `82 files checked`。当前分支上一检查点 `be704b8` 的 [GitHub Actions](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36574444496) 成功；本步骤 push 后需重新核对 CI，不沿用旧运行冒充本步骤通过。
+- 交付路径：先恢复开发者工具登录验收现有微信界面；以真实公开 MP4/已有 Bilibili 能力收敛首版验证，其他平台逐项获得 3/3 公开样例后再标为支持；完成服务器/HTTPS、微信认证与 Android/iOS 相册验收后才可提审。抖音生产接入仍是独立待完成项，当前默认关闭。
+- 本轮可交付的是经过后端真实网络验证的本机运行入口和两处已修复缺陷，不是已上线成品。产品状态 `LOCAL_BACKEND_VERIFIED / RELEASE_NOT_READY`；开发工具当前登录、真实微信凭证、服务器/域名、真机与生产日志采样仍是人工/环境 Gate。
+
+
 ### 成品复审：可重复本地启动与真实媒体验证（2026-09-29）
 
 - 增加 `npm run start:local`（Windows）和 `-CheckOnly` 预检；复用既有虚拟环境、FFmpeg 和微信工具，不增加项目依赖。仅监听本机，使用独立开发数据库/临时目录，不覆盖 `.env` 或已有小程序配置；已存在的 8000 服务会被明确拒绝，不自动终止。
