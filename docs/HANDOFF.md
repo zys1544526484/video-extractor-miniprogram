@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### 成品复审：修复开发环境启动（2026-09-29）
+
+- 新任务分支 `codex/product-delivery-readiness` 保留当前 M2 已提交历史（起点 `145cfd3`）；fetch 后确认 `origin/main` 是其祖先，未丢弃尚未合并的 48 个提交。原有三个 egg-info 修改继续保留、不提交。
+- 审查发现 `app.onLaunch` 无条件调用 production 校验，仓库默认 development 配置会在真实启动时抛错。现在仅 production 配置执行生产断言，体验版/正式版仍通过 runtime 校验拒绝开发配置和 Mock。
+- 新增真正执行 `app.js/onLaunch` 的回归；修复前 2 项失败，修复后 Node `52 passed`，普通/合成 production 校验各 `81 files checked`，`git diff --check` PASS。审查基线后端 `240 passed`（2 warnings）、Ruff PASS。
+- 当前仅修复自动化确认的启动问题；开发者工具实测、真实媒体端到端及部署复审继续进行，尚未宣称可上线。
+
+
 ### M2：大源进入受限处理管道（2026-09-09）
 
 - 当前开发分支为 `codex/m2-douyin-production`，基于已通过真实 Headed 验收的 M1 文档基线 `d59ae471b2e0a8fb30b0054b9787fffee6200f55`；不修改 `main`，不创建或合并 PR。

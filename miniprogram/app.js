@@ -21,7 +21,7 @@ App({
 
   onLaunch() {
     const config = getConfig()
-    assertProductionSafe(config)
+    if (config.APP_ENV === 'production') assertProductionSafe(config)
     assertRuntimeSafe(config, runtimeEnvVersion())
     this.globalData.config = config
   }
