@@ -21,4 +21,6 @@ RUN addgroup --system app && adduser --system --ingroup app app \
 USER app
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import json, urllib.request; response = json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)); assert response['success'] is True and response['status'] == 'ok'"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log"]

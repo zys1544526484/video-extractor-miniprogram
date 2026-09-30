@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### 2026-09-30：容器可运行性门禁
+
+- API 镜像新增无需凭证的本机健康探针，启动命令在迁移成功后用 `exec` 交接给 Uvicorn，避免停止信号只到达外层 shell。Compose 为 API 留出 30 秒停止窗口，Caddy 等待 API 健康后启动。
+- CI 使用固定虚构身份/域名、独立临时数据卷，不连接真实微信、不启用会话；实际验证 production 启动、HTTP 健康、非 root、FFmpeg、正常停止（禁止强杀退出码 137）、原卷重启与 Alembic head。清理仅针对本次 CI 的 `backend-smoke` 容器和匿名卷。
+- 本地 Node `54 passed`，普通/合成 production 各 `82 files checked`；pytest `243 passed`（2 warnings）、Ruff/compileall、空库迁移至 `0004_remote_media_sessions`/head、后端合成 production 配置、YAML/Bash 语法与 `git diff --check` PASS。原本未启动本地 API 时健康探针按预期拒绝连接；使用现有 `start:local -SkipDevTools` 启动后，同一探针通过。
+- 本机没有 Docker，Docker build/容器运行/Caddy validate 必须等待本提交远端 CI，未提前写 PASS。上一独立修复 `bc6b94921e76a772f7ea0b92c47456fab5b968a9` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36665751404) 已成功。
+- 部署说明改为使用生产模板，并明确启动等待、数据卷保护和健康检查边界。没有修改真实配置、部署服务器或解除微信/平台/真机门槛；产品保持 `NOT READY`。下一步核对本提交 CI，再进行人工微信登录、真机与真实部署验收。
+
 ### 2026-09-30：过期链接刷新失败后可再次保存
 
 - 修复共享 `ensureFreshResult`：请求失败时恢复进入刷新前的页面状态，复制链接失败后不再永久停在 loading、阻止保存；有有效任务 ID 时，即使本地缺少分享文案也可重新签发 Token。复制、视频保存和图片保存共用该修复，不改变 Token TTL 或媒体保留时间。

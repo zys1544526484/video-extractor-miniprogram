@@ -88,6 +88,51 @@ jobs:
         run: python -c "from app.database import Database; db = Database('sqlite:///./data/ci-empty.db'); db.verify_alembic_head(); db.close()"
       - name: Build backend Docker image
         run: docker build --tag video-extractor-backend:ci ./backend
+      - name: Smoke test production container startup and restart
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          trap 'docker rm --force --volumes backend-smoke >/dev/null' EXIT
+          # Synthetic credentials only; no real WeChat or public network requests.
+          docker run --detach --name backend-smoke \
+            --mount type=volume,destination=/app/data \
+            --mount type=volume,destination=/app/tmp/media \
+            --env APP_ENV=production \
+            --env PUBLIC_BASE_URL=https://media-api.example.invalid \
+            --env WECHAT_APP_ID=wx1234567890abcdef \
+            --env WECHAT_APP_SECRET=0123456789abcdef0123456789abcdef \
+            --env APP_TOKEN_SECRET=A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6 \
+            --env MOCK_WECHAT_AUTH=false \
+            --env DEV_BYPASS_DOWNLOAD_ENTITLEMENT=false \
+            --env DOWNLOAD_ACCESS_MODE=free \
+            --env DOUYIN_SESSION_ENABLED=false \
+            --env DATABASE_URL=sqlite:////app/data/app.db \
+            --env TEMP_DIR=/app/tmp/media \
+            video-extractor-backend:ci
+          wait_healthy() {
+            for attempt in $(seq 1 30); do
+              if [ "$(docker inspect --format '{{.State.Health.Status}}' backend-smoke)" = healthy ]; then
+                return 0
+              fi
+              if [ "$(docker inspect --format '{{.State.Running}}' backend-smoke)" != true ]; then
+                break
+              fi
+              sleep 2
+            done
+            docker logs backend-smoke
+            return 1
+          }
+          wait_healthy
+          docker exec backend-smoke python -c "import os; from pathlib import Path; assert os.getuid() != 0; assert b'uvicorn' in Path('/proc/1/cmdline').read_bytes()"
+          docker exec backend-smoke ffmpeg -version >/dev/null
+          docker stop --time 30 backend-smoke
+          case "$(docker inspect --format '{{.State.ExitCode}}' backend-smoke)" in
+            0|143) ;; # Normal exit or propagated SIGTERM, never SIGKILL (137).
+            *) echo 'Container did not stop gracefully'; exit 1 ;;
+          esac
+          docker start backend-smoke
+          wait_healthy
+          docker exec backend-smoke python -c "from app.database import Database; db = Database('sqlite:////app/data/app.db'); db.verify_alembic_head(); db.close()"
       - name: Validate Caddy configuration
         run: |
           docker run --rm \
