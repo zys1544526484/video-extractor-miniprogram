@@ -4,6 +4,14 @@
 
 ## 当前基线
 
+### 2026-09-30：SQLite 备份恢复准备
+
+- 新增 `python -m app.backup SOURCE NEW_DESTINATION`，复用 SQLite 标准在线备份 API，源只读、目标排他创建、Linux 权限 0600，完成后校验完整性。已有目标（包括源库本身）一律拒绝；失败仅清理本次新建的未完成文件，不输出库内容或配置。恢复使用同一工具复制到新文件，正式服务数据卷不自动切换。
+- 新增 6 项回归：含已提交 WAL、不含未提交事务、备份→新文件恢复、旧文件/源文件保护、缺失/损坏源无残留、CLI 失败和输出脱敏。CI 容器门禁增加合成 User 记录的在线备份、恢复、迁移 head、读取及重启后记录保留验证。
+- 本地 Node `54 passed`，普通/合成 production 各 `82 files checked`；pytest `249 passed`（2 warnings）、Ruff/compileall、YAML/Bash 和 `git diff --check` PASS；实际空库升级、CLI 备份→恢复、head 与合成记录读取 PASS。Docker/容器备份演练等待本提交远端 CI；生产备份调度和异机恢复仍为 `NOT VERIFIED`。
+- 微信工具本次 `open/auto` 已成功，官方 automation 实际完成首页输入→结果 ready（公开 W3C MP4 4,372,373 bytes、MOCK_API=false），并已捕获页面截图；不再沿用“本次 code 10 无法打开”的结论。后续播放、保存和记录恢复继续复验；开发身份不代表真实微信/真机。
+- 三个既有 egg-info 修改保留、不提交；不操作 main。下一步核对容器 CI 并完成可见页面验收，再推进真实微信、平台 3/3 样例与服务器接入。
+
 ### 2026-09-30：本轮远端验收
 
 - 两个独立步骤均已立即推送：Token 刷新重试 `bc6b94921e76a772f7ea0b92c47456fab5b968a9`；容器运行门禁 `06695f4092ba807fcfd49bc96bbbe11a36ca4728`。后者的 [GitHub Actions](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36666114150) 两个 job 全部成功，包含 production 容器健康启动、正常停止、重启和迁移 head，以及 Docker build/Caddy validate。

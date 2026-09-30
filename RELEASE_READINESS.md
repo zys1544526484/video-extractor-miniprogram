@@ -4,6 +4,8 @@
 
 ## 当前结论
 
+后续增量（2026-09-30）：已提供不覆盖旧文件的在线数据库备份/恢复工具，本地 WAL、完整性、迁移 head 和合成记录演练通过；容器演练待本步骤 CI，生产备份调度/异机恢复仍 `NOT VERIFIED`。本机 Node 54、pytest 249。微信工具本次可以打开，已实际显示非 Mock API 的公开 MP4 结果，剩余页面与手机保存继续验收；整体保持 NOT READY。
+
 2026-09-30 增量：已修复 Token 刷新失败后无法重试保存；新增容器 production 启动/正常停止/重启门禁、内置健康探针及 Caddy 就绪依赖。本机 Node 54、pytest 243、普通/合成 production 校验与静态/迁移检查通过；代码 `06695f4` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36666114150) 也已成功（远端后端 240 passed、3 skipped，容器实测、Docker build/Caddy validate PASS）。合成凭证仅校验运行配置，真实微信身份、域名/TLS、备份恢复、平台样例、Android/iOS 保存及生产日志仍为 `NOT VERIFIED`，总体结论不变。
 
 **本机后端真实链路已验证；不可提审（NOT READY）**。本轮修复了开发版应用启动抛错，以及匿名抖音解析可能拿到推荐作品的缺陷。已交付 `npm run start:local`，使用独立开发数据库、真实解析与下载，微信身份仅为开发模拟。

@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+- SQLite 备份恢复工具及 6 项回归已完成，生产容器 CI 增加合成记录备份/恢复/head/重启验证；本地 pytest `249 passed`（2 warnings）、Node `54 passed`、普通/合成 production 各 `82 files checked`，Ruff/compileall/空库迁移/真实 CLI 恢复检查 PASS，远端本步骤待核对。微信工具现已打开并实际显示 W3C 公开 MP4 的非 Mock API 提取结果；其余 UI 与真机继续验收。
+
 - 代码 `06695f4092ba807fcfd49bc96bbbe11a36ca4728` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36666114150) 全部成功：Node `54 passed`，干净环境普通/合成 production 各 `80 files checked`，pytest `240 passed, 3 skipped`（共 243，2 warnings），Ruff/compileall/迁移/Docker/Caddy 通过。新增 production 容器实际健康启动、非 root、FFmpeg、正常停止/原卷重启与 head 验证也通过；Compose 已配置 Caddy 等待 API 健康。当前本地是 pytest `243 passed` 和各 `82 files checked`，不等于真实微信/服务器部署通过；Draft PR 创建仍为 403，无本任务 PR。
 
 - 2026-09-30：修复过期链接刷新失败后结果页无法再次保存的问题；持有任务 ID 时无需依赖本地分享文案续签。Node `54 passed`；小程序普通/合成 production 各 `82 files checked`；`git diff --check` PASS。仅为自动回归，微信工具仍需人工登录，真机与生产仍 `NOT VERIFIED`。后续条目保留历史验证结果。

@@ -125,6 +125,11 @@ jobs:
           wait_healthy
           docker exec backend-smoke python -c "import os; from pathlib import Path; assert os.getuid() != 0; assert b'uvicorn' in Path('/proc/1/cmdline').read_bytes()"
           docker exec backend-smoke ffmpeg -version >/dev/null
+          # Exercise online backup and recovery using one synthetic record.
+          docker exec backend-smoke python -c "from app.database import Database; from app.models import User; db = Database('sqlite:////app/data/app.db'); session = db.session_factory(); session.add(User(openid='ci-backup-probe')); session.commit(); session.close(); db.close()"
+          docker exec backend-smoke python -m app.backup /app/data/app.db /app/data/ci-backup.db
+          docker exec backend-smoke python -m app.backup /app/data/ci-backup.db /app/data/ci-restored.db
+          docker exec backend-smoke python -c "from sqlalchemy import select; from app.database import Database; from app.models import User; db = Database('sqlite:////app/data/ci-restored.db'); db.verify_alembic_head(); session = db.session_factory(); assert session.scalar(select(User).where(User.openid == 'ci-backup-probe')) is not None; session.close(); db.close()"
           docker stop --time 30 backend-smoke
           case "$(docker inspect --format '{{.State.ExitCode}}' backend-smoke)" in
             0|143) ;; # Normal exit or propagated SIGTERM, never SIGKILL (137).
@@ -132,7 +137,7 @@ jobs:
           esac
           docker start backend-smoke
           wait_healthy
-          docker exec backend-smoke python -c "from app.database import Database; db = Database('sqlite:////app/data/app.db'); db.verify_alembic_head(); db.close()"
+          docker exec backend-smoke python -c "from sqlalchemy import select; from app.database import Database; from app.models import User; db = Database('sqlite:////app/data/app.db'); db.verify_alembic_head(); session = db.session_factory(); assert session.scalar(select(User).where(User.openid == 'ci-backup-probe')) is not None; session.close(); db.close()"
       - name: Validate Caddy configuration
         run: |
           docker run --rm \
