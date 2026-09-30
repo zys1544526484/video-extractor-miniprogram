@@ -4,6 +4,12 @@
 
 ## 当前基线
 
+### 2026-09-30：过期链接刷新失败后可再次保存
+
+- 修复共享 `ensureFreshResult`：请求失败时恢复进入刷新前的页面状态，复制链接失败后不再永久停在 loading、阻止保存；有有效任务 ID 时，即使本地缺少分享文案也可重新签发 Token。复制、视频保存和图片保存共用该修复，不改变 Token TTL 或媒体保留时间。
+- 新增执行真实页面方法的两项回归，覆盖刷新失败→再次保存成功，以及缺少本地分享文案的同一流程；修复前两项失败，修复后 Node `54 passed`、小程序普通/合成 production 各 `82 files checked`、`git diff --check` PASS。下载接口在单测中被替代，不能当作真机保存证据。
+- 微信开发者工具本次仍返回需要重新登录（code 10）；界面、真机、部署与生产凭证为 `NOT VERIFIED`。原有三个 egg-info 修改完整保留、不提交。下一步补充容器实际启动与重启检查，不仅验证镜像能构建。
+
 ### 2026-09-29 交付状态与后续接入
 
 - 代码检查点 `b8058ea78640601cae7e4dd1a51bceed1b4b6bf6` 已普通推送，[对应 CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36575091183) 两个 job 成功：Node `52 passed`，小程序普通/生产各 `80 files checked`；后端 `240 passed, 3 skipped, 2 warnings`（243 项），Ruff、production、compileall、Alembic 空库/head、Docker build 和 Caddy validate 均通过。Windows 本地为 pytest `243 passed`、小程序 82 文件；两个额外工具配置忽略且未提交。

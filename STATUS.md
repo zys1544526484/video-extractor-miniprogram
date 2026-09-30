@@ -1,8 +1,10 @@
 # STATUS
 
-更新时间：2026-09-29
+更新时间：2026-09-30
 
 ## 当前阶段
+
+- 2026-09-30：修复过期链接刷新失败后结果页无法再次保存的问题；持有任务 ID 时无需依赖本地分享文案续签。Node `54 passed`；小程序普通/合成 production 各 `82 files checked`；`git diff --check` PASS。仅为自动回归，微信工具仍需人工登录，真机与生产仍 `NOT VERIFIED`。后续条目保留历史验证结果。
 
 - 代码 `b8058ea78640601cae7e4dd1a51bceed1b4b6bf6` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36575091183) 两个 job 成功：Node 52；干净环境普通/production 各 80 文件；pytest 240 passed、3 skipped（共 243）、Ruff/compileall/迁移/Docker/Caddy 均通过。本机 pytest 243 passed。Draft PR 创建被 connector 403 拒绝，代码已推送，详情见交接记录。发布状态仍 NOT READY。
 

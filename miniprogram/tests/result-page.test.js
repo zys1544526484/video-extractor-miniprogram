@@ -64,6 +64,53 @@ test('copyCurrentLink does not claim success when token refresh fails', async ()
   assert.equal(toasts.at(-1).icon, 'none')
 })
 
+for (const sourceText of ['https://example.com/video', '']) {
+  test(`failed expired-link refresh allows saving again (source text: ${Boolean(sourceText)})`, async () => {
+    const originalParseJob = api.parseJob
+    let requests = 0
+    let downloadedUrl = ''
+    const renewedUrl = 'https://api.example.com/api/v1/media/renewed/download'
+    api.parseJob = async (jobId) => {
+      assert.equal(jobId, 'job-refresh-retry')
+      requests += 1
+      if (requests === 1) throw new Error('网络暂时不可用')
+      return { job: { status: 'ready', result: {
+        download_url: renewedUrl,
+        expires_at: new Date(Date.now() + 900000).toISOString()
+      } } }
+    }
+    const context = {
+      ...pageDefinition,
+      data: { ...pageDefinition.data, state: 'ready', result: {
+        job_id: 'job-refresh-retry',
+        source_text: sourceText,
+        download_url: 'https://api.example.com/api/v1/media/expired/download',
+        expires_at: new Date(Date.now() - 1000).toISOString()
+      } },
+      setData(value) { this.data = { ...this.data, ...value } },
+      downloadService: { async downloadAndSave(url) {
+        downloadedUrl = url
+        return { mock: false, saved: true }
+      } }
+    }
+    try {
+      copiedValue = ''
+      await context.copyCurrentLink()
+      assert.equal(requests, 1)
+      assert.equal(copiedValue, '')
+      assert.equal(context.data.state, 'ready')
+      assert.equal(context.copyInFlight, false)
+      await context.saveCurrentVideo()
+      assert.equal(requests, 2)
+      assert.equal(downloadedUrl, renewedUrl)
+      assert.equal(context.data.state, 'success')
+      assert.equal(context.saveInFlight, false)
+    } finally {
+      api.parseJob = originalParseJob
+    }
+  })
+}
+
 test('loadResult falls back with a prompt when the persisted source is gone', () => {
   storedValues.set('video_extractor_selected_sources', { 'job-a': 'source-2' })
   const context = {

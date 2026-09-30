@@ -292,38 +292,44 @@ Page({
     const app = getApp()
     const serverNow = Date.now() + (app.globalData.serverOffsetMs || 0)
     if (result && !isTokenExpired(result, serverNow)) return result
-    if (!result || !result.source_text) throw new Error('结果已过期，请重新提取')
+    if (!result) throw new Error('结果已过期，请重新提取')
+    const previousState = this.data.state
     this.setData({ state: 'loading' })
-    if (result.job_id) {
-      const existing = await api.parseJob(result.job_id)
-      if (existing.job && existing.job.status === 'ready' && existing.job.result) {
-        const renewedRaw = normalizeResult({
-          ...existing.job.result,
-          job_id: result.job_id,
-          source_text: existing.job.source_url || result.source_text,
-          requested_quality: existing.job.result.requested_quality || result.requested_quality
-        })
-        const restored = restorePreferredSource(renewedRaw, preferredSourceId)
-        const renewed = restored.result
-        if (restored.fallback) this.notifySourceFallback(renewed)
-        storage.setCurrentResult(renewed)
-        this.loadResult(renewed)
-        return renewed
+    try {
+      if (result.job_id) {
+        const existing = await api.parseJob(result.job_id)
+        if (existing.job && existing.job.status === 'ready' && existing.job.result) {
+          const renewedRaw = normalizeResult({
+            ...existing.job.result,
+            job_id: result.job_id,
+            source_text: existing.job.source_url || result.source_text,
+            requested_quality: existing.job.result.requested_quality || result.requested_quality
+          })
+          const restored = restorePreferredSource(renewedRaw, preferredSourceId)
+          const renewed = restored.result
+          if (restored.fallback) this.notifySourceFallback(renewed)
+          storage.setCurrentResult(renewed)
+          this.loadResult(renewed)
+          return renewed
+        }
       }
+      if (!result.source_text) throw new Error('结果已过期，请重新提取')
+      const response = await api.parse(result.source_text, result.requested_quality || 'original')
+      const refreshedRaw = normalizeResult({
+        ...response.result,
+        job_id: response.job_id,
+        source_text: result.source_text,
+        requested_quality: response.result.requested_quality || result.requested_quality || 'original'
+      })
+      const restored = restorePreferredSource(refreshedRaw, preferredSourceId)
+      const refreshed = restored.result
+      if (restored.fallback) this.notifySourceFallback(refreshed)
+      storage.setCurrentResult(refreshed)
+      this.loadResult(refreshed)
+      return refreshed
+    } finally {
+      if (this.data.state === 'loading') this.setData({ state: previousState })
     }
-    const response = await api.parse(result.source_text, result.requested_quality || 'original')
-    const refreshedRaw = normalizeResult({
-      ...response.result,
-      job_id: response.job_id,
-      source_text: result.source_text,
-      requested_quality: response.result.requested_quality || result.requested_quality || 'original'
-    })
-    const restored = restorePreferredSource(refreshedRaw, preferredSourceId)
-    const refreshed = restored.result
-    if (restored.fallback) this.notifySourceFallback(refreshed)
-    storage.setCurrentResult(refreshed)
-    this.loadResult(refreshed)
-    return refreshed
   },
 
   notifySourceFallback(result) {
