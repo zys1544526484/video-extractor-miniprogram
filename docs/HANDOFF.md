@@ -4,13 +4,21 @@
 
 ## 当前基线
 
+### 2026-09-30：本轮远端验收
+
+- 两个独立步骤均已立即推送：Token 刷新重试 `bc6b94921e76a772f7ea0b92c47456fab5b968a9`；容器运行门禁 `06695f4092ba807fcfd49bc96bbbe11a36ca4728`。后者的 [GitHub Actions](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36666114150) 两个 job 全部成功，包含 production 容器健康启动、正常停止、重启和迁移 head，以及 Docker build/Caddy validate。
+- 日志核实：远端 Node `54 passed / 0 failed`，小程序普通/合成 production 各 `80 files checked`；后端 `240 passed, 3 skipped`（共 243，2 warnings），Ruff/compileall/production 配置/空库迁移均通过。本地是 `243 passed` 与 `82 files checked`，不把远端跳过项计为通过；文件数差异仍是两个未提交的本地微信项目配置。
+- 本次重试创建 Draft PR 仍被 GitHub connector 拒绝：`403 Resource not accessible by integration`，没有已创建的本任务 PR。[手动创建入口](https://github.com/zys1544526484/video-extractor-miniprogram/compare/main...codex/product-delivery-readiness?expand=1) 只是 compare 页面，需有权限的用户选择 Draft，不得当作 PR 地址。
+- 本地 API 已通过 `npm run start:local -- -SkipDevTools` 启动并通过健康检查，开发身份仅用于本机验证。三个用户原有 egg-info 修改未覆盖、未提交。未合并、未 force push，未修改真实生产配置。
+- 下一步：运营者扫码登录微信工具后验收页面/保存；安全接入真实服务器、域名与微信凭证；有权限的账号创建 Draft 供审查。上述外部门槛完成前保持 `NOT READY / NOT VERIFIED`。本节 CI 证据绑定代码提交，后续纯文档提交会另触发运行。
+
 ### 2026-09-30：容器可运行性门禁
 
 - API 镜像新增无需凭证的本机健康探针，启动命令在迁移成功后用 `exec` 交接给 Uvicorn，避免停止信号只到达外层 shell。Compose 为 API 留出 30 秒停止窗口，Caddy 等待 API 健康后启动。
 - CI 使用固定虚构身份/域名、独立临时数据卷，不连接真实微信、不启用会话；实际验证 production 启动、HTTP 健康、非 root、FFmpeg、正常停止（禁止强杀退出码 137）、原卷重启与 Alembic head。清理仅针对本次 CI 的 `backend-smoke` 容器和匿名卷。
 - 本地 Node `54 passed`，普通/合成 production 各 `82 files checked`；pytest `243 passed`（2 warnings）、Ruff/compileall、空库迁移至 `0004_remote_media_sessions`/head、后端合成 production 配置、YAML/Bash 语法与 `git diff --check` PASS。原本未启动本地 API 时健康探针按预期拒绝连接；使用现有 `start:local -SkipDevTools` 启动后，同一探针通过。
-- 本机没有 Docker，Docker build/容器运行/Caddy validate 必须等待本提交远端 CI，未提前写 PASS。上一独立修复 `bc6b94921e76a772f7ea0b92c47456fab5b968a9` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36665751404) 已成功。
-- 部署说明改为使用生产模板，并明确启动等待、数据卷保护和健康检查边界。没有修改真实配置、部署服务器或解除微信/平台/真机门槛；产品保持 `NOT READY`。下一步核对本提交 CI，再进行人工微信登录、真机与真实部署验收。
+- 本机没有 Docker；Docker build/容器运行/Caddy validate 在 push 后由远端 CI 实际通过，证据见上节。上一独立修复 `bc6b94921e76a772f7ea0b92c47456fab5b968a9` 的 [CI](https://github.com/zys1544526484/video-extractor-miniprogram/actions/runs/36665751404) 也已成功。
+- 部署说明改为使用生产模板，并明确启动等待、数据卷保护和健康检查边界。没有修改真实配置、部署服务器或解除微信/平台/真机门槛；产品保持 `NOT READY`。下一步进行人工微信登录、真机与真实部署验收。
 
 ### 2026-09-30：过期链接刷新失败后可再次保存
 
